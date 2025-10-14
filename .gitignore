@@ -1,0 +1,28 @@
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.egg
+*.whl
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Test caches
+.pytest_cache/
+.coverage
+coverage/
+htmlcov/
+
+# Temporary scratch files
+temp_psann/
+temp_patch.diff
+tmp_patch.txt
+*.log
+
+# Notebook artifacts
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+**/outputs/*.ipynb

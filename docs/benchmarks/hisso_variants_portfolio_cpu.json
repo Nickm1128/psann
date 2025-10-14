@@ -1,0 +1,112 @@
+{
+  "dataset": {
+    "description": "Historical AAPL Open/Close prices converted to log returns.",
+    "name": "portfolio",
+    "source": "benchmarks\\hisso_portfolio_prices.csv"
+  },
+  "metadata": {
+    "dataset": "portfolio",
+    "devices": [
+      "cpu"
+    ],
+    "epochs": 4,
+    "repeats": 1,
+    "torch_cuda_available": false,
+    "transition_penalty": 0.02,
+    "variants": [
+      "dense",
+      "conv"
+    ],
+    "window": 64
+  },
+  "results": [
+    {
+      "allow_full_window": true,
+      "dataset": "portfolio",
+      "device": "cpu",
+      "episode_length": 64,
+      "episodes_per_epoch_mean": [
+        32.0,
+        32.0,
+        32.0,
+        32.0
+      ],
+      "episodes_per_epoch_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "feature_shape": [
+        2
+      ],
+      "final_reward_mean": -4.5239562451726556e-07,
+      "final_reward_std": 0.0,
+      "mean_profile_time_s": 3.159859500359744,
+      "mean_wall_time_s": 4.900755499955267,
+      "primary_dim": 2,
+      "reward_trend_mean": [
+        -0.07921785126836767,
+        -0.00035146705528177336,
+        -1.322061360387039e-05,
+        -4.5239562451726556e-07
+      ],
+      "reward_trend_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "runs": 1,
+      "series_length": 506,
+      "std_profile_time_s": 0.0,
+      "std_wall_time_s": 0.0,
+      "variant": "dense"
+    },
+    {
+      "allow_full_window": true,
+      "dataset": "portfolio",
+      "device": "cpu",
+      "episode_length": 64,
+      "episodes_per_epoch_mean": [
+        32.0,
+        32.0,
+        32.0,
+        32.0
+      ],
+      "episodes_per_epoch_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "feature_shape": [
+        2,
+        4,
+        4
+      ],
+      "final_reward_mean": -3.4650755225129615e-06,
+      "final_reward_std": 0.0,
+      "mean_profile_time_s": 8.643131299875677,
+      "mean_wall_time_s": 9.783348300028592,
+      "primary_dim": 2,
+      "reward_trend_mean": [
+        -0.002395254917814782,
+        -5.396845122618288e-05,
+        -9.887239212247323e-06,
+        -3.4650755225129615e-06
+      ],
+      "reward_trend_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "runs": 1,
+      "series_length": 490,
+      "std_profile_time_s": 0.0,
+      "std_wall_time_s": 0.0,
+      "variant": "conv"
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "psann"
+version = "0.9.19"
+description = "PSANN: Parameterized Sine-Activated Neural Networks (primary-output, sklearn-style, PyTorch backend)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Nicholas Milinkovich" }
+]
+keywords = ["pytorch", "neural-networks", "sine", "siren", "sklearn", "time-series", "regression", "classification"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.23",
+  "torch>=2.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/psann-project/psann"
+Repository = "https://github.com/psann-project/psann"
+Issues = "https://github.com/psann-project/psann/issues"
+Documentation = "https://github.com/psann-project/psann/tree/main/docs"
+Changelog = "https://github.com/psann-project/psann/blob/main/docs/migration.md"
+Contributing = "https://github.com/psann-project/psann/blob/main/docs/CONTRIBUTING.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psann"]
+
+[tool.hatch.build]
+exclude = [".github", "examples", "tests", ".vscode", ".idea", "downloads_tmp"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "ruff>=0.5.0",
+  "black>=24.0",
+]
+viz = [
+  "matplotlib>=3.7",
+]
+sklearn = [
+  "scikit-learn>=1.2,<1.5",
+]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+ignore = ["E402"]
+per-file-ignores = {"src/psann/lsm.py" = ["E741", "F841"]}

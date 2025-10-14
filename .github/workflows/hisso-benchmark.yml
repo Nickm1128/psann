@@ -1,0 +1,59 @@
+name: HISSO Benchmark Check
+
+on:
+  push:
+    paths:
+      - "scripts/**"
+      - "docs/benchmarks/**"
+      - "benchmarks/**"
+      - "src/psann/**"
+      - "tests/**"
+      - ".github/workflows/hisso-benchmark.yml"
+      - "pyproject.toml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "docs/benchmarks/**"
+      - "benchmarks/**"
+      - "src/psann/**"
+      - "tests/**"
+      - ".github/workflows/hisso-benchmark.yml"
+      - "pyproject.toml"
+
+jobs:
+  benchmark-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Run HISSO benchmark (CPU baseline)
+        run: |
+          mkdir -p benchmark_artifacts
+          python -m scripts.benchmark_hisso_variants \
+            --dataset portfolio \
+            --epochs 4 \
+            --devices cpu \
+            --variants dense,conv \
+            --output benchmark_artifacts/hisso_variants_portfolio_cpu.json
+
+      - name: Compare against baseline snapshot
+        run: |
+          python -m scripts.compare_hisso_benchmarks \
+            docs/benchmarks/hisso_variants_portfolio_cpu.json \
+            benchmark_artifacts/hisso_variants_portfolio_cpu.json \
+            --reward-rtol 0.5 \
+            --reward-atol 5e-3 \
+            --wall-rtol 0.8 \
+            --wall-atol 5.0
+

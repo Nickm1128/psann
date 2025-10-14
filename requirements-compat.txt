@@ -1,0 +1,7 @@
+# Use with: pip install -e . -c requirements-compat.txt
+
+numpy==1.26.4
+scipy==1.11.4
+scikit-learn==1.4.2
+torch==2.1.2
+

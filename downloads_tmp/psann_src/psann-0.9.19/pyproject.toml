@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "psann"
+version = "0.9.19"
+description = "PSANN: Parameterized Sine-Activated Neural Networks (sklearn-style, PyTorch backend)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Nicholas Milinkovich" }
+]
+keywords = ["pytorch", "neural-networks", "sine", "siren", "sklearn", "time-series", "regression", "classification"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.23",
+  "torch>=2.1",
+]
+
+[project.urls]
+Homepage = "https://github.com"
+Repository = "https://github.com"
+Issues = "https://github.com"
+Documentation = "https://github.com"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/psann"]
+
+[tool.hatch.build]
+exclude = [".github", "examples", "tests", ".vscode", ".idea"]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "ruff>=0.5.0",
+  "black>=24.0",
+]
+viz = [
+  "matplotlib>=3.7",
+]
+sklearn = [
+  "scikit-learn>=1.2,<1.5",
+]
