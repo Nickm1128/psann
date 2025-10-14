@@ -40,9 +40,8 @@ Each HISSO script uses the neutral terminology (`transition_penalty`) and the sh
 
 Run the benchmark scripts from the project root; outputs land under `docs/benchmarks/` and are checked in to catch regressions.
 
-## Language modelling and diagnostics
+## Diagnostics
 
-- **23_psann_lm_demo.py** - small PSANN language model illustrating token embedding, training, and text generation.
 - **WaveResNet diagnostics (docs/wave_resnet.md)** - covers Jacobian/NTK utilities, participation ratio, and mutual information probes for backbone analysis.
 
 ## Retired content

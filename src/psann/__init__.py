@@ -27,7 +27,7 @@ from .rewards import (
     register_reward_strategy,
 )
 from .hisso import HISSOOptions, hisso_infer_series, hisso_evaluate_reward
-# Language modelling utilities
+# Token utilities
 from .tokenizer import SimpleWordTokenizer
 from .embeddings import SineTokenEmbedder
 
@@ -75,7 +75,7 @@ __all__ = [
     "FINANCE_PORTFOLIO_STRATEGY",
     "get_reward_strategy",
     "register_reward_strategy",
-    # Language modelling
+    # Token utilities
     "SimpleWordTokenizer",
     "SineTokenEmbedder",
     # Initialisation helpers

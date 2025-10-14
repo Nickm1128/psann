@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from scripts.compare_hisso_benchmarks import compare_benchmarks
 
 
@@ -109,4 +107,3 @@ def test_compare_benchmarks_detects_missing_variant(tmp_path: Path) -> None:
 
     assert failures
     assert any("missing results" in msg.lower() for msg in failures)
-

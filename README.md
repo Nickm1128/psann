@@ -1,6 +1,12 @@
 # PSANN - Parameterized Sine-Activated Neural Networks
 
-Sklearn-style estimators built on PyTorch that combine learnable sine activations with a shared training pipeline (`prepare_inputs_and_scaler`, hook-driven model builders, and HISSO adapters). The library now targets primary outputs only. Predictive extras and their growth schedules have been retired so the surface stays lean and consistent.
+PSANN packages sine-activated Torch models behind a sklearn-style estimator surface. The stack combines:
+- learnable sine activations with SIREN-friendly initialisation,
+- optional learned sparse (LSM) expanders and scalers,
+- persistent state controllers for streaming inference, and
+- Horizon-Informed Sampling Strategy Optimisation (HISSO) for episodic training.
+
+The current line targets **primary outputs only** so there are no predictive extras, secondary heads, or legacy growth schedules to maintain.
 
 Quick links:
 - API reference: `docs/API.md`
@@ -21,7 +27,7 @@ pip install -e .                # editable install from source
 
 Optional extras in `pyproject.toml`:
 - `psann[sklearn]`: adds scikit-learn conveniences for estimator mixins and metrics.
-- `psann[viz]`: plotting helpers used in benchmarks and example notebooks.
+- `psann[viz]`: plotting helpers used in benchmarks and notebooks.
 - `psann[dev]`: pytest, ruff, black.
 
 Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibility constraints:
@@ -42,6 +48,13 @@ python -m pytest
 ```
 
 The suite exercises the supported supervised, streaming, and HISSO flows. GPU-specific checks are skipped automatically when CUDA is unavailable.
+
+Common linting commands:
+
+```bash
+python -m ruff check src tests examples
+python -m ruff format --check .
+```
 
 ## Quick Start
 
@@ -90,7 +103,6 @@ options = HISSOOptions.from_kwargs(
     context_extractor=finance.context_extractor,
     primary_transform="softmax",
     transition_penalty=0.05,
-    trans_cost=None,
     input_noise=0.0,
     supervised={"y": targets},
 )
@@ -109,7 +121,7 @@ model.fit(
 )
 ```
 
-`HISSOOptions` keeps reward, context, noise, and transformation choices in one place. The estimator records the resolved options after fitting so helpers like `psann.hisso.hisso_infer_series` and `psann.hisso.hisso_evaluate_reward` can reuse them.
+`HISSOOptions` keeps reward, context, noise, and transformation choices in one place. The estimator records the resolved options after fitting so helpers such as `psann.hisso.hisso_infer_series` and `psann.hisso.hisso_evaluate_reward` can reuse them.
 
 ### Custom data preparation
 
@@ -125,17 +137,35 @@ prepared, primary_dim, _ = prepare_inputs_and_scaler(est, fit_args)
 
 This keeps bespoke research loops aligned with the estimator's preprocessing contract without relying on deprecated extras heads.
 
-## Feature Highlights
+## Core components
 
-- Learnable sine activations (`SineParam`) with amplitude, frequency, and decay bounds.
-- Shared helper stack (`normalise_fit_args`, `prepare_inputs_and_scaler`, hook-driven builders) powering PSANN, residual, and convolutional estimators.
-- Reward strategy registry (`register_reward_strategy` / `get_reward_strategy`) and `HISSOOptions` for declarative episodic configuration.
-- Stateful controllers for streaming inference with warm-start and reset policies.
-- Convolutional variants that preserve spatial structure and support per-element outputs.
-- HISSO episodic training with supervised warm starts and transition-penalty aware reward shaping (`transition_penalty` supersedes legacy `trans_cost` aliases).
+- **Sine activations** (`psann.activations.SineParam`) expose learnable amplitude, frequency, and decay with optional bounds and SIREN-friendly initialisation.
+- **LSM expanders** (`psann.lsm`) provide sparse learned feature maps; `build_preprocessor` wires dict specs or modules into estimators with optional pretraining and separate learning rates.
+- **State controllers** (`psann.state.StateController`) keep per-feature persistent gains for streaming/online workflows. Configurable via `StateConfig`.
+- **Shared fit helpers** (`psann.estimators._fit_utils`) normalise arguments, materialise scalers, route through residual and convolutional builders, and orchestrate HISSO plans.
+- **Wave backbones** (`psann.models`) surface `WaveResNet`, `WaveEncoder`, `WaveRNNCell`, and `scan_regimes` for standalone experiments and spectral diagnostics outside the sklearn wrappers.
+- **HISSO** (`psann.hisso`) offers declarative reward configuration (`HISSOOptions`), supervised warm starts, episode construction, and inference helpers that reuse the cached configuration.
+- **Utilities** (`psann.utils`) include Jacobian/NTK probes, participation ratio, mutual-information proxies, and linear probes for diagnostics.
+- **Token helpers** (`SimpleWordTokenizer`, `SineTokenEmbedder`) remain for experiments that need sine embeddings, but no language-model trainer ships in this release.
 
-## Current status & roadmap
+## HISSO at a glance
 
-- The predictive extras framework has been removed. All estimators now focus on a single primary target; older `extras_*` arguments are ignored with warnings.
-- Terminology defaults to `transition_penalty` in episodic settings. Legacy aliases (`transition_cost` / `trans_cost`) remain temporarily but will be removed in a future release.
-- GPU benchmarking is wired into CI for CPU parity, and GPU baselines will join once shared hardware becomes available. Follow `docs/examples/README.md` for the curated example set and `docs/migration.md` for upgrade notes.
+1. Call `HISSOOptions.from_kwargs(...)` (or supply equivalent kwargs to `fit`) to resolve episode length, reward function, primary transform, transition penalty, context extractor, and optional noise.
+2. Provide `hisso_supervised` to run a warm-start supervised phase before episodic optimisation.
+3. `PSANNRegressor.fit(..., hisso=True, ...)` builds the episodic trainer using the shared fit pipeline.
+4. After training, `hisso_infer_series(estimator, series)` and `hisso_evaluate_reward(estimator, series, targets=None)` reuse the cached configuration to score new data.
+
+The project ships CPU benchmark baselines (`docs/benchmarks/`) and CI scripts (`scripts/benchmark_hisso_variants.py`, `scripts/compare_hisso_benchmarks.py`) to catch HISSO regressions.
+
+## Docs and examples
+
+- Examples live in `examples/`; see `docs/examples/README.md` for the curated list (supervised, streaming, HISSO, benchmarks, diagnostics).
+- Detailed internals are captured in `TECHNICAL_DETAILS.md`.
+- Reward registry usage and custom strategy registration are described in `docs/API.md` under the HISSO section.
+
+## Current status and roadmap
+
+- Predictive extras and growth schedules are gone; legacy `extras_*` arguments are accepted but ignored with warnings for backward compatibility.
+- Terminology has converged on `transition_penalty` within HISSO; the `trans_cost` alias still functions but will be removed in a later release.
+- CPU benchmarks run in CI; GPU baselines remain on the roadmap once shared hardware is available.
+- Upcoming work highlighted in `CLEANUP_TODO.md` includes broader reward coverage, lint/type sweeps, and release tooling improvements.

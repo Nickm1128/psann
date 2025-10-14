@@ -8,11 +8,11 @@ chronological train/val/test splits and never sampling windows from val/test.
 
 from pathlib import Path
 import sys as _sys
-try:  # noqa: F401
-    import psann  # type: ignore
+try:
+    import psann  # type: ignore  # noqa: F401
 except Exception:  # pragma: no cover
     _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-    import psann  # type: ignore
+    import psann  # type: ignore  # noqa: F401
 
 import argparse
 import csv
@@ -49,7 +49,6 @@ def run_config(
     activation_type: str,
     hidden_layers: int,
     hidden_width: int,
-    extras: int,
     hisso_window: int,
     trans_cost: float,
     lsm_cfg: Optional[dict],
@@ -59,8 +58,6 @@ def run_config(
     # Chronological split: train/val/test (strict, no leakage)
     n_train, n_val = 4000, 1000
     train, val, test = prices[:n_train], prices[n_train:n_train + n_val], prices[n_train + n_val:]
-    M = int(prices.shape[1])
-
     est = PSANNRegressor(
         hidden_layers=hidden_layers,
         hidden_width=hidden_width,
@@ -90,7 +87,6 @@ def run_config(
         "activation": activation_type,
         "hidden_layers": hidden_layers,
         "hidden_width": hidden_width,
-        "extras": int(extras),
         "hisso_window": int(hisso_window),
         "trans_cost": float(trans_cost),
         "lsm": ("dict" if isinstance(lsm_cfg, dict) else "none"),
@@ -118,7 +114,6 @@ def main():
     activations = ["psann", "relu", "tanh"]
     hidden_layers_list = [2]
     hidden_widths = [64]
-    extras_list = [0, 2]
     hisso_windows = [64]
     trans_cost = 1e-3
     # LSM: none vs small expander (dict-based)
@@ -128,7 +123,7 @@ def main():
     ]
 
     # Cartesian product
-    grid = list(itertools.product(activations, hidden_layers_list, hidden_widths, extras_list, hisso_windows, lsm_options))
+    grid = list(itertools.product(activations, hidden_layers_list, hidden_widths, hisso_windows, lsm_options))
 
     rows = []
     start = time.perf_counter()
@@ -136,14 +131,14 @@ def main():
     total_planned = len(args.seeds) * len(grid)
     best: Optional[dict] = None
     for seed in args.seeds:
-        for (act, hl, hw, K, win, lsm_cfg) in grid:
+        for (act, hl, hw, win, lsm_cfg) in grid:
             if time.perf_counter() - start > args.time_budget_s:
                 break
             elapsed = time.perf_counter() - start
             remaining = max(0.0, args.time_budget_s - elapsed)
             run_idx = runs + 1
             lsm_name = 'dict' if isinstance(lsm_cfg, dict) else 'none'
-            print(f"-> [{run_idx}/{total_planned}] seed={seed} act={act} hl={hl} hw={hw} K={K} lsm={lsm_name} start; time_left≈{remaining:.0f}s")
+            print(f"-> [{run_idx}/{total_planned}] seed={seed} act={act} hl={hl} hw={hw} lsm={lsm_name} start; time_left~={remaining:.0f}s")
             try:
                 row = run_config(
                     prices,
@@ -151,7 +146,6 @@ def main():
                     activation_type=act,
                     hidden_layers=hl,
                     hidden_width=hw,
-                    extras=K,
                     hisso_window=win,
                     trans_cost=trans_cost,
                     lsm_cfg=lsm_cfg,
@@ -167,7 +161,7 @@ def main():
                 if (best is None) or (row['log_return'] > best['log_return']):
                     best = row
                     print(
-                        f"   NEW BEST by test logR -> seed={seed} act={act} hl={hl} hw={hw} K={K} lsm={lsm_name} "
+                        f"   NEW BEST by test logR -> seed={seed} act={act} hl={hl} hw={hw} lsm={lsm_name} "
                         f"test_logR={row['log_return']:.4f} (val_logR={row['val_log_return']:.4f})"
                     )
             except Exception as e:
@@ -186,11 +180,11 @@ def main():
             w.writerows(rows)
         print("Saved:", out)
 
-        # Quick summary on the base slice (act=psann, K=2)
-        base = [r for r in rows if r["activation"] == "psann" and r["extras"] == 2]
+        # Quick summary on the base slice (act=psann, no LSM expander)
+        base = [r for r in rows if r["activation"] == "psann" and r["lsm"] == "none"]
         if base:
             lr = [r["log_return"] for r in base]
-            print("PSANN (K=2) test logR mean±std:", f"{stats.mean(lr):.3f} ± {stats.pstdev(lr):.3f}")
+            print("PSANN baseline test logR mean+/-std:", f"{stats.mean(lr):.3f} +/- {stats.pstdev(lr):.3f}")
     else:
         print("No runs completed within time budget.")
 

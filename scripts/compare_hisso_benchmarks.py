@@ -8,7 +8,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Tuple
+from typing import Dict, List, Mapping, Tuple
 
 
 @dataclass(frozen=True)
@@ -176,4 +176,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union
 import warnings
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 try:  # Optional scikit-learn import for API compatibility
     from sklearn.base import BaseEstimator, RegressorMixin  # type: ignore

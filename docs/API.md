@@ -135,16 +135,10 @@ Forward applies `A * exp(-d * g(z)) * sin(f * z)` with broadcast parameters.
 - `LSMConv2d(...)` / `LSMConv2dExpander(...)` - channel-preserving 2D equivalents for spatial data; the expander mirrors the dense API (tensor-aware transforms, module wrappers) and offers `score_reconstruction` for per-pixel diagnostics.
 - `build_preprocessor(value, *, allow_train=False, pretrain_epochs=0, data=None)` - normalises user input (dict/spec/module) into `(preprocessor_module, base_model)` tuples. Provides optional pretraining when `allow_train=True` and data is supplied.
 
-## psann.PSANNLanguageModel and utilities
+## Token and embedding helpers
 
-- `SimpleWordTokenizer` - whitespace tokenizer with special tokens and `fit/encode/decode` helpers.
-- `SineTokenEmbedder(embedding_dim, learnable=True, ...)` - produces sine-based token embeddings, supports resizing via `set_vocab_size`.
-- `LMConfig` - dataclass of language-model hyperparameters (`embedding_dim`, `extras_dim`, `episode_length`, etc.).
-- `PSANNLanguageModel(tokenizer, embedder, lm_cfg, hidden_layers=2, hidden_units=64, ...)`:
-  - `fit(corpus, epochs=50, lr=1e-3, noisy=None, verbose=1, ppx_every=None, ppx_temperature=None, curriculum_type=None, ...)`
-  - `predict(text, return_embedding=False)` - next-token string or embedding.
-  - `gen(prompt, max_tokens=20)` - autoregressive generation.
-  - `save(path)` / `load(path)` - persist pipeline components and learned weights.
+- `SimpleWordTokenizer` - whitespace tokenizer with `<PAD>`, `<UNK>`, `<BOS>`, `<EOS>` tokens plus `fit/encode/decode` helpers for prototyping text pipelines.
+- `SineTokenEmbedder(embedding_dim, trainable=False, base=10000.0, scale=1.0, ...)` - sine-based token embeddings with optional learnable amplitude/phase/offset parameters and lazy table materialisation via `set_vocab_size`.
 
-Perplexity is estimated with a cosine-similarity softmax against the embedding table (temperature via `ppx_temperature`). `curriculum_type="progressive_span"` limits training windows to a growing fraction of each document for warm starts.
+These utilities are exposed for experiments that need sine embeddings or lightweight tokenisation; they do not ship a full language-model trainer in this release.
 
