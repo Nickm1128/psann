@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable, Mapping, Optional, TYPE_CHECKING, Union
 
 import time
@@ -96,6 +96,11 @@ class HISSOOptions:
             supervised=supervised,
         )
 
+    def with_updates(self, **changes: Any) -> "HISSOOptions":
+        """Return a new ``HISSOOptions`` instance with selected fields replaced."""
+
+        return replace(self, **changes)
+
     def to_trainer_config(
         self,
         *,
@@ -111,6 +116,86 @@ class HISSOOptions:
             random_state=random_state,
             transition_penalty=float(self.transition_penalty),
         )
+
+
+def _coerce_context_output(
+    value: Any,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    """Convert arbitrary context outputs into a detached tensor on ``device``."""
+
+    target_dtype = dtype if dtype is not None else torch.float32
+
+    if isinstance(value, torch.Tensor):
+        tensor = value.detach()
+        if tensor.dtype != target_dtype:
+            tensor = tensor.to(dtype=target_dtype)
+        return tensor.to(device)
+
+    if isinstance(value, np.ndarray):
+        array = np.asarray(value, dtype=np.float32)
+        tensor = torch.from_numpy(array)
+        return tensor.to(device=device, dtype=target_dtype)
+
+    if isinstance(value, Mapping):
+        # Prefer common finance-style keys before falling back to the first convertible value.
+        for key in ("price_matrix", "prices", "returns", "context"):
+            if key in value:
+                try:
+                    return _coerce_context_output(value[key], device=device, dtype=target_dtype)
+                except TypeError:
+                    pass
+        for item in value.values():
+            try:
+                return _coerce_context_output(item, device=device, dtype=target_dtype)
+            except TypeError:
+                continue
+        raise TypeError("context_extractor mapping did not contain tensor-compatible values.")
+
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            try:
+                return _coerce_context_output(item, device=device, dtype=target_dtype)
+            except TypeError:
+                continue
+        raise TypeError("context_extractor sequence did not contain tensor-compatible values.")
+
+    raise TypeError(f"Unsupported context_extractor output type '{type(value).__name__}'.")
+
+
+def _call_context_extractor(
+    extractor: Optional[ContextExtractor],
+    inputs: torch.Tensor,
+) -> torch.Tensor:
+    """Invoke ``extractor`` with best-effort dtype/device handling for HISSO training."""
+
+    if extractor is None:
+        return inputs.detach()
+
+    try:
+        context = extractor(inputs)
+    except TypeError as first_exc:
+        if not isinstance(inputs, torch.Tensor):
+            raise first_exc
+        inputs_np = inputs.detach().cpu().numpy()
+        try:
+            context = extractor(inputs_np)
+        except Exception as second_exc:  # pragma: no cover - defensive fallback
+            raise first_exc from second_exc
+
+    if isinstance(context, tuple):
+        context = context[0]
+    if context is None:
+        raise TypeError("context_extractor returned None; expected tensor-like output.")
+
+    if not isinstance(inputs, torch.Tensor):
+        raise TypeError("HISSO context extraction requires tensor inputs.")
+
+    device = inputs.device
+    dtype = inputs.dtype if inputs.dtype is not None else torch.float32
+    return _coerce_context_output(context, device=device, dtype=dtype)
 
 
 def coerce_warmstart_config(
@@ -383,12 +468,7 @@ class HISSOTrainer:
         return [int(val) for val in starts_arr]
 
     def _extract_context(self, inputs: torch.Tensor) -> torch.Tensor:
-        if self.context_extractor is None:
-            return inputs.detach()
-        context = self.context_extractor(inputs)
-        if isinstance(context, tuple):
-            context = context[0]
-        return context.detach()
+        return _call_context_extractor(self.context_extractor, inputs)
 
     def _apply_primary_transform(self, primary: torch.Tensor) -> torch.Tensor:
         transform = (self.cfg.primary_transform or "identity").lower()
@@ -401,7 +481,22 @@ class HISSOTrainer:
         raise ValueError(f"Unsupported primary_transform '{self.cfg.primary_transform}'.")
 
     def _coerce_reward(self, primary: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
-        reward = self.reward_fn(primary, context)
+        actions = primary
+        ctx = context
+        if actions.ndim == 1:
+            actions = actions.unsqueeze(0).unsqueeze(-1)
+        elif actions.ndim == 2:
+            actions = actions.unsqueeze(0)
+        if ctx.ndim == 1:
+            ctx = ctx.unsqueeze(0).unsqueeze(-1)
+        elif ctx.ndim == 2:
+            ctx = ctx.unsqueeze(0)
+        ctx = ctx.to(device=actions.device, dtype=actions.dtype)
+        if actions.shape != ctx.shape:
+            raise ValueError(
+                f"HISSO reward expects actions/context with matching shape; got {tuple(actions.shape)} vs {tuple(ctx.shape)}."
+            )
+        reward = self.reward_fn(actions, ctx)
         if isinstance(reward, torch.Tensor):
             reward_tensor = reward
         else:
@@ -557,13 +652,7 @@ def hisso_evaluate_reward(
     X_np = np.asarray(X_obs, dtype=np.float32)
     inputs_t = torch.from_numpy(X_np).to(device)
 
-    if context_extractor is not None:
-        context_t = context_extractor(inputs_t)
-        if isinstance(context_t, tuple):
-            context_t = context_t[0]
-        context_t = context_t.detach()
-    else:
-        context_t = inputs_t.detach()
+    context_t = _call_context_extractor(context_extractor, inputs_t)
 
     cfg = _resolve_hisso_config(estimator, trainer_cfg)
     preds = estimator.predict(X_obs)

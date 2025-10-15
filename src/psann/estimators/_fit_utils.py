@@ -239,8 +239,15 @@ def _prepare_flatten_inputs(
             y_vec = y_arr.reshape(y_arr.shape[0], -1)
         primary_dim = int(y_vec.shape[1])
     else:
-        # HISSO without supervised targets: default to a single primary output
-        primary_dim = 1
+        if fit_args.hisso:
+            if estimator.output_shape is not None:
+                primary_dim = int(np.prod(estimator.output_shape))
+            else:
+                inferred = int(np.prod(estimator.input_shape_)) if estimator.input_shape_ else 1
+                primary_dim = max(1, inferred)
+        else:
+            # Non-HISSO regressors require explicit targets
+            primary_dim = 1
 
     prepared = PreparedInputState(
         X_flat=train_inputs,
