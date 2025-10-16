@@ -1,0 +1,10 @@
+Paths excluded from version control for testing:
+- datasets/
+- datasets.zip
+- colab_results_light/
+- outputs/
+- outputs_non_visual_data.zip
+- tmp_extract/
+- tmp_outputs/
+
+These directories and files can be removed when their temporary testing data is no longer needed.

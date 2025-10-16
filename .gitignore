@@ -26,3 +26,12 @@ tmp_patch.txt
 .ipynb_checkpoints/
 *.nbconvert.ipynb
 **/outputs/*.ipynb
+
+# Local testing datasets and outputs
+datasets/
+datasets.zip
+colab_results_light/
+outputs/
+outputs_non_visual_data.zip
+tmp_extract/
+tmp_outputs/
