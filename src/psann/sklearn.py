@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union, Literal
 import warnings
 
 import numpy as np
@@ -39,6 +39,7 @@ except Exception:  # Fallbacks if sklearn isn't installed at runtime
             return 1.0 - (u / v if v != 0 else np.nan)
 
 from .nn import PSANNNet, WithPreprocessor, ResidualPSANNNet
+from .models import WaveResNet
 from .conv import PSANNConv1dNet, PSANNConv2dNet, PSANNConv3dNet, ResidualPSANNConv2dNet
 from .utils import choose_device, seed_all
 from .types import ActivationConfig, LossLike, NoiseSpec, ScalerSpec
@@ -1307,6 +1308,170 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
 
         estimator._hisso_trainer_ = None
         return estimator
+
+class WaveResNetRegressor(PSANNRegressor):
+    """Sklearn-style regressor that wraps the WaveResNet backbone."""
+
+    def __init__(
+        self,
+        *,
+        hidden_layers: int = 6,
+        hidden_width: Optional[int] = None,
+        hidden_units: Optional[int] = None,
+        epochs: int = 200,
+        batch_size: int = 128,
+        lr: float = 1e-3,
+        optimizer: str = "adam",
+        weight_decay: float = 0.0,
+        activation: Optional[ActivationConfig] = None,
+        device: str | torch.device = "auto",
+        random_state: Optional[int] = None,
+        early_stopping: bool = False,
+        patience: int = 20,
+        num_workers: int = 0,
+        loss: LossLike = "mse",
+        loss_params: Optional[Dict[str, Any]] = None,
+        loss_reduction: str = "mean",
+        w0: float = 30.0,
+        preserve_shape: bool = False,
+        data_format: str = "channels_first",
+        conv_kernel_size: int = 1,
+        conv_channels: Optional[int] = None,
+        per_element: bool = False,
+        activation_type: str = "psann",
+        stateful: bool = False,
+        state: Optional[Union[StateConfig, Mapping[str, Any]]] = None,
+        state_reset: str = "batch",
+        stream_lr: Optional[float] = None,
+        output_shape: Optional[Tuple[int, ...]] = None,
+        lsm: Optional[PreprocessorLike] = None,
+        lsm_train: bool = False,
+        lsm_pretrain_epochs: int = 0,
+        lsm_lr: Optional[float] = None,
+        warm_start: bool = False,
+        scaler: Optional[ScalerSpec] = None,
+        scaler_params: Optional[Dict[str, Any]] = None,
+        first_layer_w0: float = 30.0,
+        hidden_w0: float = 1.0,
+        norm: Literal["none", "weight", "rms"] = "none",
+        use_film: bool = True,
+        use_phase_shift: bool = True,
+        dropout: float = 0.0,
+        context_dim: Optional[int] = None,
+    ) -> None:
+        if preserve_shape:
+            raise ValueError("WaveResNetRegressor currently supports preserve_shape=False.")
+        if per_element:
+            raise ValueError("WaveResNetRegressor does not support per_element=True.")
+        if conv_channels is not None:
+            warnings.warn(
+                "conv_channels has no effect for WaveResNetRegressor; ignoring value.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        if conv_kernel_size != 1:
+            warnings.warn(
+                "conv_kernel_size has no effect for WaveResNetRegressor; ignoring value.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+        norm_value = str(norm).lower()
+        if norm_value not in {"none", "weight", "rms"}:
+            raise ValueError("norm must be one of {'none', 'weight', 'rms'}.")
+
+        if context_dim is None:
+            context_val = None
+        else:
+            context_val = int(context_dim)
+            if context_val <= 0:
+                raise ValueError("context_dim must be positive when provided.")
+
+        if stateful or state is not None:
+            warnings.warn(
+                "WaveResNetRegressor does not support stateful configurations; ignoring state/stateful.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        stateful_flag = False
+        state_cfg = None
+
+        super().__init__(
+            hidden_layers=hidden_layers,
+            hidden_width=hidden_width,
+            hidden_units=hidden_units,
+            epochs=epochs,
+            batch_size=batch_size,
+            lr=lr,
+            optimizer=optimizer,
+            weight_decay=weight_decay,
+            activation=activation,
+            device=device,
+            random_state=random_state,
+            early_stopping=early_stopping,
+            patience=patience,
+            num_workers=num_workers,
+            loss=loss,
+            loss_params=loss_params,
+            loss_reduction=loss_reduction,
+            w0=w0,
+            preserve_shape=False,
+            data_format=data_format,
+            conv_kernel_size=1,
+            conv_channels=None,
+            per_element=False,
+            activation_type=activation_type,
+            stateful=stateful_flag,
+            state=state_cfg,
+            state_reset=state_reset,
+            stream_lr=stream_lr,
+            output_shape=output_shape,
+            lsm=lsm,
+            lsm_train=lsm_train,
+            lsm_pretrain_epochs=lsm_pretrain_epochs,
+            lsm_lr=lsm_lr,
+            warm_start=warm_start,
+            scaler=scaler,
+            scaler_params=scaler_params,
+        )
+
+        self.first_layer_w0 = float(first_layer_w0)
+        self.hidden_w0 = float(hidden_w0)
+        self.norm = norm_value
+        self.use_film = bool(use_film)
+        self.use_phase_shift = bool(use_phase_shift)
+        self.dropout = float(dropout)
+        self.context_dim = context_val
+
+        self._wave_hidden_dim = int(self.hidden_units)
+
+    def _build_dense_core(
+        self,
+        input_dim: int,
+        output_dim: int,
+        *,
+        state_cfg: Optional[Dict[str, Any]] = None,
+    ) -> nn.Module:
+        if state_cfg is not None:
+            warnings.warn(
+                "WaveResNetRegressor ignores state_cfg; WaveResNet does not expose external state.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        return WaveResNet(
+            input_dim=int(input_dim),
+            hidden_dim=int(self._wave_hidden_dim),
+            depth=int(self.hidden_layers),
+            output_dim=int(output_dim),
+            first_layer_w0=self.first_layer_w0,
+            hidden_w0=self.hidden_w0,
+            context_dim=self.context_dim,
+            norm=self.norm,
+            use_film=self.use_film,
+            use_phase_shift=self.use_phase_shift,
+            dropout=self.dropout,
+        )
+
 
 class ResPSANNRegressor(PSANNRegressor):
     """Sklearn-style regressor using ResidualPSANNNet core.

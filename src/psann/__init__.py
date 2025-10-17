@@ -4,7 +4,7 @@ Top-level package exports the primary-output sklearn estimators, expanders,
 episodic trainers, and diagnostic utilities."""
 
 # Estimator surfaces
-from .sklearn import PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor
+from .sklearn import PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor, WaveResNetRegressor
 
 # Feature expanders and activation configs
 from .lsm import LSM, LSMExpander, LSMConv2d, LSMConv2dExpander
@@ -54,6 +54,7 @@ __all__ = [
     "PSANNRegressor",
     "ResPSANNRegressor",
     "ResConvPSANNRegressor",
+    "WaveResNetRegressor",
     # Expanders / activation configs
     "LSM",
     "LSMExpander",
