@@ -27,7 +27,6 @@ import sys
 from pathlib import Path
 from typing import Iterable, Optional
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 INIT_PATH = ROOT / "src" / "psann" / "__init__.py"

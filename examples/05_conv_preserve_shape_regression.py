@@ -36,4 +36,3 @@ if __name__ == "__main__":
 
     model.fit(X_train, y_train, verbose=1)
     print("R^2:", model.score(X_test, y_test))
-

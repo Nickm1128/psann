@@ -12,6 +12,7 @@ Quick links:
 - API reference: `docs/API.md`
 - Scenario walkthroughs: `docs/examples/README.md`
 - Migration notes: `docs/migration.md`
+- Results compendium: `docs/PSANN_Results_Compendium.md`
 - Contributor guide: `docs/CONTRIBUTING.md`
 - Technical design notes: `TECHNICAL_DETAILS.md`
 
@@ -28,15 +29,15 @@ pip install -e .                # editable install from source
 Optional extras in `pyproject.toml`:
 - `psann[sklearn]`: adds scikit-learn conveniences for estimator mixins and metrics.
 - `psann[viz]`: plotting helpers used in benchmarks and notebooks.
-- `psann[dev]`: pytest, ruff, black.
+- `psann[dev]`: pytest, ruff, black, coverage, build, pre-commit tooling.
 
-Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibility constraints:
+Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibility extra:
 
 ```bash
-pip install -e . -c requirements-compat.txt
+pip install -e .[compat]
 ```
 
-`pyproject.toml` is the authoritative dependency list. `requirements-compat.txt` mirrors the newest widely available wheels for NumPy, SciPy, and scikit-learn when you need lockstep installs.
+The `compat` extra pins NumPy, SciPy, scikit-learn, and PyTorch to the newest widely available wheels while keeping `pyproject.toml` as the single source of truth.
 
 ## Running Tests
 
@@ -47,13 +48,26 @@ pip install -e .[dev]
 python -m pytest
 ```
 
+HISSO integration suites are marked as `slow`; skip them during quick iterations with:
+
+```bash
+python -m pytest -m "not slow"
+```
+
 The suite exercises the supported supervised, streaming, and HISSO flows. GPU-specific checks are skipped automatically when CUDA is unavailable.
 
 Common linting commands:
 
 ```bash
-python -m ruff check src tests examples
-python -m ruff format --check .
+python -m ruff check src tests scripts examples
+python -m black --check src tests scripts examples
+```
+
+Set up local hooks (formatting, linting, notebook output stripping) with `pre-commit`:
+
+```bash
+pre-commit install
+pre-commit run --all-files  # optional one-time sweep
 ```
 
 ## Quick Start
@@ -168,4 +182,15 @@ The project ships CPU benchmark baselines (`docs/benchmarks/`) and CI scripts (`
 - Predictive extras and growth schedules are gone; legacy `extras_*` arguments are accepted but ignored with warnings for backward compatibility.
 - Terminology has converged on `transition_penalty` within HISSO; the `trans_cost` alias still functions but will be removed in a later release.
 - CPU benchmarks run in CI; GPU baselines remain on the roadmap once shared hardware is available.
-- Upcoming work highlighted in `CLEANUP_TODO.md` includes broader reward coverage, lint/type sweeps, and release tooling improvements.
+- Upcoming work highlighted in `REPO_CLEANUP_TODO.md` includes broader reward coverage, lint/type sweeps, and release tooling improvements.
+
+### Reproducibility
+
+The notebook **PSANN_Parity_and_Probes.ipynb** (now under `notebooks/`) reproduces all key results under compute parity.  
+- **Release:** [v1.0.0](https://github.com/Nickm1128/psann/releases/tag/v1.0.0)  
+- **DOI:** [doi.org/10.5281/zenodo.17391523](https://doi.org/doi.org/10.5281/zenodo.17391523)  
+- **Permalink:** [GitHub](https://github.com/Nickm1128/psann/blob/v1.0.0/notebooks/PSANN_Parity_and_Probes.ipynb)  
+- **Render:** [nbviewer](https://nbviewer.org/github/Nickm1128/psann/blob/v1.0.0/notebooks/PSANN_Parity_and_Probes.ipynb)  
+- **Run:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/v1.0.0/notebooks/PSANN_Parity_and_Probes.ipynb)
+
+Experiments used **Python 3.9**, dependencies pinned in `pyproject.toml` (install `[compat]` for constrained environments).

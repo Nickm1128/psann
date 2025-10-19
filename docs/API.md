@@ -1,6 +1,6 @@
 # PSANN API Reference
 
-Install with `pip install psann[sklearn]` when you need scikit-learn conveniences; the base wheel only depends on NumPy and PyTorch. For pinned environments use `pip install -e . -c requirements-compat.txt` as documented in the README. This document summarises the public, user-facing API of `psann` with parameter names, expected shapes, and behavioural notes.
+Install with `pip install psann[sklearn]` when you need scikit-learn conveniences; the base wheel only depends on NumPy and PyTorch. For pinned environments use the compatibility extra (`pip install -e .[compat]`) as documented in the README. This document summarises the public, user-facing API of `psann` with parameter names, expected shapes, and behavioural notes.
 
 ## psann.PSANNRegressor
 

@@ -31,7 +31,9 @@ def run_training_loop(
     val_inputs: Optional[torch.Tensor] = None,
     val_targets: Optional[torch.Tensor] = None,
     gradient_hook: Optional[Callable[[torch.nn.Module], None]] = None,
-    epoch_callback: Optional[Callable[[int, float, Optional[float], bool, Optional[int]], None]] = None,
+    epoch_callback: Optional[
+        Callable[[int, float, Optional[float], bool, Optional[int]], None]
+    ] = None,
 ) -> Tuple[float, Optional[dict]]:
     """Run the shared PSANN training loop."""
 
@@ -95,7 +97,9 @@ def run_training_loop(
         metric = val_loss if val_loss is not None else train_loss
         if cfg.verbose:
             if val_loss is not None:
-                print(f"Epoch {epoch + 1}/{cfg.epochs} - loss: {train_loss:.6f} - val_loss: {val_loss:.6f}")
+                print(
+                    f"Epoch {epoch + 1}/{cfg.epochs} - loss: {train_loss:.6f} - val_loss: {val_loss:.6f}"
+                )
             else:
                 print(f"Epoch {epoch + 1}/{cfg.epochs} - loss: {train_loss:.6f}")
 

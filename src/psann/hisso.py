@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Any, Iterable, Mapping, Optional, TYPE_CHECKING, Union
-
 import time
 import warnings
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any, Iterable, Mapping, Optional, Union
 
 import numpy as np
 import torch
@@ -578,9 +577,7 @@ def _resolve_primary_transform(
     return None
 
 
-def _apply_primary_transform_numpy(
-    values: np.ndarray, transform: Optional[str]
-) -> np.ndarray:
+def _apply_primary_transform_numpy(values: np.ndarray, transform: Optional[str]) -> np.ndarray:
     """Apply the configured primary transform in numpy space."""
 
     arr = np.asarray(values, dtype=np.float32)
@@ -669,7 +666,7 @@ def hisso_evaluate_reward(
 
 
 def ensure_hisso_trainer_config(
-    value: Union[HISSOTrainerConfig, Mapping[str, Any], Any]
+    value: Union[HISSOTrainerConfig, Mapping[str, Any], Any],
 ) -> HISSOTrainerConfig:
     """Coerce persisted metadata into a HISSOTrainerConfig instance."""
 
@@ -678,7 +675,9 @@ def ensure_hisso_trainer_config(
     if isinstance(value, Mapping):
         return HISSOTrainerConfig(
             episode_length=int(value.get("episode_length", 64)),
-            episodes_per_batch=int(value.get("episodes_per_batch", value.get("batch_episodes", 32))),
+            episodes_per_batch=int(
+                value.get("episodes_per_batch", value.get("batch_episodes", 32))
+            ),
             primary_dim=int(value.get("primary_dim", 1)),
             primary_transform=str(value.get("primary_transform", "identity")),
             random_state=value.get("random_state", None),

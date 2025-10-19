@@ -4,8 +4,8 @@ Synthetic datasets for quick PSANN experiments.
 
 from __future__ import annotations
 
-from typing import Tuple
 import math
+from typing import Tuple
 
 import torch
 

@@ -14,7 +14,12 @@ import torch
 
 from .diagnostics import jacobian_spectrum, mutual_info_proxy, ntk_eigens, participation_ratio
 from .linear_probe import encode_and_probe, fit_linear_probe
-from .synthetic import make_context_rotating_moons, make_regime_switch_ts, make_drift_series, make_shock_series
+from .synthetic import (
+    make_context_rotating_moons,
+    make_drift_series,
+    make_regime_switch_ts,
+    make_shock_series,
+)
 
 __all__ = [
     "choose_device",

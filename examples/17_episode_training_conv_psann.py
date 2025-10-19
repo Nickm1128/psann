@@ -8,7 +8,8 @@ global averaging spatial dimensions per channel.
 
 import numpy as np
 import torch
-from psann import PSANNRegressor, EpisodeConfig, make_episode_trainer_from_estimator
+
+from psann import EpisodeConfig, PSANNRegressor, make_episode_trainer_from_estimator
 
 
 def make_spatial_prices(T=4000, H=8, W=8, seed=1):
@@ -57,9 +58,7 @@ if __name__ == "__main__":
         spatial_pool="mean",
         random_state=0,
     )
-    trainer = make_episode_trainer_from_estimator(
-        est, ep_cfg=cfg, lr=1e-3
-    )
+    trainer = make_episode_trainer_from_estimator(est, ep_cfg=cfg, lr=1e-3)
     # Attach price extractor
     trainer.price_extractor = price_extractor_channels_first
 

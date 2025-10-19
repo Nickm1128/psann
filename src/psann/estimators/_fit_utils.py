@@ -16,8 +16,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from ..nn import WithPreprocessor
-from ..training import TrainingLoopConfig, run_training_loop
 from ..hisso import (
     HISSOOptions,
     HISSOTrainer,
@@ -26,7 +24,9 @@ from ..hisso import (
     run_hisso_supervised_warmstart,
     run_hisso_training,
 )
-from ..types import NoiseSpec, HISSOFitParams
+from ..nn import WithPreprocessor
+from ..training import TrainingLoopConfig, run_training_loop
+from ..types import HISSOFitParams, NoiseSpec
 
 if TYPE_CHECKING:
     from ..sklearn import PSANNRegressor
@@ -343,12 +343,9 @@ def _prepare_preserve_shape_inputs(
 
     X_flat = estimator._flatten(X).astype(np.float32, copy=False)
     use_cf_inputs = bool(
-        estimator.per_element
-        or getattr(estimator, "_use_channel_first_train_inputs_", False)
+        estimator.per_element or getattr(estimator, "_use_channel_first_train_inputs_", False)
     )
-    train_inputs = (
-        X_cf.astype(np.float32, copy=False) if use_cf_inputs else X_flat
-    )
+    train_inputs = X_cf.astype(np.float32, copy=False) if use_cf_inputs else X_flat
 
     if use_cf_inputs and y_cf is not None:
         train_targets = y_cf
@@ -468,9 +465,7 @@ def run_hisso_stage(
     device = estimator._device()
     inputs_arr = plan.inputs
 
-    warm_cfg = coerce_warmstart_config(
-        plan.options.supervised, fit_args.y
-    )
+    warm_cfg = coerce_warmstart_config(plan.options.supervised, fit_args.y)
     if warm_cfg is not None:
         run_hisso_supervised_warmstart(
             estimator,
@@ -571,6 +566,14 @@ def run_supervised_training(
         lr_min=None if fit_args.lr_min is None else float(fit_args.lr_min),
     )
 
+    gradient_hook = getattr(estimator, "gradient_hook", None)
+    if not callable(gradient_hook):
+        gradient_hook = None
+
+    epoch_callback = getattr(estimator, "epoch_callback", None)
+    if not callable(epoch_callback):
+        epoch_callback = None
+
     history, best_state = run_training_loop(
         model,
         optimizer=optimizer,
@@ -581,6 +584,8 @@ def run_supervised_training(
         noise_std=noise_std_t,
         val_inputs=val_inputs,
         val_targets=val_targets_t,
+        gradient_hook=gradient_hook,
+        epoch_callback=epoch_callback,
     )
 
     estimator.history_ = history
@@ -600,22 +605,14 @@ def run_supervised_training(
 # ---------------------------------------------------------------------------
 
 
-def _build_optimizer(
-    estimator: "PSANNRegressor", model: nn.Module
-) -> torch.optim.Optimizer:
-    if (
-        estimator.lsm_train
-        and isinstance(model, WithPreprocessor)
-        and model.preproc is not None
-    ):
+def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.optim.Optimizer:
+    if estimator.lsm_train and isinstance(model, WithPreprocessor) and model.preproc is not None:
         params = [
             {"params": model.core.parameters(), "lr": float(estimator.lr)},
             {
                 "params": model.preproc.parameters(),
                 "lr": (
-                    float(estimator.lsm_lr)
-                    if estimator.lsm_lr is not None
-                    else float(estimator.lr)
+                    float(estimator.lsm_lr) if estimator.lsm_lr is not None else float(estimator.lr)
                 ),
             },
         ]
@@ -642,11 +639,7 @@ def _prepare_validation_tensors(
     y_val = np.asarray(validation[1], dtype=np.float32)
 
     if estimator.preserve_shape:
-        X_val_cf = (
-            np.moveaxis(X_val, -1, 1)
-            if estimator.data_format == "channels_last"
-            else X_val
-        )
+        X_val_cf = np.moveaxis(X_val, -1, 1) if estimator.data_format == "channels_last" else X_val
         if prepared.internal_shape_cf is None:
             raise ValueError(
                 "PreparedInputState missing channels-first shape for preserve_shape=True."
@@ -673,13 +666,9 @@ def _prepare_validation_tensors(
                     raise ValueError(
                         "validation y must match X spatial dims, optional channel first."
                     )
-            y_val_t = torch.from_numpy(y_val_cf.astype(np.float32, copy=False)).to(
-                device
-            )
+            y_val_t = torch.from_numpy(y_val_cf.astype(np.float32, copy=False)).to(device)
         else:
-            y_val_flat = y_val.reshape(y_val.shape[0], -1).astype(
-                np.float32, copy=False
-            )
+            y_val_flat = y_val.reshape(y_val.shape[0], -1).astype(np.float32, copy=False)
             y_val_t = torch.from_numpy(y_val_flat).to(device)
         return X_val_t, y_val_t
 

@@ -4,46 +4,47 @@ Top-level package exports the primary-output sklearn estimators, expanders,
 episodic trainers, and diagnostic utilities."""
 
 # Estimator surfaces
-from .sklearn import PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor, WaveResNetRegressor
-
-# Feature expanders and activation configs
-from .lsm import LSM, LSMExpander, LSMConv2d, LSMConv2dExpander
 from .activations import SineParam
-from .types import ActivationConfig
-from .state import StateConfig
+from .embeddings import SineTokenEmbedder
 
 # Episodic training and reward strategies
 from .episodes import (
-    EpisodeTrainer,
     EpisodeConfig,
+    EpisodeTrainer,
+    make_episode_trainer_from_estimator,
     multiplicative_return_reward,
     portfolio_log_return_reward,
-    make_episode_trainer_from_estimator,
 )
-from .rewards import (
-    RewardStrategyBundle,
-    FINANCE_PORTFOLIO_STRATEGY,
-    get_reward_strategy,
-    register_reward_strategy,
-)
-from .hisso import HISSOOptions, hisso_infer_series, hisso_evaluate_reward
-# Token utilities
-from .tokenizer import SimpleWordTokenizer
-from .embeddings import SineTokenEmbedder
+from .hisso import HISSOOptions, hisso_evaluate_reward, hisso_infer_series
 
 # Initialisation helpers
 from .initializers import apply_siren_init, siren_uniform_
 
+# Feature expanders and activation configs
+from .lsm import LSM, LSMConv2d, LSMConv2dExpander, LSMExpander
+
 # Core models and analysis helpers
 from .models import WaveEncoder, WaveResNet, WaveRNNCell, build_wave_resnet, scan_regimes
+from .rewards import (
+    FINANCE_PORTFOLIO_STRATEGY,
+    RewardStrategyBundle,
+    get_reward_strategy,
+    register_reward_strategy,
+)
+from .sklearn import PSANNRegressor, ResConvPSANNRegressor, ResPSANNRegressor, WaveResNetRegressor
+from .state import StateConfig, StateController, ensure_state_config
+
+# Token utilities
+from .tokenizer import SimpleWordTokenizer
+from .types import ActivationConfig
 from .utils import (
     encode_and_probe,
     fit_linear_probe,
     jacobian_spectrum,
     make_context_rotating_moons,
     make_drift_series,
-    make_shock_series,
     make_regime_switch_ts,
+    make_shock_series,
     mutual_info_proxy,
     ntk_eigens,
     participation_ratio,
@@ -63,6 +64,8 @@ __all__ = [
     "SineParam",
     "ActivationConfig",
     "StateConfig",
+    "StateController",
+    "ensure_state_config",
     # Episodic training & rewards
     "EpisodeTrainer",
     "EpisodeConfig",
@@ -101,4 +104,4 @@ __all__ = [
     "make_regime_switch_ts",
 ]
 
-__version__ = "0.10.3"
+__version__ = "0.10.5"

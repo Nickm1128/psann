@@ -10,4 +10,3 @@ def test_sineparam_forward_shape():
     x = torch.randn(4, 8)
     y = act(x)
     assert y.shape == (4, 8)
-

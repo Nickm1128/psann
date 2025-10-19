@@ -29,10 +29,10 @@ if __name__ == "__main__":
         stateful=True,
         state={
             "init": 1.0,
-            "rho": 0.98,      # persistence
-            "beta": 1.0,      # update scale from |activation|
-            "max_abs": 3.0,   # intelligent clipping bound
-            "detach": True,   # no BPTT across steps (recommended for long sequences)
+            "rho": 0.98,  # persistence
+            "beta": 1.0,  # update scale from |activation|
+            "max_abs": 3.0,  # intelligent clipping bound
+            "detach": True,  # no BPTT across steps (recommended for long sequences)
         },
         state_reset="none",  # carry state across batches for sequence-wise behavior
     )

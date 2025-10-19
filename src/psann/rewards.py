@@ -24,7 +24,9 @@ class RewardStrategyBundle:
 _STRATEGY_REGISTRY: Dict[str, RewardStrategyBundle] = {}
 
 
-def register_reward_strategy(name: str, bundle: RewardStrategyBundle, *, overwrite: bool = False) -> None:
+def register_reward_strategy(
+    name: str, bundle: RewardStrategyBundle, *, overwrite: bool = False
+) -> None:
     """Register a named reward strategy bundle.
 
     Parameters

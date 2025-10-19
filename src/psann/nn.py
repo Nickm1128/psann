@@ -5,10 +5,10 @@ from typing import Any, Dict, Mapping, Optional, Union
 import torch
 import torch.nn as nn
 
-from .activations import SineParam
-from .utils import init_siren_linear_
-from .state import StateConfig, StateController, ensure_state_config
 from ._aliases import resolve_int_alias
+from .activations import SineParam
+from .state import StateConfig, StateController, ensure_state_config
+from .utils import init_siren_linear_
 
 
 class RMSNorm(nn.Module):
@@ -91,6 +91,7 @@ class ResidualPSANNBlock(nn.Module):
         h = self.drop_path(h)
         return x + self.alpha * h
 
+
 class ResidualPSANNNet(nn.Module):
     def __init__(
         self,
@@ -134,7 +135,9 @@ class ResidualPSANNNet(nn.Module):
         # Stack of residual blocks
         blocks = []
         for i in range(hidden_layers):
-            dp = float(drop_path_max) * (i / max(1, hidden_layers - 1)) if hidden_layers > 1 else 0.0
+            dp = (
+                float(drop_path_max) * (i / max(1, hidden_layers - 1)) if hidden_layers > 1 else 0.0
+            )
             blk = ResidualPSANNBlock(
                 hidden_width,
                 act_kw=act_kw,
@@ -146,7 +149,11 @@ class ResidualPSANNNet(nn.Module):
             )
             blocks.append(blk)
         self.body = nn.Sequential(*blocks)
-        self.head_norm = nn.LayerNorm(hidden_width) if norm == "layer" else (RMSNorm(hidden_width) if norm == "rms" else nn.Identity())
+        self.head_norm = (
+            nn.LayerNorm(hidden_width)
+            if norm == "layer"
+            else (RMSNorm(hidden_width) if norm == "rms" else nn.Identity())
+        )
         self.head = nn.Linear(hidden_width, output_dim)
         init_siren_linear_(self.head, is_first=False, w0=w0_hidden)
 
@@ -155,6 +162,7 @@ class ResidualPSANNNet(nn.Module):
         z = self.body(z) if len(self.body) > 0 else z
         z = self.head_norm(z)
         return self.head(z)
+
 
 class PSANNBlock(nn.Module):
     """Linear layer followed by parameterized sine activation.
@@ -232,7 +240,13 @@ class PSANNNet(nn.Module):
         layers = []
         prev = input_dim
         for i in range(hidden_layers):
-            block = PSANNBlock(prev, hidden_width, act_kw=act_kw, state_cfg=state_cfg, activation_type=activation_type)
+            block = PSANNBlock(
+                prev,
+                hidden_width,
+                act_kw=act_kw,
+                state_cfg=state_cfg,
+                activation_type=activation_type,
+            )
             layers.append(block)
             prev = hidden_width
         self.body = nn.Sequential(*layers)

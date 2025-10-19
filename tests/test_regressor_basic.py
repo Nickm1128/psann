@@ -39,4 +39,3 @@ def test_fit_predict_score_smoke():
     # should achieve a reasonable score
     score = model.score(X_test, y_test)
     assert score > 0.3
-

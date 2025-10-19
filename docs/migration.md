@@ -4,6 +4,12 @@ Guidance for upgrading projects to the refactored training surface introduced af
 
 ## What changed
 
+- **0.10.5 housekeeping (2025-10-19)**  
+  - Development tooling extras now install coverage and build so CI can publish coverage reports and validate wheels.  
+  - HISSO integration tests are marked `slow` to unblock quick `pytest -m "not slow"` iterations while the refactor settles.  
+  - GitHub Actions runs Ruff/Black across the full tree, captures coverage on Python 3.11, and uploads built artifacts.  
+  - Benchmark data provenance moved into `benchmarks/README.md` with a helper downloader; legacy Colab instructions live under `docs/archive/`.
+
 - **Primary-output pipeline** - predictive extras and growth schedules were removed. Constructors ignore legacy `extras_*` arguments and emit warnings so downstream projects can detect stale configuration.
 - **Shared fit helpers** - all estimators route through `normalise_fit_args`, `prepare_inputs_and_scaler`, `build_model_from_hooks`, and `run_supervised_training`. Custom loops should import these helpers instead of copying logic from `PSANNRegressor.fit`.
 - **HISSO options** - episodic runs resolve reward, transform, noise, and warm-start settings via `HISSOOptions`. The public API still uses familiar keyword arguments (`hisso_window`, `hisso_reward_fn`, etc.), but the resolved options are now stored for evaluation helpers.

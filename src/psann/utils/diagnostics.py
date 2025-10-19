@@ -25,7 +25,9 @@ def jacobian_spectrum(
     eigvals = torch.clamp(eigvals, min=0.0).flip(0)
     top_vals = eigvals[: min(topk, eigvals.numel())]
     condition = float(
-        (top_vals[0] / top_vals[-1]).item() if top_vals.numel() > 1 and top_vals[-1] > 0 else math.inf
+        (top_vals[0] / top_vals[-1]).item()
+        if top_vals.numel() > 1 and top_vals[-1] > 0
+        else math.inf
     )
     return {
         "top_eigs": top_vals.cpu(),

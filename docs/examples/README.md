@@ -1,6 +1,6 @@
 # PSANN Examples
 
-All examples live in the top-level `examples/` directory and can be executed with `python examples/<number>_<name>.py`. Create a virtual environment, install the project in editable mode, and run the scripts from the project root so relative paths resolve correctly.
+All examples live in the top-level `examples/` directory and can be executed with `python examples/<number>_<name>.py`. Create a virtual environment, install the project in editable mode, and run the scripts from the project root so relative paths resolve correctly. Scripts print progress/results to stdout and avoid writing logs by default. Where an export is useful (e.g. aggregate benchmark metrics) the CLI now requires an explicit `--out` flag so the repository stays clean.
 
 ```bash
 python -m venv .venv
@@ -11,38 +11,38 @@ python examples/21_psann_config_benchmark.py
 
 The curated set below replaces the legacy predictive-extras walkthroughs. Any references to extras heads, growth schedules, or deprecated CLI flags have been removed from the documentation and code comments.
 
-## Core supervised and streaming workflows
+## Core supervised and streaming workflows (≤ ~2 min CPU each)
 
-- **01_basic_regression.py** - minimal PSANNRegressor fit on a synthetic one-dimensional regression task.
-- **05_conv_preserve_shape_regression.py** - convolution-preserving variant that keeps spatial structure instead of flattening.
-- **07_recurrent_forecasting.py** - stateful PSANN with a teacher-forced rollout for sequence prediction.
-- **12_online_streaming_updates.py** - demonstrates streaming updates with `step(..., update_params=True)` and `stream_lr` enabled.
-- **13_online_vs_freerun_plot.py** - compares online adaptation against free-running predictions on the same series.
-- **14_psann_with_vs_without_lsm.py** - contrasts a baseline PSANN with a frozen LSM expander preprocessing stage.
+- **01_basic_regression.py** — minimal PSANNRegressor fit on a synthetic one-dimensional regression task (~15 s).
+- **05_conv_preserve_shape_regression.py** — convolution-preserving variant that keeps spatial structure instead of flattening (~35 s).
+- **07_recurrent_forecasting.py** — stateful PSANN with a teacher-forced rollout for sequence prediction (~70 s).
+- **12_online_streaming_updates.py** — demonstrates streaming updates with `step(..., update_params=True)` and `stream_lr` enabled (~45 s).
+- **13_online_vs_freerun_plot.py** — compares online adaptation against free-running predictions on the same series (~60 s).
+- **14_psann_with_vs_without_lsm.py** — contrasts a baseline PSANN with a frozen LSM expander preprocessing stage (~90 s).
 
 These scripts share the refactored helper pipeline (`normalise_fit_args`, `prepare_inputs_and_scaler`) and stick to primary targets only.
 
-## HISSO policies and episodic evaluation
+## HISSO policies and episodic evaluation (≤ ~3 min CPU)
 
-- **15_episode_training_portfolio.py** - baseline dense HISSO policy on synthetic price data with supervised warm start.
-- **16_episode_training_psann_vs_lsm.py** - compares dense PSANN and LSM-augmented variants under the same reward bundle.
-- **17_episode_training_conv_psann.py** - convolutional HISSO example that preserves spatial structure while optimising rewards.
-- **26_hisso_unsupervised_allocation.py** - unsupervised HISSO training on synthetic prices that relies exclusively on the reward registry.
-- **27_hisso_lsm_allocation.py** - attaches an LSM expander before HISSO to illustrate hybrid preprocessing + episodic optimisation.
+- **15_episode_training_portfolio.py** — baseline dense HISSO policy on synthetic price data with supervised warm start (~2 min).
+- **16_episode_training_psann_vs_lsm.py** — compares dense PSANN and LSM-augmented variants under the same reward bundle (~2.5 min).
+- **17_episode_training_conv_psann.py** — convolutional HISSO example that preserves spatial structure while optimising rewards (~2.5 min).
+- **26_hisso_unsupervised_allocation.py** — unsupervised HISSO training on synthetic prices that relies exclusively on the reward registry (~2 min).
+- **27_hisso_lsm_allocation.py** — attaches an LSM expander before HISSO to illustrate hybrid preprocessing + episodic optimisation (~2.5 min).
 
 Each HISSO script uses the neutral terminology (`transition_penalty`) and the shared helpers introduced with `HISSOOptions`. After training, utilities such as `psann.hisso.hisso_infer_series` and `psann.hisso.hisso_evaluate_reward` reuse the stored configuration.
 
 ## Benchmarks and profiling
 
-- **21_psann_config_benchmark.py** - sweeps PSANN configurations and records results to CSV/JSON; serves as the basis for automated benchmark comparison.
-- **scripts/compare_hisso_benchmarks.py** - CLI helper that diff-checks new HISSO runs against the stored baselines.
-- **docs/benchmarks/hisso_variants.md** - human-readable summary of the CPU portfolio sweep captured in CI.
+- **21_psann_config_benchmark.py** — sweeps PSANN configurations and (optionally) writes results; default 300 s budget keeps runs ≲5 min on CPU, increase `--time_budget_s` to explore more settings. Specify `--out path.csv` to persist results.
+- **scripts/compare_hisso_benchmarks.py** — CLI helper that diff-checks new HISSO runs against the stored baselines.
+- **docs/benchmarks/hisso_variants.md** — human-readable summary of the CPU portfolio sweep captured in CI.
 
 Run the benchmark scripts from the project root; outputs land under `docs/benchmarks/` and are checked in to catch regressions.
 
 ## Diagnostics
 
-- **WaveResNet diagnostics (docs/wave_resnet.md)** - covers Jacobian/NTK utilities, participation ratio, and mutual information probes for backbone analysis.
+- **WaveResNet diagnostics (docs/wave_resnet.md)** — covers Jacobian/NTK utilities, participation ratio, and mutual information probes for backbone analysis.
 
 ## Retired content
 

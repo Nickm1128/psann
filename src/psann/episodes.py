@@ -16,7 +16,9 @@ def _to_tensor(x: np.ndarray, device: torch.device) -> torch.Tensor:
     return torch.from_numpy(np.asarray(x, dtype=np.float32)).to(device)
 
 
-def _alloc_transform(logits: torch.Tensor, kind: str = "softmax", eps: float = 1e-8) -> torch.Tensor:
+def _alloc_transform(
+    logits: torch.Tensor, kind: str = "softmax", eps: float = 1e-8
+) -> torch.Tensor:
     """Map unconstrained logits to a simplex allocation along the last dim.
 
     - softmax: standard softmax, strictly positive, sums to 1
@@ -40,8 +42,7 @@ class RewardStrategy(Protocol):
         context: torch.Tensor,
         *,
         transition_penalty: float = 0.0,
-    ) -> torch.Tensor:
-        ...
+    ) -> torch.Tensor: ...
 
 
 def _resolve_reward_kwarg(reward_fn: Callable[..., torch.Tensor]) -> Optional[str]:
@@ -131,14 +132,13 @@ def portfolio_log_return_reward(
     trans_cost: float = 0.0,
     eps: float = 1e-8,
 ) -> torch.Tensor:
-    '''Legacy finance-specific reward helper (delegates to multiplicative_return_reward).'''
+    """Legacy finance-specific reward helper (delegates to multiplicative_return_reward)."""
     return multiplicative_return_reward(
         allocations,
         prices,
         transition_penalty=trans_cost,
         eps=eps,
     )
-
 
 
 @dataclass
@@ -192,7 +192,9 @@ class EpisodeTrainer:
         self,
         model: nn.Module,
         *,
-        reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = multiplicative_return_reward,
+        reward_fn: Callable[
+            [torch.Tensor, torch.Tensor], torch.Tensor
+        ] = multiplicative_return_reward,
         ep_cfg: EpisodeConfig,
         device: torch.device | str = "auto",
         optimizer: Optional[torch.optim.Optimizer] = None,
@@ -339,7 +341,12 @@ class EpisodeTrainer:
 
 
 def make_episode_trainer_from_estimator(
-    est, *, ep_cfg: EpisodeConfig, reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = multiplicative_return_reward, device: torch.device | str = "auto", lr: float = 1e-3
+    est,
+    *,
+    ep_cfg: EpisodeConfig,
+    reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = multiplicative_return_reward,
+    device: torch.device | str = "auto",
+    lr: float = 1e-3,
 ) -> EpisodeTrainer:
     """Helper to create an EpisodeTrainer from a fitted PSANNRegressor.
 

@@ -49,4 +49,3 @@ if __name__ == "__main__":
     model.save(path)
     loaded = PSANNRegressor.load(path)
     print("Loaded model R^2 (evaluated with mse):", loaded.score(X_test, y_test))
-

@@ -3,7 +3,11 @@ from __future__ import annotations
 import numpy as np
 
 from psann import PSANNRegressor
-from psann.estimators._fit_utils import NormalisedFitArgs, normalise_fit_args, prepare_inputs_and_scaler
+from psann.estimators._fit_utils import (
+    NormalisedFitArgs,
+    normalise_fit_args,
+    prepare_inputs_and_scaler,
+)
 
 
 def _make_fit_args(

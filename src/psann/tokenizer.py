@@ -16,7 +16,9 @@ class BaseTokenizer:
     def fit(self, corpus: Iterable[str]) -> None:  # pragma: no cover - interface
         raise NotImplementedError
 
-    def encode(self, text: str, *, add_bos: bool = False, add_eos: bool = False) -> List[int]:  # pragma: no cover - interface
+    def encode(
+        self, text: str, *, add_bos: bool = False, add_eos: bool = False
+    ) -> List[int]:  # pragma: no cover - interface
         raise NotImplementedError
 
     def decode(self, ids: Iterable[int]) -> str:  # pragma: no cover - interface
@@ -88,4 +90,3 @@ class SimpleWordTokenizer(BaseTokenizer):
     @property
     def vocab_size(self) -> int:
         return len(self._id2tok)
-

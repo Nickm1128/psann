@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import math
 from typing import Iterator
+
 import torch
 from torch import nn
 

@@ -69,10 +69,7 @@ def compare_benchmarks(
             f"Dataset mismatch: baseline={baseline_meta.get('dataset')} candidate={candidate_meta.get('dataset')}"
         )
 
-    missing = [
-        key for key in baseline_results
-        if key not in candidate_results
-    ]
+    missing = [key for key in baseline_results if key not in candidate_results]
     if missing and not allow_missing:
         names = ", ".join(_format_key(k) for k in missing)
         messages.append(f"Candidate missing results for: {names}")
@@ -94,7 +91,9 @@ def compare_benchmarks(
                     f"{_format_key(key)} field '{field}' mismatch: baseline={b_val} candidate={c_val}"
                 )
 
-        if list(base_entry.get("feature_shape") or []) != list(candidate_entry.get("feature_shape") or []):
+        if list(base_entry.get("feature_shape") or []) != list(
+            candidate_entry.get("feature_shape") or []
+        ):
             messages.append(
                 f"{_format_key(key)} feature_shape mismatch: baseline={base_entry.get('feature_shape')} "
                 f"candidate={candidate_entry.get('feature_shape')}"

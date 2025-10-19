@@ -34,6 +34,10 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
   python -m scripts.benchmark_hisso_variants --dataset portfolio --epochs 8 --devices cpu --output docs/benchmarks/hisso_variants_portfolio_cpu.json
   ```
 - `compare_hisso_benchmarks.py` - compares two benchmark payloads with configurable tolerances; used by CI to detect HISSO performance regressions.
+- `fetch_benchmark_data.py` - downloads the trimmed AAPL price series (or any
+  other ticker/date range) and writes a `date,open,close` CSV for HISSO runs.
+- `run_light_probes.py` - executes the lightweight Colab probes locally. Use
+  `--results-dir` to redirect metric dumps away from the repository if desired.
 
 ## Current Limitations
 
@@ -47,4 +51,3 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 
 - Expand the benchmarking harness to support custom datasets and export
   structured reports.
-

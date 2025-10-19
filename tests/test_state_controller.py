@@ -1,7 +1,7 @@
 import warnings
 
-import torch
 import pytest
+import torch
 
 from psann.state import StateController
 

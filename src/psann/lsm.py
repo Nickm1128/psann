@@ -7,13 +7,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .utils import choose_device, seed_all
 from ._aliases import resolve_int_alias
-
+from .utils import choose_device, seed_all
 
 TensorLike = Union[np.ndarray, torch.Tensor]
 
-def _to_float_tensor(data: TensorLike, *, device: torch.device) -> Tuple[torch.Tensor, bool, torch.device, torch.dtype]:
+
+def _to_float_tensor(
+    data: TensorLike, *, device: torch.device
+) -> Tuple[torch.Tensor, bool, torch.device, torch.dtype]:
     if isinstance(data, torch.Tensor):
         original_device = data.device
         original_dtype = data.dtype
@@ -27,14 +29,29 @@ def _to_float_tensor(data: TensorLike, *, device: torch.device) -> Tuple[torch.T
     tensor = torch.from_numpy(arr).to(device)
     return tensor.contiguous(), False, torch.device("cpu"), torch.float32
 
-def _tensor_to_output(tensor: torch.Tensor, *, return_tensor: bool, target_device: torch.device, target_dtype: torch.dtype):
+
+def _tensor_to_output(
+    tensor: torch.Tensor,
+    *,
+    return_tensor: bool,
+    target_device: torch.device,
+    target_dtype: torch.dtype,
+):
     result = tensor.detach()
     if return_tensor:
         return result.to(device=target_device, dtype=target_dtype)
     return result.cpu().numpy()
 
+
 class MaskedLinear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True, sparsity: float = 0.8, random_state: Optional[int] = None):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bias: bool = True,
+        sparsity: float = 0.8,
+        random_state: Optional[int] = None,
+    ):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
@@ -115,10 +132,24 @@ class LSM(nn.Module):
         layers = []
         in_dim = self.input_dim
         for i in range(self.hidden_layers):
-            layers.append(MaskedLinear(in_dim, self.hidden_width, bias=bias, sparsity=self.sparsity, random_state=None if random_state is None else random_state + i))
+            layers.append(
+                MaskedLinear(
+                    in_dim,
+                    self.hidden_width,
+                    bias=bias,
+                    sparsity=self.sparsity,
+                    random_state=None if random_state is None else random_state + i,
+                )
+            )
             in_dim = self.hidden_width
         self.body = nn.Sequential(*layers)
-        self.head = MaskedLinear(in_dim, self.output_dim, bias=bias, sparsity=self.sparsity, random_state=None if random_state is None else random_state + 999)
+        self.head = MaskedLinear(
+            in_dim,
+            self.output_dim,
+            bias=bias,
+            sparsity=self.sparsity,
+            random_state=None if random_state is None else random_state + 999,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: (N, input_dim)
@@ -340,14 +371,18 @@ class LSMExpander(nn.Module):
                     X_in = X_batch
                 Z_batch = self.model(X_in)
                 W = self._ols_readout(Z_batch, X_batch, ridge=self.ridge)
-                ones_batch = torch.ones((Z_batch.shape[0], 1), dtype=Z_batch.dtype, device=Z_batch.device)
+                ones_batch = torch.ones(
+                    (Z_batch.shape[0], 1), dtype=Z_batch.dtype, device=Z_batch.device
+                )
                 Zb_batch = torch.cat([Z_batch, ones_batch], dim=1)
                 X_hat_batch = Zb_batch @ W
                 if self.objective == "mse":
                     base = F.mse_loss(X_hat_batch, X_batch)
                 else:
                     ss_res = ((X_batch - X_hat_batch) ** 2).sum()
-                    ss_tot = ((X_batch - X_batch.mean(dim=0, keepdim=True)) ** 2).sum().clamp_min(1e-8)
+                    ss_tot = (
+                        ((X_batch - X_batch.mean(dim=0, keepdim=True)) ** 2).sum().clamp_min(1e-8)
+                    )
                     base = ss_res / ss_tot
                 reg = 0.0
                 if self.alpha_ortho > 0.0:
@@ -374,19 +409,25 @@ class LSMExpander(nn.Module):
                     Zb_va = torch.cat([Z_va, ones_va], dim=1)
                     X_hat_va = Zb_va @ W_eval
                     ss_res_va = ((X_va_t - X_hat_va) ** 2).sum()
-                    ss_tot_va = ((X_va_t - X_va_t.mean(dim=0, keepdim=True)) ** 2).sum().clamp_min(1e-8)
+                    ss_tot_va = (
+                        ((X_va_t - X_va_t.mean(dim=0, keepdim=True)) ** 2).sum().clamp_min(1e-8)
+                    )
                     r2_va = float(1.0 - (ss_res_va / ss_tot_va))
                 if verb:
                     print(f"LSMExpander epoch {epoch+1}/{E} - val R^2: {r2_va:.6f}")
                 if r2_va > best_r2 + tolerance:
                     best_r2 = r2_va
-                    best_state = {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
+                    best_state = {
+                        k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()
+                    }
                     patience_left = pat
                 else:
                     patience_left -= 1
                     if es and patience_left <= 0:
                         if verb:
-                            print(f"Early stopping LSM at epoch {epoch+1} (best R^2: {best_r2:.6f})")
+                            print(
+                                f"Early stopping LSM at epoch {epoch+1} (best R^2: {best_r2:.6f})"
+                            )
                         stop_training = True
                 if stop_training:
                     break
@@ -409,12 +450,13 @@ class LSMExpander(nn.Module):
         X_t, is_tensor, orig_device, orig_dtype = _to_float_tensor(X, device=model_device)
         with torch.no_grad():
             Z = self.model(X_t)
-        return _tensor_to_output(Z, return_tensor=is_tensor, target_device=orig_device, target_dtype=orig_dtype)
+        return _tensor_to_output(
+            Z, return_tensor=is_tensor, target_device=orig_device, target_dtype=orig_dtype
+        )
 
     def fit_transform(self, X: TensorLike) -> TensorLike:
         self.fit(X)
         return self.transform(X)
-
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         if not isinstance(X, torch.Tensor):
@@ -458,22 +500,45 @@ class LSMExpander(nn.Module):
             r2 = 1.0 - float(ss_res.cpu() / ss_tot.cpu())
         return r2
 
+
 # ----------------------------- Conv2d Variant -----------------------------
 
+
 class MaskedConv2d(nn.Conv2d):
-    def __init__(self, in_channels: int, out_channels: int, kernel_size: int = 1, bias: bool = True, sparsity: float = 0.8, random_state: Optional[int] = None):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 1,
+        bias: bool = True,
+        sparsity: float = 0.8,
+        random_state: Optional[int] = None,
+    ):
         super().__init__(in_channels, out_channels, kernel_size=kernel_size, padding=0, bias=bias)
         rs = torch.Generator()
         if random_state is not None:
             rs.manual_seed(int(random_state))
         k = self.kernel_size[0] * self.kernel_size[1]
         density = max(0.0, min(1.0, 1.0 - float(sparsity)))
-        mask = (torch.rand((out_channels, in_channels, self.kernel_size[0], self.kernel_size[1]), generator=rs) < density).float()
+        mask = (
+            torch.rand(
+                (out_channels, in_channels, self.kernel_size[0], self.kernel_size[1]), generator=rs
+            )
+            < density
+        ).float()
         self.register_buffer("mask", mask)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         w = self.weight * self.mask
-        return F.conv2d(x, w, self.bias, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
+        return F.conv2d(
+            x,
+            w,
+            self.bias,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+        )
 
 
 class LSMConv2d(nn.Module):
@@ -495,6 +560,7 @@ class LSMConv2d(nn.Module):
     Shapes
     - forward(X): (N, C_in, H, W) -> (N, C_out, H, W)
     """
+
     def __init__(
         self,
         in_channels: int,
@@ -539,10 +605,26 @@ class LSMConv2d(nn.Module):
         layers = []
         c = in_channels
         for i in range(hidden_layers):
-            layers.append(MaskedConv2d(c, hidden_channels, kernel_size=kernel_size, bias=bias, sparsity=sparsity, random_state=None if random_state is None else random_state + i))
+            layers.append(
+                MaskedConv2d(
+                    c,
+                    hidden_channels,
+                    kernel_size=kernel_size,
+                    bias=bias,
+                    sparsity=sparsity,
+                    random_state=None if random_state is None else random_state + i,
+                )
+            )
             c = hidden_channels
         self.body = nn.Sequential(*layers)
-        self.head = MaskedConv2d(c, out_channels, kernel_size=kernel_size, bias=bias, sparsity=sparsity, random_state=None if random_state is None else random_state + 777)
+        self.head = MaskedConv2d(
+            c,
+            out_channels,
+            kernel_size=kernel_size,
+            bias=bias,
+            sparsity=sparsity,
+            random_state=None if random_state is None else random_state + 777,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         z = x
@@ -726,7 +808,9 @@ class LSMConv2dExpander(nn.Module):
             raise ValueError("Expected channels-first (N, C, H, W) input")
         with torch.no_grad():
             Z = self.model(X_t)
-        return _tensor_to_output(Z, return_tensor=is_tensor, target_device=orig_device, target_dtype=orig_dtype)
+        return _tensor_to_output(
+            Z, return_tensor=is_tensor, target_device=orig_device, target_dtype=orig_dtype
+        )
 
     def fit_transform(self, X: TensorLike) -> TensorLike:
         self.fit(X)
@@ -777,5 +861,3 @@ class LSMConv2dExpander(nn.Module):
             ss_tot = ((Xf - Xf.mean(dim=0, keepdim=True)) ** 2).sum().clamp_min(1e-8)
             r2 = 1.0 - float(ss_res.cpu() / ss_tot.cpu())
         return r2
-
-

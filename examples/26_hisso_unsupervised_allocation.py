@@ -20,7 +20,7 @@ if __name__ == "__main__":
     n_train = 2560
     n_val = 768
     train = prices[:n_train]
-    val = prices[n_train:n_train + n_val]
+    val = prices[n_train : n_train + n_val]
     test = prices[n_train + n_val :]
 
     hisso_window = 64
@@ -43,7 +43,9 @@ if __name__ == "__main__":
         hisso=True,
         hisso_window=hisso_window,
         hisso_transition_penalty=trans_cost,
-        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(alloc, ctx, trans_cost=trans_cost),
+        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(
+            alloc, ctx, trans_cost=trans_cost
+        ),
         verbose=1,
     )
 

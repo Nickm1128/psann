@@ -17,7 +17,7 @@ def make_prices(T: int = 4096, seed: int = 7) -> np.ndarray:
 
 def split_series(X: np.ndarray, n_train: int, n_val: int):
     train = X[:n_train]
-    val = X[n_train:n_train + n_val]
+    val = X[n_train : n_train + n_val]
     test = X[n_train + n_val :]
     return train, val, test
 
@@ -61,7 +61,9 @@ if __name__ == "__main__":
         hisso=True,
         hisso_window=hisso_window,
         hisso_transition_penalty=trans_cost,
-        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(alloc, ctx, trans_cost=trans_cost),
+        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(
+            alloc, ctx, trans_cost=trans_cost
+        ),
         verbose=1,
     )
 
@@ -77,7 +79,9 @@ if __name__ == "__main__":
         hisso=True,
         hisso_window=hisso_window,
         hisso_transition_penalty=trans_cost,
-        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(alloc, ctx, trans_cost=trans_cost),
+        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(
+            alloc, ctx, trans_cost=trans_cost
+        ),
         verbose=0,
     )
 

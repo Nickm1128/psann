@@ -6,8 +6,9 @@ PSANNRegressor.fit(hisso=True), and data leakage is avoided by using strictly
 chronological train/val/test splits and never sampling windows from val/test.
 """
 
-from pathlib import Path
 import sys as _sys
+from pathlib import Path
+
 try:
     import psann  # type: ignore  # noqa: F401
 except Exception:  # pragma: no cover
@@ -16,9 +17,9 @@ except Exception:  # pragma: no cover
 
 import argparse
 import csv
-import time
 import itertools
 import statistics as stats
+import time
 from typing import Optional
 
 import numpy as np
@@ -57,7 +58,11 @@ def run_config(
 ) -> dict:
     # Chronological split: train/val/test (strict, no leakage)
     n_train, n_val = 4000, 1000
-    train, val, test = prices[:n_train], prices[n_train:n_train + n_val], prices[n_train + n_val:]
+    train, val, test = (
+        prices[:n_train],
+        prices[n_train : n_train + n_val],
+        prices[n_train + n_val :],
+    )
     est = PSANNRegressor(
         hidden_layers=hidden_layers,
         hidden_width=hidden_width,
@@ -99,16 +104,35 @@ def run_config(
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Benchmark PSANN configurations (HISSO) with a time budget.")
-    ap.add_argument("--time_budget_s", type=int, default=600, help="Global time budget in seconds (default 600)")
-    ap.add_argument("--epochs", type=int, default=40, help="Epochs per configuration (default 40)")
-    ap.add_argument("--seeds", type=int, nargs="*", default=[0], help="Random seeds to try (default [0])")
-    ap.add_argument("--out", type=str, default=str(Path(__file__).with_name("results_psann_config_benchmark.csv")), help="Output CSV path")
-    ap.add_argument("--train_verbose", type=int, default=0, help="Trainer verbosity passed to fit(hisso=...) (0/1)")
+    ap = argparse.ArgumentParser(
+        description="Benchmark PSANN configurations (HISSO) with a time budget."
+    )
+    ap.add_argument(
+        "--time_budget_s",
+        type=int,
+        default=300,
+        help="Global time budget in seconds (default 300; tune up for deeper sweeps)",
+    )
+    ap.add_argument("--epochs", type=int, default=30, help="Epochs per configuration (default 30)")
+    ap.add_argument(
+        "--seeds", type=int, nargs="*", default=[0], help="Random seeds to try (default [0])"
+    )
+    ap.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Optional output CSV path. If omitted, results are only printed to stdout.",
+    )
+    ap.add_argument(
+        "--train_verbose",
+        type=int,
+        default=0,
+        help="Trainer verbosity passed to fit(hisso=...) (0/1)",
+    )
     args = ap.parse_args()
 
     # Synthetic dataset
-    prices = make_prices(T=8000, seed=0)
+    prices = make_prices(T=6000, seed=0)
 
     # Sensible grid (kept small for time budget). You can expand if needed.
     activations = ["psann", "relu", "tanh"]
@@ -119,11 +143,22 @@ def main():
     # LSM: none vs small expander (dict-based)
     lsm_options = [
         None,
-        {"output_dim": 128, "hidden_layers": 1, "hidden_width": 128, "sparsity": 0.9, "nonlinearity": "sine", "epochs": 0},
+        {
+            "output_dim": 128,
+            "hidden_layers": 1,
+            "hidden_width": 128,
+            "sparsity": 0.9,
+            "nonlinearity": "sine",
+            "epochs": 0,
+        },
     ]
 
     # Cartesian product
-    grid = list(itertools.product(activations, hidden_layers_list, hidden_widths, hisso_windows, lsm_options))
+    grid = list(
+        itertools.product(
+            activations, hidden_layers_list, hidden_widths, hisso_windows, lsm_options
+        )
+    )
 
     rows = []
     start = time.perf_counter()
@@ -131,14 +166,16 @@ def main():
     total_planned = len(args.seeds) * len(grid)
     best: Optional[dict] = None
     for seed in args.seeds:
-        for (act, hl, hw, win, lsm_cfg) in grid:
+        for act, hl, hw, win, lsm_cfg in grid:
             if time.perf_counter() - start > args.time_budget_s:
                 break
             elapsed = time.perf_counter() - start
             remaining = max(0.0, args.time_budget_s - elapsed)
             run_idx = runs + 1
-            lsm_name = 'dict' if isinstance(lsm_cfg, dict) else 'none'
-            print(f"-> [{run_idx}/{total_planned}] seed={seed} act={act} hl={hl} hw={hw} lsm={lsm_name} start; time_left~={remaining:.0f}s")
+            lsm_name = "dict" if isinstance(lsm_cfg, dict) else "none"
+            print(
+                f"-> [{run_idx}/{total_planned}] seed={seed} act={act} hl={hl} hw={hw} lsm={lsm_name} start; time_left~={remaining:.0f}s"
+            )
             try:
                 row = run_config(
                     prices,
@@ -158,7 +195,7 @@ def main():
                     f"<- done in {row['train_time_s']:.1f}s | val_logR {row['val_log_return']:.4f} | "
                     f"test: logR {row['log_return']:.4f}, Sharpe {row['sharpe']:.3f}, MDD {row['max_drawdown']:.3f}, Turnover {row['turnover']:.3f}"
                 )
-                if (best is None) or (row['log_return'] > best['log_return']):
+                if (best is None) or (row["log_return"] > best["log_return"]):
                     best = row
                     print(
                         f"   NEW BEST by test logR -> seed={seed} act={act} hl={hl} hw={hw} lsm={lsm_name} "
@@ -172,19 +209,23 @@ def main():
 
     # Save
     if rows:
-        out = Path(args.out)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        with out.open("w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
-            w.writeheader()
-            w.writerows(rows)
-        print("Saved:", out)
+        if args.out:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            with out.open("w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+                w.writeheader()
+                w.writerows(rows)
+            print("Saved:", out)
 
         # Quick summary on the base slice (act=psann, no LSM expander)
         base = [r for r in rows if r["activation"] == "psann" and r["lsm"] == "none"]
         if base:
             lr = [r["log_return"] for r in base]
-            print("PSANN baseline test logR mean+/-std:", f"{stats.mean(lr):.3f} +/- {stats.pstdev(lr):.3f}")
+            print(
+                "PSANN baseline test logR mean+/-std:",
+                f"{stats.mean(lr):.3f} +/- {stats.pstdev(lr):.3f}",
+            )
     else:
         print("No runs completed within time budget.")
 

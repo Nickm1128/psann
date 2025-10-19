@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psann"
-version = "0.10.3"
+version = "0.10.5"
 description = "PSANN: Parameterized Sine-Activated Neural Networks (primary-output, sklearn-style, PyTorch backend)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -40,13 +40,27 @@ Contributing = "https://github.com/psann-project/psann/blob/main/docs/CONTRIBUTI
 packages = ["src/psann"]
 
 [tool.hatch.build]
-exclude = [".github", "examples", "tests", ".vscode", ".idea", "downloads_tmp"]
+exclude = [
+  ".github",
+  ".idea",
+  ".vscode",
+  "benchmarks",
+  "docs",
+  "downloads_tmp",
+  "examples",
+  "notebooks",
+  "scripts",
+  "tests",
+]
 
 [project.optional-dependencies]
 dev = [
   "pytest>=7.0",
   "ruff>=0.5.0",
   "black>=24.0",
+  "pre-commit>=3.6",
+  "coverage[toml]>=7.5",
+  "build>=1.2",
 ]
 viz = [
   "matplotlib>=3.7",
@@ -54,10 +68,48 @@ viz = [
 sklearn = [
   "scikit-learn>=1.2,<1.5",
 ]
+compat = [
+  "numpy==1.26.4",
+  "scipy==1.11.4",
+  "scikit-learn==1.4.2",
+  "torch==2.1.2",
+]
 
 [tool.ruff]
 target-version = "py39"
+line-length = 100
+src = ["src", "tests", "examples", "scripts"]
 
 [tool.ruff.lint]
 ignore = ["E402"]
 per-file-ignores = {"src/psann/lsm.py" = ["E741", "F841"]}
+extend-select = ["I"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+
+[tool.coverage.run]
+branch = true
+source = [
+  "src/psann",
+  "scripts",
+]
+omit = [
+  "src/psann/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "if TYPE_CHECKING:",
+  "pragma: no cover",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]
+
+[tool.pytest.ini_options]
+markers = [
+  "slow: marks HISSO integration runs; deselect with -m 'not slow'",
+]

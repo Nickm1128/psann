@@ -71,7 +71,11 @@ def portfolio_metrics(
     *,
     trans_cost: float = 0.0,
 ) -> dict:
-    A = allocations.detach().cpu().numpy() if isinstance(allocations, torch.Tensor) else np.asarray(allocations)
+    A = (
+        allocations.detach().cpu().numpy()
+        if isinstance(allocations, torch.Tensor)
+        else np.asarray(allocations)
+    )
     P = prices.detach().cpu().numpy() if isinstance(prices, torch.Tensor) else np.asarray(prices)
     curve = equity_curve(A, P, trans_cost=trans_cost)
     # Compute per-step arithmetic returns aligned to curve[1:]
@@ -83,4 +87,3 @@ def portfolio_metrics(
         "max_drawdown": max_drawdown(curve),
         "turnover": turnover(A),
     }
-

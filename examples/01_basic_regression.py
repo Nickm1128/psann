@@ -42,4 +42,3 @@ if __name__ == "__main__":
     model.fit(X_train, y_train)
     r2 = model.score(X_test, y_test)
     print(f"R^2: {r2:.4f}")
-

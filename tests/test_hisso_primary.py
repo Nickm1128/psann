@@ -14,6 +14,8 @@ from psann.hisso import (
     hisso_infer_series,
 )
 
+pytestmark = pytest.mark.slow
+
 
 def test_coerce_warmstart_config_requires_targets() -> None:
     with pytest.raises(ValueError):
@@ -179,12 +181,15 @@ def test_ensure_hisso_trainer_config_from_mapping() -> None:
     assert cfg.episode_length == 10
     assert cfg.primary_dim == 2
 
+
 def test_hisso_fit_without_reward_uses_default() -> None:
     rng = np.random.default_rng(2)
     X = rng.standard_normal((20, 3)).astype(np.float32)
     y = rng.standard_normal((20, 1)).astype(np.float32)
 
-    est = PSANNRegressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=5, lr=5e-4, random_state=2)
+    est = PSANNRegressor(
+        hidden_layers=1, hidden_units=4, epochs=1, batch_size=5, lr=5e-4, random_state=2
+    )
     est.fit(X, y, hisso=True, hisso_window=5)
 
     trainer = getattr(est, "_hisso_trainer_", None)
@@ -200,7 +205,9 @@ def test_hisso_primary_transform_validation() -> None:
     X = rng.standard_normal((8, 2)).astype(np.float32)
     y = rng.standard_normal((8, 1)).astype(np.float32)
 
-    est = PSANNRegressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4, lr=1e-3, random_state=7)
+    est = PSANNRegressor(
+        hidden_layers=1, hidden_units=4, epochs=1, batch_size=4, lr=1e-3, random_state=7
+    )
     with pytest.raises(ValueError):
         est.fit(
             X,
@@ -373,4 +380,3 @@ def test_hisso_warmstart_short_series_truncates_episode() -> None:
     assert last_reward is not None
     assert np.isfinite(float(last_reward))
     assert est.history_ == trainer.history
-

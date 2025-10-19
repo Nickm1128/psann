@@ -1,6 +1,8 @@
 # Build artifacts
 dist/
 build/
+*.venv/
+.venv/
 *.egg-info/
 *.egg
 *.whl
@@ -15,6 +17,7 @@ __pycache__/
 .coverage
 coverage/
 htmlcov/
+.ruff_cache/
 
 # Temporary scratch files
 temp_psann/
@@ -31,7 +34,13 @@ tmp_patch.txt
 datasets/
 datasets.zip
 colab_results_light/
+colab_tests_light/
+downloads_tmp/
 outputs/
 outputs_non_visual_data.zip
 tmp_extract/
 tmp_outputs/
+
+# Examples artifacts
+examples/logs/
+examples/results_*.csv

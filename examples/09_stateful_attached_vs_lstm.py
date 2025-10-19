@@ -1,8 +1,10 @@
 import math
+
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+
 from psann import PSANNRegressor
 
 
@@ -66,7 +68,9 @@ if __name__ == "__main__":
     print("Training PSANN (stateful attached)...")
     ps.fit(X_tr, y_tr, validation_data=(X_va, y_va), verbose=1)
     seq_preds = ps.predict_sequence(X_te, reset_state=True, return_sequence=True).reshape(-1, 1)
-    print("PSANN MSE:", float(np.mean((seq_preds - y_te) ** 2)), "R^2:", r2_score_np(y_te, seq_preds))
+    print(
+        "PSANN MSE:", float(np.mean((seq_preds - y_te) ** 2)), "R^2:", r2_score_np(y_te, seq_preds)
+    )
 
     # LSTM baseline on windows
     def windows(x, win=50):
@@ -88,7 +92,9 @@ if __name__ == "__main__":
     opt = torch.optim.Adam(lstm.parameters(), lr=1e-3)
     loss_fn = nn.MSELoss()
 
-    dl_tr = DataLoader(TensorDataset(torch.from_numpy(Xtr), torch.from_numpy(ytr)), batch_size=256, shuffle=True)
+    dl_tr = DataLoader(
+        TensorDataset(torch.from_numpy(Xtr), torch.from_numpy(ytr)), batch_size=256, shuffle=True
+    )
     dl_va = DataLoader(TensorDataset(torch.from_numpy(Xva), torch.from_numpy(yva)), batch_size=512)
 
     best = math.inf

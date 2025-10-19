@@ -12,11 +12,7 @@ from psann import LSMExpander, PSANNRegressor
 def make_supervised_extras_data(n: int = 6000, seed: int = 0):
     rng = np.random.RandomState(seed)
     X = rng.uniform(-2.5, 2.5, size=(n, 4)).astype(np.float32)
-    latent = (
-        0.6 * np.sin(X[:, 0])
-        + 0.4 * np.cos(1.5 * X[:, 1])
-        + 0.3 * X[:, 2] * X[:, 3]
-    )
+    latent = 0.6 * np.sin(X[:, 0]) + 0.4 * np.cos(1.5 * X[:, 1]) + 0.3 * X[:, 2] * X[:, 3]
     y = (latent + 0.2 * rng.randn(n)).astype(np.float32)
     extras = np.stack(
         [
@@ -28,7 +24,9 @@ def make_supervised_extras_data(n: int = 6000, seed: int = 0):
     return X, y.reshape(-1, 1).astype(np.float32), extras
 
 
-def train_val_test_split(X, y, extras, val_ratio: float = 0.15, test_ratio: float = 0.15, seed: int = 1):
+def train_val_test_split(
+    X, y, extras, val_ratio: float = 0.15, test_ratio: float = 0.15, seed: int = 1
+):
     n = len(X)
     idx = np.arange(n)
     rng = np.random.RandomState(seed)

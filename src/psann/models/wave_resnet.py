@@ -30,6 +30,7 @@ class WaveResNet(nn.Module):
         use_film: bool = True,
         use_phase_shift: bool = True,
         dropout: float = 0.0,
+        residual_alpha_init: float = 0.0,
     ) -> None:
         super().__init__()
         if input_dim <= 0 or hidden_dim <= 0 or output_dim <= 0:
@@ -52,6 +53,7 @@ class WaveResNet(nn.Module):
                     use_film=use_film,
                     use_phase_shift=use_phase_shift,
                     dropout=dropout,
+                    residual_alpha_init=residual_alpha_init,
                 )
                 for _ in range(depth)
             ]
@@ -61,12 +63,17 @@ class WaveResNet(nn.Module):
         self.context_dim = context_dim
         self.hidden_dim = hidden_dim
         self.depth = depth
+        self.residual_alpha_init = residual_alpha_init
+        self.norm = norm
+        self.use_film_flag = use_film
+        self.use_phase_shift_flag = use_phase_shift
+        self.dropout_rate = dropout
+        self.hidden_w0 = hidden_w0
+        self.first_layer_w0 = first_layer_w0
 
         apply_siren_init(self, first_layer_w0=first_layer_w0, hidden_w0=hidden_w0)
 
-    def forward_features(
-        self, x: torch.Tensor, c: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
+    def forward_features(self, x: torch.Tensor, c: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Compute latent features before the output head.
 
         Args:
@@ -91,6 +98,34 @@ class WaveResNet(nn.Module):
         """Forward pass producing predictions."""
         h = self.forward_features(x, c)
         return self.head(h)
+
+    def add_blocks(self, count: int) -> list[nn.Module]:
+        """Append additional residual blocks, keeping existing weights intact."""
+        if count <= 0:
+            return []
+        new_blocks: list[nn.Module] = []
+        for _ in range(int(count)):
+            block = SineResidualBlock(
+                self.hidden_dim,
+                self.hidden_dim,
+                self.hidden_dim,
+                w0=self.hidden_w0,
+                norm=self.norm,
+                context_dim=self.context_dim,
+                use_film=self.use_film_flag,
+                use_phase_shift=self.use_phase_shift_flag,
+                dropout=self.dropout_rate,
+                residual_alpha_init=self.residual_alpha_init,
+            )
+            apply_siren_init(block, first_layer_w0=self.hidden_w0, hidden_w0=self.hidden_w0)
+            new_blocks.append(block)
+
+        device = next(self.parameters()).device
+        for block in new_blocks:
+            block.to(device)
+            self.blocks.append(block)
+        self.depth = len(self.blocks)
+        return new_blocks
 
 
 def build_wave_resnet(**kwargs) -> WaveResNet:

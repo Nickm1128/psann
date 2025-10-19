@@ -8,11 +8,7 @@ from psann import LSMExpander, PSANNRegressor, expand_extras_head
 def make_dataset(n: int = 6000, seed: int = 0):
     rng = np.random.RandomState(seed)
     X = rng.uniform(-2.5, 2.5, size=(n, 4)).astype(np.float32)
-    latent = (
-        0.6 * np.sin(X[:, 0])
-        + 0.4 * np.cos(1.5 * X[:, 1])
-        + 0.3 * X[:, 2] * X[:, 3]
-    )
+    latent = 0.6 * np.sin(X[:, 0]) + 0.4 * np.cos(1.5 * X[:, 1]) + 0.3 * X[:, 2] * X[:, 3]
     y = (latent + 0.2 * rng.randn(n)).astype(np.float32)
     extras = np.stack(
         [

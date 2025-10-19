@@ -11,9 +11,9 @@ their aliases in one place so we can emit consistent warnings and validation
 errors across the codebase.
 """
 
+import warnings
 from dataclasses import dataclass
 from typing import Any, Literal, Optional, TypeVar
-import warnings
 
 IntLike = TypeVar("IntLike", bound=int)
 
@@ -101,13 +101,9 @@ def resolve_int_alias(
         if not values_match:
             if mismatch_message is None:
                 if prefer == "primary":
-                    mismatch_message = (
-                        f"{context}: `{primary_name}` overrides `{alias_name}` because the values differ."
-                    )
+                    mismatch_message = f"{context}: `{primary_name}` overrides `{alias_name}` because the values differ."
                 else:
-                    mismatch_message = (
-                        f"{context}: `{alias_name}` overrides `{primary_name}` because the values differ."
-                    )
+                    mismatch_message = f"{context}: `{alias_name}` overrides `{primary_name}` because the values differ."
             if mismatch_strategy == "error":
                 raise ValueError(mismatch_message)
             warnings.warn(mismatch_message, mismatch_warning_category, stacklevel=3)
@@ -144,4 +140,3 @@ def resolve_int_alias(
         used_primary=used_primary,
         used_alias=used_alias,
     )
-

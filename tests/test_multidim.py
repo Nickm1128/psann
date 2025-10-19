@@ -35,6 +35,7 @@ def test_fit_predict_with_3d_input():
     preds2 = loaded.predict(X[:10])
     assert preds2.shape == preds.shape
     import os
+
     try:
         os.remove(path)
     except OSError:

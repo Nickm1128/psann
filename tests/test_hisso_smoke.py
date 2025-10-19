@@ -10,6 +10,7 @@ from psann.hisso import hisso_evaluate_reward
 from psann.lsm import LSMExpander
 
 pytestmark = [
+    pytest.mark.slow,
     pytest.mark.filterwarnings("ignore:LSMExpander:UserWarning"),
     pytest.mark.filterwarnings("ignore:.*hidden_width.*:DeprecationWarning"),
 ]
@@ -47,7 +48,9 @@ def test_hisso_smoke_device_warmstart_reward(monkeypatch, cuda_available):
             target = args[0] if args else kwargs.get("device", None)
             target_str = str(target) if target is not None else ""
             if isinstance(target, torch.device):
-                target_str = target.type if target.index is None else f"{target.type}:{target.index}"
+                target_str = (
+                    target.type if target.index is None else f"{target.type}:{target.index}"
+                )
             if target_str.startswith("cuda"):
                 module_device_calls.append(target_str)
                 return self
@@ -57,7 +60,9 @@ def test_hisso_smoke_device_warmstart_reward(monkeypatch, cuda_available):
             target = args[0] if args else kwargs.get("device", None)
             target_str = str(target) if target is not None else ""
             if isinstance(target, torch.device):
-                target_str = target.type if target.index is None else f"{target.type}:{target.index}"
+                target_str = (
+                    target.type if target.index is None else f"{target.type}:{target.index}"
+                )
             if target_str.startswith("cuda"):
                 tensor_device_calls.append(target_str)
                 return self

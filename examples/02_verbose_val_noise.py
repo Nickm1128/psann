@@ -35,4 +35,3 @@ if __name__ == "__main__":
     )
 
     print("R^2 on val:", model.score(X_val, y_val))
-

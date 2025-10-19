@@ -1,6 +1,6 @@
 import numpy as np
 
-from psann import PSANNRegressor, LSMExpander
+from psann import LSMExpander, PSANNRegressor
 
 
 def make_data(n=5000, d=4, seed=0):
@@ -44,7 +44,17 @@ if __name__ == "__main__":
     r2_base = base.score(X_test, y_test)
 
     # Pre-fit LSM expander to increase feature dimensionality
-    lsm = LSMExpander(output_dim=256, hidden_layers=12, hidden_width=256, sparsity=0.9, nonlinearity="sine", epochs=100, lr=1e-3, ridge=1e-4, random_state=0)
+    lsm = LSMExpander(
+        output_dim=256,
+        hidden_layers=12,
+        hidden_width=256,
+        sparsity=0.9,
+        nonlinearity="sine",
+        epochs=100,
+        lr=1e-3,
+        ridge=1e-4,
+        random_state=0,
+    )
     lsm.fit(X_train)
     r2_lsm_recon = lsm.score_reconstruction(X_val)
 

@@ -5,10 +5,11 @@ small transaction cost.
 """
 
 import numpy as np
+
 from psann import (
-    PSANNRegressor,
-    LSMExpander,
     EpisodeConfig,
+    LSMExpander,
+    PSANNRegressor,
     make_episode_trainer_from_estimator,
 )
 
@@ -44,7 +45,9 @@ if __name__ == "__main__":
 
     # LSM + PSANN
     lsm = LSMExpander(output_dim=64, hidden_layers=2, hidden_width=64, sparsity=0.9, epochs=0)
-    with_lsm = PSANNRegressor(hidden_layers=2, hidden_width=64, epochs=1, output_shape=(M,), lsm=lsm, lsm_train=False)
+    with_lsm = PSANNRegressor(
+        hidden_layers=2, hidden_width=64, epochs=1, output_shape=(M,), lsm=lsm, lsm_train=False
+    )
     with_lsm.fit(X, y_dummy)
 
     tr_lsm = make_episode_trainer_from_estimator(with_lsm, ep_cfg=cfg, lr=1e-3)

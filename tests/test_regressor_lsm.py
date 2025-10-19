@@ -4,7 +4,7 @@ import pytest
 pytest.importorskip("torch")
 
 from psann import PSANNRegressor
-from psann.lsm import LSMExpander, LSMConv2dExpander
+from psann.lsm import LSMConv2dExpander, LSMExpander
 
 
 def _make_dense_regression(seed: int = 0):

@@ -20,7 +20,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: pip  # reuse wheels across matrix to keep installs fast
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -28,10 +30,36 @@ jobs:
           pip install -e .[dev]
 
       - name: Ruff lint
-        run: python -m ruff check src tests
+        run: python -m ruff check src tests scripts examples
 
       - name: Black format check
-        run: python -m black --check src/psann/estimators/_fit_utils.py tests/test_fit_utils.py
+        run: python -m black --check src tests scripts examples
 
-      - name: Pytest
-        run: python -m pytest
+      - name: Pytest (not slow)
+        if: matrix.python-version != '3.11'
+        run: python -m pytest -m "not slow"
+
+      - name: Pytest with coverage (not slow)
+        if: matrix.python-version == '3.11'
+        run: |
+          coverage run -m pytest -m "not slow"
+          coverage xml
+          coverage report --fail-under=0
+
+      - name: Upload coverage artifact
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+
+      - name: Build wheel and sdist
+        if: matrix.python-version == '3.11'
+        run: python -m build
+
+      - name: Upload dist artifacts
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist

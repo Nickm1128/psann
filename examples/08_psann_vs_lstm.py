@@ -1,4 +1,5 @@
 import math
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -7,7 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from psann import PSANNRegressor
 
 
-def make_amplitude_modulated_sine(T=4000, f=0.02, amp_f=0.002, noise=0.05, seed=0):
+def make_amplitude_modulated_sine(T=3200, f=0.02, amp_f=0.002, noise=0.05, seed=0):
     rs = np.random.RandomState(seed)
     t = np.arange(T, dtype=np.float32)
     amp = 1.0 + 0.5 * np.sin(2 * np.pi * amp_f * t)
@@ -24,14 +25,16 @@ def make_windows(series: np.ndarray, win: int):
     Xs = np.asarray(Xs, dtype=np.float32)
     ys = np.asarray(ys, dtype=np.float32)
     Xs = Xs[..., None]  # (N, win, 1)
-    ys = ys[:, None]    # (N, 1)
+    ys = ys[:, None]  # (N, 1)
     return Xs, ys
 
 
 class LSTMForecaster(nn.Module):
     def __init__(self, input_size=1, hidden_size=64, num_layers=1, dropout=0.0):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout)
+        self.lstm = nn.LSTM(
+            input_size, hidden_size, num_layers=num_layers, batch_first=True, dropout=dropout
+        )
         self.fc = nn.Linear(hidden_size, 1)
 
     def forward(self, x):
@@ -50,7 +53,7 @@ def r2_score_np(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 if __name__ == "__main__":
     # Generate data
-    series = make_amplitude_modulated_sine(T=5000, f=0.02, amp_f=0.002, noise=0.05, seed=123)
+    series = make_amplitude_modulated_sine(T=3600, f=0.02, amp_f=0.002, noise=0.05, seed=123)
 
     # Split into train/val/test by time
     n = len(series)
@@ -71,11 +74,11 @@ if __name__ == "__main__":
     psann = PSANNRegressor(
         hidden_layers=2,
         hidden_width=32,
-        epochs=250,
+        epochs=160,
         batch_size=256,
         lr=1e-3,
         early_stopping=True,
-        patience=25,
+        patience=15,
         stateful=True,
         state={"rho": 0.985, "beta": 1.0, "max_abs": 3.0, "init": 1.0, "detach": True},
         state_reset="none",
@@ -98,7 +101,7 @@ if __name__ == "__main__":
     X_test_lstm, y_test_lstm = make_windows(test, win)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = LSTMForecaster(input_size=1, hidden_size=64, num_layers=1, dropout=0.0).to(device)
+    model = LSTMForecaster(input_size=1, hidden_size=48, num_layers=1, dropout=0.0).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = nn.MSELoss()
 
@@ -111,7 +114,7 @@ if __name__ == "__main__":
     patience = 15
     best_state = None
     print("Training LSTM...")
-    for epoch in range(150):
+    for epoch in range(100):
         model.train()
         total = 0.0
         count = 0
@@ -146,7 +149,7 @@ if __name__ == "__main__":
 
         if va_loss + 1e-8 < best:
             best = va_loss
-            patience = 15
+            patience = 10
             best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
         else:
             patience -= 1

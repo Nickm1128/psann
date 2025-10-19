@@ -126,9 +126,7 @@ def scan_regimes(
                 trajectory.append(h.detach().cpu().squeeze(0))
 
         traj_tensor = (
-            torch.stack(trajectory, dim=0)
-            if trajectory
-            else torch.empty((0, cell.hidden_dim))
+            torch.stack(trajectory, dim=0) if trajectory else torch.empty((0, cell.hidden_dim))
         )
         attractors = _estimate_attractors(traj_tensor)
         lyapunov = _estimate_lyapunov(cell, h.detach(), context)

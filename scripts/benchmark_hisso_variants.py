@@ -22,7 +22,6 @@ import torch
 
 from psann import ResConvPSANNRegressor, ResPSANNRegressor
 
-
 # ---------------------------------------------------------------------------
 # Synthetic datasets
 # ---------------------------------------------------------------------------
@@ -146,6 +145,7 @@ def _portfolio_conv_series(
 def resolve_dataset(name: str, dataset_path: Optional[str]) -> DatasetSpec:
     name_lower = name.lower()
     if name_lower == "synthetic":
+
         def build(variant: str, seed: int) -> Tuple[np.ndarray, np.ndarray]:
             if variant == "dense":
                 return _make_dense_series(seed)
@@ -162,7 +162,11 @@ def resolve_dataset(name: str, dataset_path: Optional[str]) -> DatasetSpec:
         )
 
     if name_lower == "portfolio":
-        csv_path = Path(dataset_path) if dataset_path else Path("benchmarks") / "hisso_portfolio_prices.csv"
+        csv_path = (
+            Path(dataset_path)
+            if dataset_path
+            else Path("benchmarks") / "hisso_portfolio_prices.csv"
+        )
         if not csv_path.exists():
             raise FileNotFoundError(f"Portfolio dataset not found at {csv_path}")
         prices = _load_portfolio_prices(csv_path)
@@ -279,8 +283,14 @@ def _summarise_runs(runs: List[Dict[str, List[float] | float | int]]) -> Dict[st
         "std_profile_time_s": float(profile_times.std(ddof=0)) if profile_times.size > 1 else 0.0,
         "reward_trend_mean": reward_mean,
         "reward_trend_std": reward_std,
-        "episodes_per_epoch_mean": episodes_matrix.mean(axis=0).tolist() if episodes_matrix.size else [],
-        "episodes_per_epoch_std": episodes_matrix.std(axis=0, ddof=0).tolist() if len(runs) > 1 else [0.0] * episodes_matrix.shape[1],
+        "episodes_per_epoch_mean": (
+            episodes_matrix.mean(axis=0).tolist() if episodes_matrix.size else []
+        ),
+        "episodes_per_epoch_std": (
+            episodes_matrix.std(axis=0, ddof=0).tolist()
+            if len(runs) > 1
+            else [0.0] * episodes_matrix.shape[1]
+        ),
         "final_reward_mean": final_reward_mean,
         "final_reward_std": final_reward_std,
     }
@@ -373,7 +383,9 @@ def _benchmark_variant(
     summary.update(
         {
             "allow_full_window": bool(allow_full_window),
-            "episode_length": int(episode_length_seen) if episode_length_seen is not None else int(window),
+            "episode_length": (
+                int(episode_length_seen) if episode_length_seen is not None else int(window)
+            ),
             "series_length": int(run_stats[0]["series_length"]) if run_stats else math.nan,
             "primary_dim": int(run_stats[0]["primary_dim"]) if run_stats else math.nan,
             "feature_shape": list(feature_shape) if feature_shape is not None else None,
@@ -390,7 +402,9 @@ def _benchmark_variant(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--epochs", type=int, default=6, help="Number of HISSO epochs to train.")
-    parser.add_argument("--window", type=int, default=64, help="Episode length/window used by HISSO.")
+    parser.add_argument(
+        "--window", type=int, default=64, help="Episode length/window used by HISSO."
+    )
     parser.add_argument(
         "--transition-penalty",
         type=float,

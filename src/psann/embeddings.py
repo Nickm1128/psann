@@ -44,7 +44,11 @@ class SineTokenEmbedder(nn.Module):
     def _frequencies(self, device: torch.device) -> torch.Tensor:
         # Transformer-like schedule
         d = torch.arange(self.embedding_dim, dtype=torch.float32, device=device)
-        inv_freq = torch.exp(-torch.log(torch.tensor(self.base, dtype=torch.float32, device=device)) * (d // 2) / self.embedding_dim)
+        inv_freq = torch.exp(
+            -torch.log(torch.tensor(self.base, dtype=torch.float32, device=device))
+            * (d // 2)
+            / self.embedding_dim
+        )
         # omega per dimension (alternate for sin/cos pairing)
         return 1.0 * inv_freq
 

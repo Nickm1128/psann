@@ -1,5 +1,5 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
 from psann import PSANNRegressor
 
@@ -32,7 +32,7 @@ if __name__ == "__main__":
         lr=1e-3,
         stream_lr=3e-4,
         early_stopping=False,
-        #patience=20,
+        # patience=20,
         stateful=True,
         state={"rho": 0.985, "beta": 1.0, "max_abs": 3.0, "init": 1.0, "detach": True},
         state_reset="epoch",

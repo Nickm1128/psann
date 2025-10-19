@@ -1,8 +1,10 @@
 import math
+
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+
 from psann.conv import PSANNConv2dNet
 
 
@@ -21,9 +23,11 @@ class SimpleCNN(nn.Module):
     def __init__(self, num_classes=2):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Conv2d(1, 16, 3, padding=1), nn.ReLU(),
-            nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1)
+            nn.Conv2d(1, 16, 3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(16, 32, 3, padding=1),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d(1),
         )
         self.fc = nn.Linear(32, num_classes)
 
@@ -37,7 +41,9 @@ def train_eval_cls(model, train, val, test, epochs=40, bs=128, lr=1e-3, device=N
     model = model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.CrossEntropyLoss()
-    dl_tr = DataLoader(TensorDataset(*[torch.from_numpy(a) for a in train]), batch_size=bs, shuffle=True)
+    dl_tr = DataLoader(
+        TensorDataset(*[torch.from_numpy(a) for a in train]), batch_size=bs, shuffle=True
+    )
     dl_va = DataLoader(TensorDataset(*[torch.from_numpy(a) for a in val]), batch_size=bs)
     Xte, yte = [torch.from_numpy(a) for a in test]
     best = math.inf
@@ -101,7 +107,9 @@ if __name__ == "__main__":
     class PSANNCNN(nn.Module):
         def __init__(self, num_classes=2):
             super().__init__()
-            self.net = PSANNConv2dNet(1, num_classes, hidden_layers=2, hidden_channels=32, kernel_size=3)
+            self.net = PSANNConv2dNet(
+                1, num_classes, hidden_layers=2, hidden_channels=32, kernel_size=3
+            )
 
         def forward(self, x):
             return self.net(x)

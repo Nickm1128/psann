@@ -7,11 +7,11 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
+    Self,
     Tuple,
     TypedDict,
     Union,
     runtime_checkable,
-    Self,
 )
 
 import numpy as np
@@ -40,11 +40,9 @@ ContextExtractor = Callable[[torch.Tensor], torch.Tensor]
 class TransformerProtocol(Protocol):
     """Minimal protocol for scaler/transformer style objects."""
 
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Self:
-        ...
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Self: ...
 
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        ...
+    def transform(self, X: np.ndarray) -> np.ndarray: ...
 
     # Some scalers expose inverse_transform; leave optional to keep protocol lenient.
 
@@ -60,4 +58,3 @@ class HISSOFitParams(TypedDict, total=False):
     hisso_transition_penalty: Optional[float]
     hisso_trans_cost: Optional[float]
     hisso_supervised: Optional[Mapping[str, Any] | bool]
-

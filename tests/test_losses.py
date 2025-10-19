@@ -15,7 +15,9 @@ def _data(n=500, seed=0):
 
 def test_huber_loss_runs():
     X, y = _data()
-    model = PSANNRegressor(epochs=20, loss="huber", loss_params={"delta": 0.5}, early_stopping=False)
+    model = PSANNRegressor(
+        epochs=20, loss="huber", loss_params={"delta": 0.5}, early_stopping=False
+    )
     model.fit(X, y)
     preds = model.predict(X[:10])
     assert preds.shape[0] == 10
@@ -28,8 +30,9 @@ def test_custom_loss_callable_vector_output():
         # Returns per-sample absolute error scaled; wrapper reduces it.
         return (pred - target).abs() * scale
 
-    model = PSANNRegressor(epochs=10, loss=custom_vec_loss, loss_params={"scale": 0.5}, loss_reduction="mean")
+    model = PSANNRegressor(
+        epochs=10, loss=custom_vec_loss, loss_params={"scale": 0.5}, loss_reduction="mean"
+    )
     model.fit(X, y)
     preds = model.predict(X[:8])
     assert preds.shape[0] == 8
-

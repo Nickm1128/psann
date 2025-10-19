@@ -134,9 +134,7 @@ def encode_and_probe(
     features = torch.cat(features_list, dim=0)
     targets = torch.cat(targets_list, dim=0)
 
-    return fit_linear_probe(
-        features.to(device), targets.to(device), l2=l2, solver=solver
-    )
+    return fit_linear_probe(features.to(device), targets.to(device), l2=l2, solver=solver)
 
 
 def _effective_rank(features: torch.Tensor, eps: float = 1e-6) -> float:

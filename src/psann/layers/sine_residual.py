@@ -46,6 +46,7 @@ class SineResidualBlock(nn.Module):
         use_film: bool = True,
         use_phase_shift: bool = True,
         dropout: float = 0.0,
+        residual_alpha_init: float = 0.0,
     ) -> None:
         super().__init__()
         if in_dim <= 0 or hidden_dim <= 0 or out_dim <= 0:
@@ -89,6 +90,8 @@ class SineResidualBlock(nn.Module):
         else:
             self.skip = None
 
+        self.residual_alpha = nn.Parameter(torch.zeros(()) + float(residual_alpha_init))
+
     def forward(self, x: torch.Tensor, c: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Forward pass.
 
@@ -120,4 +123,4 @@ class SineResidualBlock(nn.Module):
 
         h = self.dropout(h)
 
-        return residual + h
+        return residual + self.residual_alpha * h

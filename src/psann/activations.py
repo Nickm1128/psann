@@ -72,7 +72,9 @@ class SineParam(nn.Module):
             return x
         lo, hi = self.bounds[key]
         if lo is not None or hi is not None:
-            x = x.clamp(min=lo if lo is not None else -math.inf, max=hi if hi is not None else math.inf)
+            x = x.clamp(
+                min=lo if lo is not None else -math.inf, max=hi if hi is not None else math.inf
+            )
         return x
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:

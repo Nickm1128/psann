@@ -17,7 +17,14 @@ def test_build_preprocessor_trains_when_allowed():
     data = np.linspace(-1.0, 1.0, 60, dtype=np.float32).reshape(-1, 3)
     spec = PreprocessorSpec(
         name="lsmexpander",
-        params={"output_dim": 5, "hidden_width": 6, "epochs": 1, "lr": 1e-3, "batch_size": 16, "random_state": 0},
+        params={
+            "output_dim": 5,
+            "hidden_width": 6,
+            "epochs": 1,
+            "lr": 1e-3,
+            "batch_size": 16,
+            "random_state": 0,
+        },
     )
 
     module, base = build_preprocessor(

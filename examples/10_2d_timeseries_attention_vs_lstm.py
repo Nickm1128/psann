@@ -1,8 +1,10 @@
 import math
+
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+
 from psann.conv import PSANNConv2dNet
 
 
@@ -11,7 +13,7 @@ def make_seq_images(N=1200, T=10, H=8, W=8, seed=0):
     # Generate sequences where amplitude drifts over time
     X = rs.randn(N, T, 1, H, W).astype(np.float32)
     t = np.linspace(0, 1, T, dtype=np.float32)
-    amp = (1.0 + 0.5 * np.sin(2 * np.pi * (t * 0.8)))  # (T,)
+    amp = 1.0 + 0.5 * np.sin(2 * np.pi * (t * 0.8))  # (T,)
     X *= amp[None, :, None, None, None]
     # Target: predict mean of next frame (scalar)
     y = X.mean(axis=(2, 3, 4))[:, -1]  # (N,)
@@ -22,8 +24,12 @@ class PSANNWithAttention(nn.Module):
     def __init__(self, in_channels=1, embed=32, depth=2, heads=2):
         super().__init__()
         # per-frame encoder using PSANN
-        self.enc = PSANNConv2dNet(in_channels, embed, hidden_layers=2, hidden_channels=32, kernel_size=3)
-        enc_layer = nn.TransformerEncoderLayer(d_model=embed, nhead=heads, dim_feedforward=embed * 2, batch_first=True)
+        self.enc = PSANNConv2dNet(
+            in_channels, embed, hidden_layers=2, hidden_channels=32, kernel_size=3
+        )
+        enc_layer = nn.TransformerEncoderLayer(
+            d_model=embed, nhead=heads, dim_feedforward=embed * 2, batch_first=True
+        )
         self.tx = nn.TransformerEncoder(enc_layer, num_layers=depth)
         self.head = nn.Linear(embed, 1)
 
@@ -61,7 +67,9 @@ def train_eval(model, train, val, test, epochs=60, bs=128, lr=1e-3, device=None)
     model = model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=lr)
     loss_fn = nn.MSELoss()
-    dl_tr = DataLoader(TensorDataset(*[torch.from_numpy(a) for a in train]), batch_size=bs, shuffle=True)
+    dl_tr = DataLoader(
+        TensorDataset(*[torch.from_numpy(a) for a in train]), batch_size=bs, shuffle=True
+    )
     dl_va = DataLoader(TensorDataset(*[torch.from_numpy(a) for a in val]), batch_size=bs)
     Xte, yte = [torch.from_numpy(a) for a in test]
     best = math.inf

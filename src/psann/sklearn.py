@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union, Literal
+import math
 import warnings
+from typing import Any, Callable, Dict, Literal, Mapping, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -12,6 +13,7 @@ try:  # Optional scikit-learn import for API compatibility
     from sklearn.base import BaseEstimator, RegressorMixin  # type: ignore
     from sklearn.metrics import r2_score as _sk_r2_score  # type: ignore
 except Exception:  # Fallbacks if sklearn isn't installed at runtime
+
     class BaseEstimator:  # minimal stub
         def get_params(self, deep: bool = True):
             # Return non-private, non-callable attributes
@@ -32,21 +34,21 @@ except Exception:  # Fallbacks if sklearn isn't installed at runtime
         pass
 
     def _sk_r2_score(y_true, y_pred):
-            y_true = np.asarray(y_true)
-            y_pred = np.asarray(y_pred)
-            u = ((y_true - y_pred) ** 2).sum()
-            v = ((y_true - y_true.mean()) ** 2).sum()
-            return 1.0 - (u / v if v != 0 else np.nan)
+        y_true = np.asarray(y_true)
+        y_pred = np.asarray(y_pred)
+        u = ((y_true - y_pred) ** 2).sum()
+        v = ((y_true - y_true.mean()) ** 2).sum()
+        return 1.0 - (u / v if v != 0 else np.nan)
 
-from .nn import PSANNNet, WithPreprocessor, ResidualPSANNNet
-from .models import WaveResNet
-from .conv import PSANNConv1dNet, PSANNConv2dNet, PSANNConv3dNet, ResidualPSANNConv2dNet
-from .utils import choose_device, seed_all
-from .types import ActivationConfig, LossLike, NoiseSpec, ScalerSpec
-from .preproc import PreprocessorLike, build_preprocessor
-from .state import StateConfig, ensure_state_config
 
 from ._aliases import resolve_int_alias
+from .conv import PSANNConv1dNet, PSANNConv2dNet, PSANNConv3dNet, ResidualPSANNConv2dNet
+from .models import WaveResNet
+from .nn import PSANNNet, ResidualPSANNNet, WithPreprocessor
+from .preproc import PreprocessorLike, build_preprocessor
+from .state import StateConfig, ensure_state_config
+from .types import ActivationConfig, LossLike, NoiseSpec, ScalerSpec
+from .utils import choose_device, seed_all
 
 ValidationDataLike = Union[
     Tuple[np.ndarray, np.ndarray],
@@ -58,15 +60,16 @@ from .estimators._fit_utils import (
     ModelBuildRequest,
     NormalisedFitArgs,
     PreparedInputState,
-    build_model_from_hooks,
     build_hisso_training_plan,
+    build_model_from_hooks,
     maybe_run_hisso,
     normalise_fit_args,
     prepare_inputs_and_scaler,
     run_supervised_training,
+)
+from .estimators._fit_utils import (
     _build_optimizer as _build_optimizer_helper,
 )
-
 
 
 class PSANNRegressor(BaseEstimator, RegressorMixin):
@@ -184,7 +187,11 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self.scaler = scaler
         self.scaler_params = scaler_params or None
         self._use_channel_first_train_inputs_ = False
-        self._preproc_cfg_ = {'lsm': lsm, 'train': bool(lsm_train), 'pretrain_epochs': int(lsm_pretrain_epochs)}
+        self._preproc_cfg_ = {
+            "lsm": lsm,
+            "train": bool(lsm_train),
+            "pretrain_epochs": int(lsm_pretrain_epochs),
+        }
         self._lsm_module_ = None
         self._hisso_cache_: Optional[np.ndarray] = None
         self._hisso_trainer_: Optional[Any] = None
@@ -214,7 +221,28 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self._output_dim_: Optional[int] = None
         self._target_cf_shape_: Optional[Tuple[int, ...]] = None
         self._target_vector_dim_: Optional[int] = None
-        self._output_shape_tuple_: Optional[Tuple[int, ...]] = tuple(output_shape) if output_shape is not None else None
+        self._output_shape_tuple_: Optional[Tuple[int, ...]] = (
+            tuple(output_shape) if output_shape is not None else None
+        )
+
+    def gradient_hook(self, _: nn.Module) -> None:
+        """Hook executed after backward before the optimiser step."""
+        return None
+
+    def epoch_callback(
+        self,
+        epoch: int,
+        train_loss: float,
+        val_loss: Optional[float],
+        improved: bool,
+        patience_left: Optional[int],
+    ) -> None:
+        """Hook executed at the end of each epoch."""
+        return None
+
+    def _after_model_built(self) -> None:
+        """Extension point invoked after the core model has been (re)constructed."""
+        return None
 
     @staticmethod
     def _normalize_param_aliases(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -247,8 +275,6 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             out.pop("conv_channels", None)
         return out
 
-
-
     # ------------------------- Scaling helpers -------------------------
     def _make_internal_scaler(self) -> Optional[Dict[str, Any]]:
         kind = self.scaler
@@ -257,11 +283,15 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         if isinstance(kind, str):
             key = kind.lower()
             if key not in {"standard", "minmax"}:
-                raise ValueError("Unsupported scaler string. Use 'standard', 'minmax', or provide an object with fit/transform.")
+                raise ValueError(
+                    "Unsupported scaler string. Use 'standard', 'minmax', or provide an object with fit/transform."
+                )
             return {"type": key, "state": {}}
         # Custom object: must implement fit/transform; inverse_transform optional
         if not hasattr(kind, "fit") or not hasattr(kind, "transform"):
-            raise ValueError("Custom scaler must implement fit(X) and transform(X). Optional inverse_transform(X).")
+            raise ValueError(
+                "Custom scaler must implement fit(X) and transform(X). Optional inverse_transform(X)."
+            )
         return {"type": "custom", "obj": kind}
 
     def _scaler_fit_update(self, X2d: np.ndarray) -> Optional[Callable[[np.ndarray], np.ndarray]]:
@@ -420,10 +450,14 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         if X_arr.ndim == len(self.input_shape_):
             X_arr = X_arr.reshape((1,) + tuple(self.input_shape_))
         if X_arr.ndim != len(self.input_shape_) + 1:
-            raise ValueError(f"Expected input with {len(self.input_shape_) + 1} dimensions; received shape {X_arr.shape}.")
+            raise ValueError(
+                f"Expected input with {len(self.input_shape_) + 1} dimensions; received shape {X_arr.shape}."
+            )
         expected = tuple(self.input_shape_)
         if tuple(X_arr.shape[1:]) != expected:
-            raise ValueError(f"Input shape {X_arr.shape[1:]} does not match fitted shape {expected}.")
+            raise ValueError(
+                f"Input shape {X_arr.shape[1:]} does not match fitted shape {expected}."
+            )
 
         meta: Dict[str, Any] = {
             "n_samples": int(X_arr.shape[0]),
@@ -444,7 +478,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         X2d_scaled = self._apply_fitted_scaler(X2d)
         if X2d_scaled is not X2d:
             X_cf = X2d_scaled.reshape(N, -1, C).transpose(0, 2, 1).reshape(X_cf.shape)
-        use_cf_inputs = bool(self.per_element or getattr(self, "_use_channel_first_train_inputs_", False))
+        use_cf_inputs = bool(
+            self.per_element or getattr(self, "_use_channel_first_train_inputs_", False)
+        )
         meta["layout"] = "cf" if use_cf_inputs else "flat"
         if use_cf_inputs:
             inputs_np = X_cf.astype(np.float32, copy=False)
@@ -506,6 +542,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             model.train(prev_training)
             if hasattr(model, "set_state_updates"):
                 model.set_state_updates(bool(prev_training))
+
     # Internal helpers
     def _device(self) -> torch.device:
         return choose_device(self.device)
@@ -539,17 +576,21 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             return None, None
 
         self.lsm = preproc
-        lsm_module = module if module is not None else (preproc if isinstance(preproc, nn.Module) else None)
-        if lsm_module is None or not hasattr(lsm_module, 'forward'):
+        lsm_module = (
+            module if module is not None else (preproc if isinstance(preproc, nn.Module) else None)
+        )
+        if lsm_module is None or not hasattr(lsm_module, "forward"):
             raise RuntimeError(
                 "Provided lsm preprocessor must expose a torch.nn.Module. Fit the expander or pass an nn.Module."
             )
 
         self._lsm_module_ = lsm_module
         if lsm_module is not None and preproc is not None:
-            if hasattr(preproc, "score_reconstruction") and not hasattr(lsm_module, "score_reconstruction"):
+            if hasattr(preproc, "score_reconstruction") and not hasattr(
+                lsm_module, "score_reconstruction"
+            ):
                 setattr(lsm_module, "score_reconstruction", preproc.score_reconstruction)
-        attr = 'out_channels' if preserve_shape else 'output_dim'
+        attr = "out_channels" if preserve_shape else "output_dim"
         dim = getattr(lsm_module, attr, getattr(preproc, attr, None))
         return lsm_module, int(dim) if dim is not None else None
 
@@ -587,7 +628,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         }
         conv_cls = conv_map.get(int(spatial_ndim))
         if conv_cls is None:
-            raise ValueError(f"Unsupported spatial dimensionality {spatial_ndim}; expected 1, 2, or 3.")
+            raise ValueError(
+                f"Unsupported spatial dimensionality {spatial_ndim}; expected 1, 2, or 3."
+            )
         return conv_cls(
             int(in_channels),
             int(output_dim),
@@ -600,7 +643,6 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             w0=self.w0,
             segmentation_head=bool(segmentation_head),
         )
-
 
     def _make_optimizer(self, model: torch.nn.Module, lr: Optional[float] = None):
         lr = float(self.lr if lr is None else lr)
@@ -631,7 +673,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             if name in ("huber",):
                 delta = float(params.get("delta", 1.0))
                 return torch.nn.HuberLoss(delta=delta, reduction=reduction)
-            raise ValueError(f"Unknown loss '{self.loss}'. Supported: mse, l1/mae, smooth_l1, huber, or a callable.")
+            raise ValueError(
+                f"Unknown loss '{self.loss}'. Supported: mse, l1/mae, smooth_l1, huber, or a callable."
+            )
 
         # Callable custom loss; may return tensor (any shape) or float
         if callable(self.loss):
@@ -664,7 +708,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             if not isinstance(X_cf, np.ndarray):
                 X_cf = prepared.X_cf
             if X_cf is None:
-                raise ValueError("PreparedInputState missing channel-first inputs for per-element training.")
+                raise ValueError(
+                    "PreparedInputState missing channel-first inputs for per-element training."
+                )
             nd = int(X_cf.ndim) - 2
             if nd < 1:
                 raise ValueError("per_element=True expects inputs with spatial dimensions.")
@@ -737,13 +783,17 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             fit_args: NormalisedFitArgs,
         ) -> Optional[HISSOTrainingPlan]:
             if estimator_ref.per_element:
-                raise ValueError("hisso=True currently supports per_element=False for ResConvPSANNRegressor")
+                raise ValueError(
+                    "hisso=True currently supports per_element=False for ResConvPSANNRegressor"
+                )
             prepared_local = request.prepared
             inputs_cf = prepared_local.train_inputs
             if not isinstance(inputs_cf, np.ndarray):
                 inputs_cf = prepared_local.X_cf
             if inputs_cf is None:
-                raise ValueError("PreparedInputState missing channel-first inputs for conv HISSO training.")
+                raise ValueError(
+                    "PreparedInputState missing channel-first inputs for conv HISSO training."
+                )
             if fit_args.hisso_options is None:
                 raise ValueError("HISSO options were not prepared despite hisso=True.")
             return build_hisso_training_plan(
@@ -770,7 +820,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         if train_inputs is None:
             raise ValueError("PreparedInputState missing flattened training inputs.")
         if not isinstance(train_inputs, np.ndarray):
-            raise ValueError("PreparedInputState.train_inputs must be a numpy array for flat training.")
+            raise ValueError(
+                "PreparedInputState.train_inputs must be a numpy array for flat training."
+            )
 
         def build_model(request: ModelBuildRequest) -> nn.Module:
             prepared_local = request.prepared
@@ -924,13 +976,24 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         primary_dim = int(primary_dim)
         self._primary_dim_ = primary_dim
         self._output_dim_ = int(prepared_state.output_dim)
-        layout = "cf" if (self.preserve_shape and (self.per_element or getattr(self, "_use_channel_first_train_inputs_", False))) else "flat"
+        layout = (
+            "cf"
+            if (
+                self.preserve_shape
+                and (self.per_element or getattr(self, "_use_channel_first_train_inputs_", False))
+            )
+            else "flat"
+        )
         self._train_inputs_layout_ = layout
         self._target_cf_shape_ = (
-            tuple(prepared_state.y_cf.shape[1:]) if prepared_state.y_cf is not None else self._target_cf_shape_
+            tuple(prepared_state.y_cf.shape[1:])
+            if prepared_state.y_cf is not None
+            else self._target_cf_shape_
         )
         self._target_vector_dim_ = (
-            int(prepared_state.y_vector.shape[1]) if prepared_state.y_vector is not None else self._target_vector_dim_
+            int(prepared_state.y_vector.shape[1])
+            if prepared_state.y_vector is not None
+            else self._target_vector_dim_
         )
 
         preserve_inputs = bool(self.preserve_shape and self.per_element)
@@ -951,9 +1014,11 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         rebuild = not (self.warm_start and isinstance(getattr(self, "model_", None), nn.Module))
         if rebuild:
             self.model_ = build_model_from_hooks(hooks, request)
+        self._model_rebuilt_ = bool(rebuild)
 
         device = self._device()
         self.model_.to(device)
+        self._after_model_built()
 
         if hisso:
             result = maybe_run_hisso(hooks, request, fit_args=fit_args)
@@ -1002,7 +1067,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         elif batch.ndim == len(self.input_shape_) + 1 and batch.shape[0] == 1:
             batch = batch.reshape((1,) + tuple(self.input_shape_))
         elif batch.ndim != len(self.input_shape_) + 1:
-            raise ValueError(f"Expected input with {len(self.input_shape_) + 1} dims; received shape {batch.shape}.")
+            raise ValueError(
+                f"Expected input with {len(self.input_shape_) + 1} dims; received shape {batch.shape}."
+            )
 
         inputs_np, meta = self._prepare_inference_inputs(batch)
         preds = self._run_model(inputs_np, state_updates=bool(update_state))
@@ -1103,7 +1170,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         try:
             return np.stack(stacked_inputs, axis=0)
         except ValueError as exc:
-            raise RuntimeError("Sequence outputs have inconsistent shapes; cannot stack results.") from exc
+            raise RuntimeError(
+                "Sequence outputs have inconsistent shapes; cannot stack results."
+            ) from exc
 
     def _coerce_sequence_inputs(self, sequence: np.ndarray) -> np.ndarray:
         seq = np.asarray(sequence, dtype=np.float32)
@@ -1142,11 +1211,15 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
 
     def _ensure_streaming_ready(self) -> None:
         if self.stream_lr is None or float(self.stream_lr) <= 0.0:
-            raise RuntimeError("Streaming updates require 'stream_lr' > 0. Configure the estimator accordingly.")
+            raise RuntimeError(
+                "Streaming updates require 'stream_lr' > 0. Configure the estimator accordingly."
+            )
         self._ensure_fitted()
         model = self.model_
         if model is None:
-            raise RuntimeError("Estimator is not fitted yet; cannot initialise streaming optimiser.")
+            raise RuntimeError(
+                "Estimator is not fitted yet; cannot initialise streaming optimiser."
+            )
 
         needs_rebuild = self._stream_opt_ is None or self._stream_model_token_ != id(model)
         if needs_rebuild:
@@ -1202,7 +1275,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         optimizer = self._stream_opt_
         loss_fn = self._stream_loss_
         if optimizer is None or loss_fn is None:
-            raise RuntimeError("Streaming optimiser state is missing; call _ensure_streaming_ready first.")
+            raise RuntimeError(
+                "Streaming optimiser state is missing; call _ensure_streaming_ready first."
+            )
 
         prev_mode = model.training
         prev_state_updates = None
@@ -1247,9 +1322,15 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             "scaler_state": getattr(self, "_scaler_state_", None),
             "scaler_spec": getattr(self, "_scaler_spec_", None),
             "scaler_obj": self.scaler if getattr(self, "_scaler_kind_", None) == "custom" else None,
-            "input_shape": tuple(self.input_shape_) if getattr(self, "input_shape_", None) is not None else None,
+            "input_shape": (
+                tuple(self.input_shape_)
+                if getattr(self, "input_shape_", None) is not None
+                else None
+            ),
             "internal_shape_cf": (
-                tuple(self._internal_input_shape_cf_) if getattr(self, "_internal_input_shape_cf_", None) is not None else None
+                tuple(self._internal_input_shape_cf_)
+                if getattr(self, "_internal_input_shape_cf_", None) is not None
+                else None
             ),
             "primary_dim": self._primary_dim_,
             "output_dim": self._output_dim_,
@@ -1275,7 +1356,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             payload = torch.load(path, map_location=map_location)
         class_name = payload.get("class")
         if class_name is not None and class_name != cls.__name__:
-            raise ValueError(f"Checkpoint was created for '{class_name}', cannot load into '{cls.__name__}'.")
+            raise ValueError(
+                f"Checkpoint was created for '{class_name}', cannot load into '{cls.__name__}'."
+            )
         params = payload.get("params", {})
         estimator = cls(**params)
         if "model" not in payload:
@@ -1295,7 +1378,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         input_shape = payload.get("input_shape")
         estimator.input_shape_ = tuple(input_shape) if input_shape is not None else None
         internal_cf = payload.get("internal_shape_cf")
-        estimator._internal_input_shape_cf_ = tuple(internal_cf) if internal_cf is not None else None
+        estimator._internal_input_shape_cf_ = (
+            tuple(internal_cf) if internal_cf is not None else None
+        )
         estimator._primary_dim_ = payload.get("primary_dim")
         estimator._output_dim_ = payload.get("output_dim")
         estimator._keep_column_output_ = bool(payload.get("keep_column_output", False))
@@ -1304,10 +1389,13 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         estimator._target_cf_shape_ = tuple(target_cf) if target_cf is not None else None
         estimator._target_vector_dim_ = payload.get("target_vector_dim")
         output_shape_tuple = payload.get("output_shape_tuple")
-        estimator._output_shape_tuple_ = tuple(output_shape_tuple) if output_shape_tuple is not None else None
+        estimator._output_shape_tuple_ = (
+            tuple(output_shape_tuple) if output_shape_tuple is not None else None
+        )
 
         estimator._hisso_trainer_ = None
         return estimator
+
 
 class WaveResNetRegressor(PSANNRegressor):
     """Sklearn-style regressor that wraps the WaveResNet backbone."""
@@ -1358,6 +1446,14 @@ class WaveResNetRegressor(PSANNRegressor):
         use_phase_shift: bool = True,
         dropout: float = 0.0,
         context_dim: Optional[int] = None,
+        residual_alpha_init: float = 0.0,
+        grad_clip_norm: Optional[float] = 5.0,
+        first_layer_w0_initial: Optional[float] = 10.0,
+        hidden_w0_initial: Optional[float] = 0.5,
+        w0_warmup_epochs: int = 10,
+        progressive_depth_initial: Optional[int] = None,
+        progressive_depth_interval: int = 15,
+        progressive_depth_growth: int = 1,
     ) -> None:
         if preserve_shape:
             raise ValueError("WaveResNetRegressor currently supports preserve_shape=False.")
@@ -1386,6 +1482,39 @@ class WaveResNetRegressor(PSANNRegressor):
             context_val = int(context_dim)
             if context_val <= 0:
                 raise ValueError("context_dim must be positive when provided.")
+
+        if grad_clip_norm is not None and grad_clip_norm <= 0:
+            raise ValueError("grad_clip_norm must be positive when provided.")
+
+        if first_layer_w0_initial is not None and first_layer_w0_initial <= 0:
+            raise ValueError("first_layer_w0_initial must be positive when provided.")
+        if hidden_w0_initial is not None and hidden_w0_initial <= 0:
+            raise ValueError("hidden_w0_initial must be positive when provided.")
+
+        warmup_epochs = int(w0_warmup_epochs)
+        if warmup_epochs < 0:
+            raise ValueError("w0_warmup_epochs must be non-negative.")
+
+        if progressive_depth_initial is not None:
+            init_layers = int(progressive_depth_initial)
+            if init_layers <= 0:
+                raise ValueError("progressive_depth_initial must be positive when provided.")
+            if init_layers > int(hidden_layers):
+                raise ValueError("progressive_depth_initial cannot exceed hidden_layers.")
+        else:
+            init_layers = None
+
+        grow_interval = int(progressive_depth_interval)
+        if init_layers is not None and grow_interval <= 0:
+            raise ValueError(
+                "progressive_depth_interval must be positive when progressive depth is enabled."
+            )
+
+        growth = int(progressive_depth_growth)
+        if init_layers is not None and growth <= 0:
+            raise ValueError(
+                "progressive_depth_growth must be positive when progressive depth is enabled."
+            )
 
         if stateful or state is not None:
             warnings.warn(
@@ -1437,11 +1566,32 @@ class WaveResNetRegressor(PSANNRegressor):
 
         self.first_layer_w0 = float(first_layer_w0)
         self.hidden_w0 = float(hidden_w0)
+        self.first_layer_w0_initial = (
+            float(first_layer_w0_initial)
+            if first_layer_w0_initial is not None
+            else self.first_layer_w0
+        )
+        self.hidden_w0_initial = (
+            float(hidden_w0_initial) if hidden_w0_initial is not None else self.hidden_w0
+        )
+        self.w0_warmup_epochs = warmup_epochs
         self.norm = norm_value
         self.use_film = bool(use_film)
         self.use_phase_shift = bool(use_phase_shift)
         self.dropout = float(dropout)
         self.context_dim = context_val
+        self.residual_alpha_init = float(residual_alpha_init)
+        self.grad_clip_norm = float(grad_clip_norm) if grad_clip_norm is not None else None
+
+        self._w0_schedule_active = False
+        self._w0_schedule_step = 0
+
+        self.progressive_depth_initial = init_layers
+        self.progressive_depth_interval = grow_interval
+        self.progressive_depth_growth = growth
+        self._progressive_depth_active = False
+        self._progressive_depth_current = int(self.hidden_layers)
+        self._progressive_next_expand_epoch: Optional[int] = None
 
         self._wave_hidden_dim = int(self.hidden_units)
 
@@ -1458,19 +1608,197 @@ class WaveResNetRegressor(PSANNRegressor):
                 RuntimeWarning,
                 stacklevel=2,
             )
+        init_first, init_hidden = self._initial_w0_values()
+        depth = int(self.hidden_layers)
+        if self._progressive_enabled():
+            depth = int(self.progressive_depth_initial)
         return WaveResNet(
             input_dim=int(input_dim),
             hidden_dim=int(self._wave_hidden_dim),
-            depth=int(self.hidden_layers),
+            depth=depth,
             output_dim=int(output_dim),
-            first_layer_w0=self.first_layer_w0,
-            hidden_w0=self.hidden_w0,
+            first_layer_w0=init_first,
+            hidden_w0=init_hidden,
             context_dim=self.context_dim,
             norm=self.norm,
             use_film=self.use_film,
             use_phase_shift=self.use_phase_shift,
             dropout=self.dropout,
+            residual_alpha_init=self.residual_alpha_init,
         )
+
+    def _initial_w0_values(self) -> Tuple[float, float]:
+        return float(self.first_layer_w0_initial), float(self.hidden_w0_initial)
+
+    def _target_w0_values(self) -> Tuple[float, float]:
+        return float(self.first_layer_w0), float(self.hidden_w0)
+
+    def _current_w0_values(self) -> Tuple[float, float]:
+        if not self._use_w0_warmup():
+            return self._target_w0_values()
+        total = max(self.w0_warmup_epochs, 1)
+        step = min(int(self._w0_schedule_step), total)
+        ratio = float(step) / float(total)
+        init_first, init_hidden = self._initial_w0_values()
+        target_first, target_hidden = self._target_w0_values()
+        first = init_first + (target_first - init_first) * ratio
+        hidden = init_hidden + (target_hidden - init_hidden) * ratio
+        return first, hidden
+
+    def _use_w0_warmup(self) -> bool:
+        init_first, init_hidden = self._initial_w0_values()
+        target_first, target_hidden = self._target_w0_values()
+        return self.w0_warmup_epochs > 0 and (
+            not math.isclose(init_first, target_first)
+            or not math.isclose(init_hidden, target_hidden)
+        )
+
+    def _progressive_enabled(self) -> bool:
+        return self.progressive_depth_initial is not None and self.progressive_depth_initial < int(
+            self.hidden_layers
+        )
+
+    def _wave_core(self) -> Optional[WaveResNet]:
+        model = getattr(self, "model_", None)
+        if isinstance(model, WaveResNet):
+            return model
+        if isinstance(model, WithPreprocessor):
+            core = model.core
+            if isinstance(core, WaveResNet):
+                return core
+        return None
+
+    def _apply_w0_values(self, first_w0: float, hidden_w0: float) -> None:
+        core = self._wave_core()
+        if core is None:
+            return
+        value_first = float(first_w0)
+        value_hidden = float(hidden_w0)
+        core.stem_w0 = value_first
+        for block in core.blocks:
+            if hasattr(block, "w0"):
+                block.w0 = value_hidden
+
+    def _reset_w0_schedule(self) -> None:
+        self._w0_schedule_step = 0
+        if not self._use_w0_warmup():
+            self._w0_schedule_active = False
+            target_first, target_hidden = self._target_w0_values()
+            self._apply_w0_values(target_first, target_hidden)
+            return
+        self._w0_schedule_active = True
+        init_first, init_hidden = self._initial_w0_values()
+        self._apply_w0_values(init_first, init_hidden)
+
+    def _reset_progressive_depth(self) -> None:
+        core = self._wave_core()
+        if core is None:
+            self._progressive_depth_active = False
+            self._progressive_depth_current = int(self.hidden_layers)
+            self._progressive_next_expand_epoch = None
+            return
+        self._progressive_depth_current = int(core.depth)
+        if not self._progressive_enabled():
+            self._progressive_depth_active = False
+            self._progressive_next_expand_epoch = None
+            return
+        if self._progressive_depth_current >= int(self.hidden_layers):
+            self._progressive_depth_active = False
+            self._progressive_next_expand_epoch = None
+            return
+        self._progressive_depth_active = True
+        self._progressive_next_expand_epoch = int(self.progressive_depth_interval)
+
+    def _expand_progressive_depth(self) -> None:
+        core = self._wave_core()
+        if core is None or not self._progressive_depth_active:
+            return
+        target_depth = int(self.hidden_layers)
+        if self._progressive_depth_current >= target_depth:
+            self._progressive_depth_active = False
+            self._progressive_next_expand_epoch = None
+            return
+        growth = min(
+            int(self.progressive_depth_growth),
+            target_depth - self._progressive_depth_current,
+        )
+        new_blocks = core.add_blocks(growth)
+        self._progressive_depth_current += growth
+        if self._progressive_depth_current >= target_depth:
+            self._progressive_depth_active = False
+            self._progressive_next_expand_epoch = None
+        elif self.progressive_depth_interval > 0:
+            next_epoch = (
+                None
+                if self._progressive_next_expand_epoch is None
+                else int(self._progressive_next_expand_epoch)
+            )
+            self._progressive_next_expand_epoch = (
+                None if next_epoch is None else next_epoch + int(self.progressive_depth_interval)
+            )
+
+        # Ensure new parameters are clipped into the warmup schedule
+        first_w0, hidden_w0 = self._current_w0_values()
+        self._apply_w0_values(first_w0, hidden_w0)
+
+        optimizer = getattr(self, "_optimizer_", None)
+        if optimizer is not None and new_blocks:
+            new_params = []
+            for block in new_blocks:
+                new_params.extend(list(block.parameters()))
+            if new_params:
+                reference_group = optimizer.param_groups[0]
+                param_group = {k: v for k, v in reference_group.items() if k != "params"}
+                param_group["params"] = new_params
+                optimizer.add_param_group(param_group)
+
+    def _update_w0_schedule(self, next_epoch: int) -> None:
+        if not self._w0_schedule_active:
+            return
+        total = max(self.w0_warmup_epochs, 1)
+        step = min(int(next_epoch), total)
+        init_first, init_hidden = self._initial_w0_values()
+        target_first, target_hidden = self._target_w0_values()
+        ratio = float(step) / float(total)
+        new_first = init_first + (target_first - init_first) * ratio
+        new_hidden = init_hidden + (target_hidden - init_hidden) * ratio
+        self._apply_w0_values(new_first, new_hidden)
+        self._w0_schedule_step = step
+        if step >= total:
+            self._w0_schedule_active = False
+
+    def _after_model_built(self) -> None:
+        super()._after_model_built()
+        rebuilt = bool(getattr(self, "_model_rebuilt_", True))
+        if rebuilt:
+            self._reset_w0_schedule()
+            self._reset_progressive_depth()
+        else:
+            self._w0_schedule_active = False
+            self._progressive_depth_active = False
+            self._progressive_next_expand_epoch = None
+
+    def gradient_hook(self, model: nn.Module) -> None:
+        if self.grad_clip_norm is None:
+            return
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float(self.grad_clip_norm))
+
+    def epoch_callback(
+        self,
+        epoch: int,
+        train_loss: float,
+        val_loss: Optional[float],
+        improved: bool,
+        patience_left: Optional[int],
+    ) -> None:
+        if self._w0_schedule_active:
+            self._update_w0_schedule(epoch + 1)
+        if (
+            self._progressive_depth_active
+            and self._progressive_next_expand_epoch is not None
+            and (epoch + 1) >= int(self._progressive_next_expand_epoch)
+        ):
+            self._expand_progressive_depth()
 
 
 class ResPSANNRegressor(PSANNRegressor):
@@ -1600,6 +1928,7 @@ class ResPSANNRegressor(PSANNRegressor):
             drop_path_max=self.drop_path_max,
             residual_alpha_init=self.residual_alpha_init,
         )
+
 
 class ResConvPSANNRegressor(ResPSANNRegressor):
     """Residual 2D convolutional PSANN regressor with HISSO support."""
@@ -1801,10 +2130,14 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         self._output_dim_ = int(prepared_state.output_dim)
         self._train_inputs_layout_ = "cf"
         self._target_cf_shape_ = (
-            tuple(prepared_state.y_cf.shape[1:]) if prepared_state.y_cf is not None else self._target_cf_shape_
+            tuple(prepared_state.y_cf.shape[1:])
+            if prepared_state.y_cf is not None
+            else self._target_cf_shape_
         )
         self._target_vector_dim_ = (
-            int(prepared_state.y_vector.shape[1]) if prepared_state.y_vector is not None else self._target_vector_dim_
+            int(prepared_state.y_vector.shape[1])
+            if prepared_state.y_vector is not None
+            else self._target_vector_dim_
         )
 
         lsm_data = prepared_state.train_inputs
@@ -1832,5 +2165,3 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         if result is None:
             raise RuntimeError("HISSO requested but no variant hook was provided.")
         return self
-
-

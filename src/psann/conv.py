@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from typing import Optional, Sequence
 import math
+from typing import Optional, Sequence
 
 import torch
 import torch.nn as nn
 
+from ._aliases import resolve_int_alias
 from .activations import SineParam
 from .utils import init_siren_linear_
-from ._aliases import resolve_int_alias
 
 
 class _PSANNConvBlockNd(nn.Module):
@@ -103,7 +103,9 @@ class PSANNConv1dNet(nn.Module):
         c = in_channels
         for i in range(hidden_layers):
             conv = nn.Conv1d(c, hidden_channels, kernel_size=ks, padding=(ks // 2 if ks > 1 else 0))
-            block = _PSANNConvBlockNd(conv, hidden_channels, act_kw=act_kw, activation_type=activation_type)
+            block = _PSANNConvBlockNd(
+                conv, hidden_channels, act_kw=act_kw, activation_type=activation_type
+            )
             layers.append(block)
             c = hidden_channels
         self.body = nn.Sequential(*layers)
@@ -172,7 +174,9 @@ class PSANNConv2dNet(nn.Module):
         c = in_channels
         for i in range(hidden_layers):
             conv = nn.Conv2d(c, hidden_channels, kernel_size=ks, padding=(ks // 2 if ks > 1 else 0))
-            block = _PSANNConvBlockNd(conv, hidden_channels, act_kw=act_kw, activation_type=activation_type)
+            block = _PSANNConvBlockNd(
+                conv, hidden_channels, act_kw=act_kw, activation_type=activation_type
+            )
             layers.append(block)
             c = hidden_channels
         self.body = nn.Sequential(*layers)
@@ -240,7 +244,9 @@ class PSANNConv3dNet(nn.Module):
         c = in_channels
         for i in range(hidden_layers):
             conv = nn.Conv3d(c, hidden_channels, kernel_size=ks, padding=(ks // 2 if ks > 1 else 0))
-            block = _PSANNConvBlockNd(conv, hidden_channels, act_kw=act_kw, activation_type=activation_type)
+            block = _PSANNConvBlockNd(
+                conv, hidden_channels, act_kw=act_kw, activation_type=activation_type
+            )
             layers.append(block)
             c = hidden_channels
         self.body = nn.Sequential(*layers)
@@ -268,7 +274,6 @@ class PSANNConv3dNet(nn.Module):
             return self.head(x)  # (N, out_dim, D, H, W)
         x = self.pool(x).flatten(1)  # (N, C)
         return self.fc(x)
-
 
 
 class _DropPath(nn.Module):
@@ -324,8 +329,12 @@ class ResidualPSANNConvBlock2d(nn.Module):
             if norm == "rms"
             else (nn.GroupNorm(1, self.channels) if norm == "layer" else nn.Identity())
         )
-        self.conv1 = nn.Conv2d(self.channels, self.channels, kernel_size=kernel_size, padding=padding)
-        self.conv2 = nn.Conv2d(self.channels, self.channels, kernel_size=kernel_size, padding=padding)
+        self.conv1 = nn.Conv2d(
+            self.channels, self.channels, kernel_size=kernel_size, padding=padding
+        )
+        self.conv2 = nn.Conv2d(
+            self.channels, self.channels, kernel_size=kernel_size, padding=padding
+        )
         if activation_type == "psann":
             self.act1 = SineParam(self.channels, **act_kw)
             self.act2 = SineParam(self.channels, **act_kw)
@@ -401,7 +410,11 @@ class ResidualPSANNConv2dNet(nn.Module):
         _init_siren_conv_(self.in_proj, is_first=True, w0=w0_first)
         blocks = []
         for i in range(self.hidden_layers):
-            dp = float(drop_path_max) * (i / max(1, self.hidden_layers - 1)) if self.hidden_layers > 1 else 0.0
+            dp = (
+                float(drop_path_max) * (i / max(1, self.hidden_layers - 1))
+                if self.hidden_layers > 1
+                else 0.0
+            )
             blocks.append(
                 ResidualPSANNConvBlock2d(
                     channels,
