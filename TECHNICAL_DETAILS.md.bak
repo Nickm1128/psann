@@ -224,67 +224,30 @@ HISSO (Horizon-Informed Sampling Strategy Optimisation) turns supervised estimat
 
 ## 7. Wave-based backbones (`psann.models`, `psann.utils`)
 
-This section details the WaveResNet family and the rationale behind its design. These models leverage sinusoidal activations with SIREN-style initialisation to capture oscillatory and high-frequency structure while preserving stable gradients.
+The models module exports standalone building blocks for sinusoidal architectures outside the sklearn wrappers:
 
-### 7.1 WaveResNet (residual sine MLP)
-
-`psann.models.wave_resnet.WaveResNet` is a deep residual MLP built from sine residual blocks with optional context modulation. It consumes vectors `x ? R^{input_dim}` (optionally a context `c ? R^{context_dim}`) and predicts `y ? R^{output_dim}`.
-
-Structure:
-
-- Stem: `h = W0 x + b0`, activation `SineParam(w0_first · h)`. The scalar `w0_first` scales the input frequency as in SIREN.
-- Residual stack: for each block `k = 1..depth`:
+- `WaveResNet`: a residual network composed of `SineParam` convolutional layers. Each residual unit implements
 
   ```
-  u = W1 h + b1
-  u = w0_hidden · u
-  if context: u ? u + F(c)              # additive phase shift
-  v = SineParam(u)                       # per-feature amplitude/frequency/decay
-  if context: v ? FiLM(v, c)             # multiplicative/additive gain from context
-  v = W2 v + b2
-  if norm: v ? RMSNorm(v) or identity
-  out = h + a · Dropout(v)               # learnable residual scale a
-  h = out
+  h = SineParam(Conv(h, kernel_size, padding))
+  h = SineParam(Conv(h, kernel_size, padding))
+  out = h_in + alpha * h
   ```
 
-  - `SineParam` implements `A · exp(-d · g(z)) · sin(f · z)` with per-feature, optionally trainable amplitude `A`, frequency `f`, and damping `d` (see §1). In WaveResNet these parameters are per hidden feature and can be frozen or learned via the `activation_config.learnable` setting. The model constructor also exposes `trainable_params` for convenience.
-  - `F(c)` is a learned linear projection from the context that acts as an additive phase shift before the sine; `FiLM(v, c)` applies feature-wise affine modulation after the nonlinearity. Both can be toggled independently.
-  - Normalisation: choose between none, weight normalization (applied to linears), or RMSNorm on the residual branch output.
-  - The residual scale `a` is a learned scalar per block initialised from `residual_alpha_init` (commonly `0.0` for residual-in-residual training stability).
+  `alpha` follows a dropout-style schedule (`drop_path_max`) to control stochastic depth.
 
-- Head: a linear readout `y = W_out h + b_out`.
+- `WaveEncoder`: a stack of 1D convolutions with sine activations and optional pooling. Useful for compressing sequences before decoding.
 
-Initialisation and frequency control:
+- `WaveRNNCell`: recurrent cell using sine activations. Given state `s_{t-1}` and input `x_t`,
 
-- All linears receive SIREN initialisation (`apply_siren_init`), using `w0_first` for the first linear encountered and `w0_hidden` for all subsequent linears. This sets the effective frequency support of the network at initialisation time.
-- The sklearn wrapper `WaveResNetRegressor` optionally warms up `w0` values over the first `w0_warmup_epochs`, interpolating from `first_layer_w0_initial / hidden_w0_initial` to the target `first_layer_w0 / hidden_w0`. This helps optimiser stability on noisy data and aligns with the idea of gradually increasing frequency bandwidth during training.
-- Progressive depth: `WaveResNetRegressor` can start with a shallow stack (`progressive_depth_initial`) and periodically append new residual blocks, adding their parameters to the optimizer while keeping running `w0` values consistent with the warmup schedule.
+  ```
+  h_t = SineParam(W_h [x_t, s_{t-1}] + b_h)
+  s_t = SineParam(W_s [x_t, s_{t-1}] + b_s)
+  ```
 
-Why sine + residuals?
+  The cell can be wrapped to form RNNs or sequence-to-sequence models.
 
-- A sine network with SIREN init can represent high-frequency signals with far fewer layers than ReLU/Tanh MLPs and avoids vanishing gradients via careful scaling. The residual wrapper keeps the effective Jacobian close to identity early on, improving depth-wise trainability.
-- The `SineParam` generalises a pure `sin` by learning per-feature amplitude, frequency, and an exponential envelope (damping). This can be viewed as a learned, adaptive Fourier-like basis where each channel chooses its own frequency and envelope during training.
-- Context modulation (phase shift + FiLM) offers a simple conditional mechanism that is interpretable in the time/frequency domain: the context can steer phases and per-feature gains.
-
-Shapes and usage:
-
-- Inputs: `(batch, input_dim)`; optional context: `(batch, context_dim)`.
-- Internals are feature-wise (`feature_dim=-1`). `SineParam` parameters broadcast across the batch.
-- The factory `build_wave_resnet(**kwargs)` builds a backbone directly; `WaveResNetRegressor` provides an sklearn interface with training schedules and progressive depth.
-
-Mapping to code:
-
-- Residual block definition: `src/psann/layers/sine_residual.py:51`.
-- WaveResNet assembly and activation injection: `src/psann/models/wave_resnet.py:21`.
-- SIREN init: `src/psann/initializers.py:39`.
-- Estimator schedules (w0 warmup, progressive depth): `src/psann/sklearn.py:1616`.
-
-### 7.2 Other wave components
-
-- `WaveEncoder`: a lightweight encoder that applies stacks of 1D convolutions (with sine activations) and optional pooling to compress sequences into fixed-length embeddings before decoding.
-- `WaveRNNCell`: a recurrent cell with sine activations. Given state `s_{t-1}` and input `x_t`, a pair of sine-activated affine maps produce a new hidden state; stacking forms RNNs or seq2seq models.
-
-### 7.3 Diagnostics
+- `build_wave_resnet(**kwargs)` and `scan_regimes(config)` provide convenience factories for constructing and analysing these backbones.
 
 The diagnostics suite (`psann.utils`) works on both estimator networks and standalone wave models:
 
@@ -293,6 +256,7 @@ The diagnostics suite (`psann.utils`) works on both estimator networks and stand
 - `participation_ratio(matrix)` measures effective dimensionality.
 - `mutual_info_proxy(model, inputs, targets)` provides an information-theoretic proxy for representation quality.
 - `fit_linear_probe(embeddings, targets)` trains linear readouts for probing frozen representations.
+
 ## 8. Benchmarks and scripts
 
 Two scripts help manage performance baselines:

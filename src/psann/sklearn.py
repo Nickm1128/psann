@@ -1612,6 +1612,7 @@ class WaveResNetRegressor(PSANNRegressor):
         depth = int(self.hidden_layers)
         if self._progressive_enabled():
             depth = int(self.progressive_depth_initial)
+        activation_cfg = copy.deepcopy(self.activation)
         return WaveResNet(
             input_dim=int(input_dim),
             hidden_dim=int(self._wave_hidden_dim),
@@ -1625,6 +1626,7 @@ class WaveResNetRegressor(PSANNRegressor):
             use_phase_shift=self.use_phase_shift,
             dropout=self.dropout,
             residual_alpha_init=self.residual_alpha_init,
+            activation_config=activation_cfg,
         )
 
     def _initial_w0_values(self) -> Tuple[float, float]:
