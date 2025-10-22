@@ -30,6 +30,7 @@ def run_training_loop(
     noise_std: Optional[torch.Tensor] = None,
     val_inputs: Optional[torch.Tensor] = None,
     val_targets: Optional[torch.Tensor] = None,
+    val_context: Optional[torch.Tensor] = None,
     gradient_hook: Optional[Callable[[torch.nn.Module], None]] = None,
     epoch_callback: Optional[
         Callable[[int, float, Optional[float], bool, Optional[int]], None]
@@ -60,18 +61,30 @@ def run_training_loop(
         model.train()
         total = 0.0
         count = 0
-        for xb, yb in train_loader:
+        for batch in train_loader:
+            context_b: Optional[torch.Tensor] = None
+            if isinstance(batch, (list, tuple)):
+                if len(batch) == 3:
+                    xb, context_b, yb = batch
+                elif len(batch) == 2:
+                    xb, yb = batch
+                else:
+                    raise ValueError("Unexpected batch tuple length encountered during training.")
+            else:
+                raise ValueError("Training batches must be tuple/list tensors.")
             if cfg.stateful and cfg.state_reset == "batch" and hasattr(model, "reset_state"):
                 try:
                     model.reset_state()
                 except Exception:
                     pass
             xb = xb.to(device)
+            if context_b is not None:
+                context_b = context_b.to(device)
             yb = yb.to(device)
             if noise_std is not None:
                 xb = xb + torch.randn_like(xb) * noise_std
             optimizer.zero_grad()
-            pred = model(xb)
+            pred = model(xb, context_b) if context_b is not None else model(xb)
             loss = loss_fn(pred, yb)
             loss.backward()
             if gradient_hook is not None:
@@ -91,7 +104,9 @@ def run_training_loop(
         if val_inputs is not None and val_targets is not None:
             model.eval()
             with torch.no_grad():
-                pred_val = model(val_inputs)
+                pred_val = (
+                    model(val_inputs, val_context) if val_context is not None else model(val_inputs)
+                )
                 val_loss = float(loss_fn(pred_val, val_targets).item())
 
         metric = val_loss if val_loss is not None else train_loss

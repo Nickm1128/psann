@@ -9,7 +9,7 @@ models, and orchestrate supervised or HISSO training.
 """
 
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Protocol, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Protocol, Tuple, Union
 
 import numpy as np
 import torch
@@ -37,7 +37,8 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 ValidationPair = Tuple[np.ndarray, np.ndarray]
-ValidationInput = ValidationPair
+ValidationTriple = Tuple[np.ndarray, np.ndarray, np.ndarray]
+ValidationInput = Union[ValidationPair, ValidationTriple]
 
 
 @dataclass
@@ -46,6 +47,7 @@ class NormalisedFitArgs:
 
     X: np.ndarray
     y: Optional[np.ndarray]
+    context: Optional[np.ndarray]
     validation: Optional[ValidationPair]
     hisso: bool
     hisso_options: Optional[HISSOOptions]
@@ -61,13 +63,16 @@ class PreparedInputState:
 
     X_flat: np.ndarray
     X_cf: Optional[np.ndarray]
+    context: Optional[np.ndarray]
     input_shape: Tuple[int, ...]
     internal_shape_cf: Optional[Tuple[int, ...]]
     scaler_transform: Optional[Callable[[np.ndarray], np.ndarray]]
     train_inputs: np.ndarray
+    train_context: Optional[np.ndarray]
     train_targets: Optional[np.ndarray]
     y_vector: Optional[np.ndarray]
     y_cf: Optional[np.ndarray]
+    context_dim: Optional[int]
     primary_dim: int
     output_dim: int
 
@@ -136,6 +141,7 @@ def normalise_fit_args(
     X: np.ndarray,
     y: Optional[np.ndarray],
     *,
+    context: Optional[np.ndarray],
     validation_data: Optional[ValidationInput],
     noisy: Optional[NoiseSpec],
     verbose: int,
@@ -146,21 +152,44 @@ def normalise_fit_args(
 ) -> NormalisedFitArgs:
     """Coerce inputs, targets, and validation tuples into canonical form."""
 
-    val_pair: Optional[ValidationPair] = None
+    val_pair: Optional[ValidationInput] = None
     if validation_data is not None:
         if not isinstance(validation_data, (tuple, list)):
-            raise ValueError("validation_data must be a tuple (X, y)")
+            raise ValueError("validation_data must be a tuple (X, y) or (X, y, context)")
         val_tuple = tuple(validation_data)
-        if len(val_tuple) != 2:
-            raise ValueError("validation_data must be length 2")
-        X_val = np.asarray(val_tuple[0], dtype=np.float32)
-        y_val = np.asarray(val_tuple[1], dtype=np.float32)
-        val_pair = (X_val, y_val)
+        if len(val_tuple) == 2:
+            X_val = np.asarray(val_tuple[0], dtype=np.float32)
+            y_val = np.asarray(val_tuple[1], dtype=np.float32)
+            val_pair = (X_val, y_val)
+        elif len(val_tuple) == 3:
+            X_val = np.asarray(val_tuple[0], dtype=np.float32)
+            y_val = np.asarray(val_tuple[1], dtype=np.float32)
+            ctx_val = np.asarray(val_tuple[2], dtype=np.float32)
+            if ctx_val.ndim == 1:
+                ctx_val = ctx_val.reshape(-1, 1)
+            if ctx_val.shape[0] != X_val.shape[0]:
+                raise ValueError(
+                    f"validation context has {ctx_val.shape[0]} samples but X has {X_val.shape[0]}."
+                )
+            val_pair = (X_val, y_val, ctx_val)
+        else:
+            raise ValueError("validation_data must be length 2 or 3")
 
     X_arr = np.asarray(X, dtype=np.float32)
     y_arr = None
     if y is not None:
         y_arr = np.asarray(y, dtype=np.float32)
+
+    context_arr: Optional[np.ndarray] = None
+    if context is not None:
+        ctx = np.asarray(context, dtype=np.float32)
+        if ctx.ndim == 1:
+            ctx = ctx.reshape(-1, 1)
+        if ctx.shape[0] != X_arr.shape[0]:
+            raise ValueError(
+                f"context has {ctx.shape[0]} samples but X has {X_arr.shape[0]}; dimensions must match."
+            )
+        context_arr = ctx
 
     if not hisso and y_arr is None:
         raise ValueError("y must be provided when hisso=False")
@@ -188,6 +217,7 @@ def normalise_fit_args(
     return NormalisedFitArgs(
         X=X_arr,
         y=y_arr,
+        context=context_arr,
         validation=val_pair,
         hisso=bool(hisso),
         hisso_options=hisso_options,
@@ -218,6 +248,7 @@ def _prepare_flatten_inputs(
 ) -> Tuple[PreparedInputState, int]:
     X = fit_args.X
     y = fit_args.y
+    context = fit_args.context
 
     X2d = estimator._flatten(X)
     scaler_transform = estimator._scaler_fit_update(X2d)
@@ -228,6 +259,16 @@ def _prepare_flatten_inputs(
 
     X_flat = estimator._flatten(X_scaled).astype(np.float32, copy=False)
     train_inputs = X_flat
+    train_context: Optional[np.ndarray] = None
+    context_dim: Optional[int] = None
+    if context is not None:
+        train_context = np.asarray(context, dtype=np.float32)
+        context_dim = int(train_context.shape[1])
+    if train_context is None:
+        auto_context = estimator._auto_context(train_inputs)
+        if auto_context is not None:
+            train_context = auto_context.astype(np.float32, copy=False)
+            context_dim = int(train_context.shape[1])
 
     y_vec: Optional[np.ndarray] = None
     primary_dim: int
@@ -252,13 +293,16 @@ def _prepare_flatten_inputs(
     prepared = PreparedInputState(
         X_flat=train_inputs,
         X_cf=None,
+        context=train_context,
         input_shape=estimator.input_shape_,
         internal_shape_cf=None,
         scaler_transform=scaler_transform,
         train_inputs=train_inputs,
+        train_context=train_context,
         train_targets=y_vec,
         y_vector=y_vec,
         y_cf=None,
+        context_dim=context_dim,
         primary_dim=primary_dim,
         output_dim=primary_dim,
     )
@@ -272,6 +316,7 @@ def _prepare_preserve_shape_inputs(
 ) -> Tuple[PreparedInputState, int]:
     X = fit_args.X
     y = fit_args.y
+    context = fit_args.context
 
     if X.ndim < 3:
         raise ValueError("preserve_shape=True requires inputs of shape (N, C, ...).")
@@ -288,6 +333,19 @@ def _prepare_preserve_shape_inputs(
     if scaler_transform is not None:
         X2d_scaled = scaler_transform(X2d)
         X_cf = X2d_scaled.reshape(N, -1, C).transpose(0, 2, 1).reshape(X_cf.shape)
+
+    train_context: Optional[np.ndarray] = None
+    context_dim: Optional[int] = None
+    if context is not None:
+        ctx = np.asarray(context, dtype=np.float32)
+        if ctx.ndim == 1:
+            ctx = ctx.reshape(-1, 1)
+        if ctx.shape[0] != X.shape[0]:
+            raise ValueError(
+                f"context has {ctx.shape[0]} samples but X has {X.shape[0]}; dimensions must match."
+            )
+        train_context = ctx.astype(np.float32, copy=False)
+        context_dim = int(train_context.shape[1])
 
     y_cf: Optional[np.ndarray] = None
     y_vec: Optional[np.ndarray] = None
@@ -342,6 +400,11 @@ def _prepare_preserve_shape_inputs(
         primary_dim = int(y_vec.shape[1])
 
     X_flat = estimator._flatten(X).astype(np.float32, copy=False)
+    if train_context is None:
+        auto_context = estimator._auto_context(X_flat)
+        if auto_context is not None:
+            train_context = auto_context.astype(np.float32, copy=False)
+            context_dim = int(train_context.shape[1])
     use_cf_inputs = bool(
         estimator.per_element or getattr(estimator, "_use_channel_first_train_inputs_", False)
     )
@@ -357,13 +420,16 @@ def _prepare_preserve_shape_inputs(
     prepared = PreparedInputState(
         X_flat=X_flat,
         X_cf=X_cf.astype(np.float32, copy=False),
+        context=train_context,
         input_shape=estimator.input_shape_,
         internal_shape_cf=estimator._internal_input_shape_cf_,
         scaler_transform=scaler_transform,
         train_inputs=train_inputs,
+        train_context=train_context,
         train_targets=train_targets,
         y_vector=y_vec,
         y_cf=y_cf,
+        context_dim=context_dim,
         primary_dim=primary_dim,
         output_dim=primary_dim,
     )
@@ -532,8 +598,19 @@ def run_supervised_training(
 
     inputs_np = prepared.train_inputs.astype(np.float32, copy=False)
     targets_np = np.asarray(train_targets, dtype=np.float32)
+    context_np = None
+    if prepared.train_context is not None:
+        context_np = np.asarray(prepared.train_context, dtype=np.float32)
+        if context_np.shape[0] != inputs_np.shape[0]:
+            raise ValueError("Context array must align with training inputs along the batch axis.")
 
-    dataset = TensorDataset(torch.from_numpy(inputs_np), torch.from_numpy(targets_np))
+    inputs_t = torch.from_numpy(inputs_np)
+    targets_t = torch.from_numpy(targets_np)
+    if context_np is not None:
+        context_t = torch.from_numpy(context_np.astype(np.float32, copy=False))
+        dataset = TensorDataset(inputs_t, context_t, targets_t)
+    else:
+        dataset = TensorDataset(inputs_t, targets_t)
     shuffle = not (estimator.stateful and estimator.state_reset in ("epoch", "none"))
     dataloader = DataLoader(
         dataset,
@@ -542,7 +619,7 @@ def run_supervised_training(
         num_workers=int(estimator.num_workers),
     )
 
-    val_inputs_t, val_targets_t = _prepare_validation_tensors(
+    val_inputs_t, val_targets_t, val_context_t = _prepare_validation_tensors(
         estimator,
         prepared,
         fit_args.validation,
@@ -584,6 +661,7 @@ def run_supervised_training(
         noise_std=noise_std_t,
         val_inputs=val_inputs,
         val_targets=val_targets_t,
+        val_context=val_context_t,
         gradient_hook=gradient_hook,
         epoch_callback=epoch_callback,
     )
@@ -597,6 +675,7 @@ def run_supervised_training(
         "best_state": best_state,
         "val_inputs": val_inputs,
         "val_targets": val_targets_t,
+        "val_context": val_context_t,
     }
 
 
@@ -628,15 +707,40 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
 def _prepare_validation_tensors(
     estimator: "PSANNRegressor",
     prepared: PreparedInputState,
-    validation: Optional[ValidationPair],
+    validation: Optional[ValidationInput],
     *,
     device: torch.device,
-) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
     if validation is None:
-        return None, None
+        return None, None, None
 
-    X_val = np.asarray(validation[0], dtype=np.float32)
-    y_val = np.asarray(validation[1], dtype=np.float32)
+    if len(validation) == 2:
+        X_val = np.asarray(validation[0], dtype=np.float32)
+        y_val = np.asarray(validation[1], dtype=np.float32)
+        ctx_val: Optional[np.ndarray] = None
+    elif len(validation) == 3:
+        X_val = np.asarray(validation[0], dtype=np.float32)
+        y_val = np.asarray(validation[1], dtype=np.float32)
+        ctx_val = np.asarray(validation[2], dtype=np.float32)
+        if ctx_val.ndim == 1:
+            ctx_val = ctx_val.reshape(-1, 1)
+        if ctx_val.shape[0] != X_val.shape[0]:
+            raise ValueError(
+                f"validation context has {ctx_val.shape[0]} samples but X has {X_val.shape[0]}."
+            )
+    else:
+        raise ValueError("validation_data must be length 2 or 3")
+
+    if ctx_val is None:
+        flat_val = estimator._flatten(X_val)
+        flat_val_scaled = estimator._apply_fitted_scaler(flat_val)
+        auto_ctx = estimator._auto_context(flat_val_scaled)
+        if auto_ctx is not None:
+            ctx_val = auto_ctx
+
+    ctx_val_t: Optional[torch.Tensor] = None
+    if ctx_val is not None:
+        ctx_val_t = torch.from_numpy(ctx_val.astype(np.float32, copy=False)).to(device)
 
     if estimator.preserve_shape:
         X_val_cf = np.moveaxis(X_val, -1, 1) if estimator.data_format == "channels_last" else X_val
@@ -670,7 +774,7 @@ def _prepare_validation_tensors(
         else:
             y_val_flat = y_val.reshape(y_val.shape[0], -1).astype(np.float32, copy=False)
             y_val_t = torch.from_numpy(y_val_flat).to(device)
-        return X_val_t, y_val_t
+        return X_val_t, y_val_t, ctx_val_t
 
     n_features = int(np.prod(estimator.input_shape_))
     if tuple(X_val.shape[1:]) != estimator.input_shape_:
@@ -684,7 +788,7 @@ def _prepare_validation_tensors(
 
     y_val_flat = y_val.reshape(y_val.shape[0], -1).astype(np.float32, copy=False)
     y_val_t = torch.from_numpy(y_val_flat.astype(np.float32, copy=False)).to(device)
-    return X_val_t, y_val_t
+    return X_val_t, y_val_t, ctx_val_t
 
 
 def _prepare_noise_tensor(

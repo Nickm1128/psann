@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import math
 import warnings
-from typing import Any, Callable, Dict, Literal, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Literal, Mapping, Optional, Tuple, Union, cast
 
 import numpy as np
 import torch
@@ -117,6 +117,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         warm_start: bool = False,
         scaler: Optional[ScalerSpec] = None,
         scaler_params: Optional[Dict[str, Any]] = None,
+        context_builder: Optional[Union[str, Callable[[np.ndarray], np.ndarray]]] = None,
+        context_builder_params: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.hidden_layers = int(hidden_layers)
 
@@ -186,6 +188,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         # Optional input scaler (minmax/standard or custom object with fit/transform)
         self.scaler = scaler
         self.scaler_params = scaler_params or None
+        self.context_builder = context_builder
+        self.context_builder_params = context_builder_params or {}
+        self._context_builder_callable_: Optional[Callable[[np.ndarray], np.ndarray]] = None
         self._use_channel_first_train_inputs_ = False
         self._preproc_cfg_ = {
             "lsm": lsm,
@@ -224,6 +229,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self._output_shape_tuple_: Optional[Tuple[int, ...]] = (
             tuple(output_shape) if output_shape is not None else None
         )
+        self._context_dim_: Optional[int] = None
 
     def gradient_hook(self, _: nn.Module) -> None:
         """Hook executed after backward before the optimiser step."""
@@ -274,6 +280,84 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         else:
             out.pop("conv_channels", None)
         return out
+
+    def _get_context_builder(self) -> Optional[Callable[[np.ndarray], np.ndarray]]:
+        builder = getattr(self, "_context_builder_callable_", None)
+        if builder is not None:
+            return builder
+        spec = self.context_builder
+        if spec is None:
+            return None
+        if callable(spec):
+            builder = spec
+        elif isinstance(spec, str):
+            key = spec.strip().lower()
+            if key == "cosine":
+                builder = self._build_cosine_context_callable(**self.context_builder_params)
+            else:
+                raise ValueError(f"Unknown context_builder option: {spec!r}")
+        else:
+            raise TypeError("context_builder must be None, a string, or a callable.")
+        self._context_builder_callable_ = builder
+        return builder
+
+    @staticmethod
+    def _build_cosine_context_callable(
+        *,
+        frequencies: Optional[Union[int, Iterable[float]]] = None,
+        include_sin: bool = True,
+        include_cos: bool = True,
+        normalise_input: bool = False,
+    ) -> Callable[[np.ndarray], np.ndarray]:
+        if not include_sin and not include_cos:
+            raise ValueError("cosine context builder requires include_sin or include_cos.")
+        if frequencies is None:
+            freqs: list[float] = [1.0]
+        elif isinstance(frequencies, int):
+            if frequencies <= 0:
+                raise ValueError("frequencies integer must be positive.")
+            freqs = [float(idx) for idx in range(1, frequencies + 1)]
+        else:
+            freqs = [float(freq) for freq in frequencies]
+            if not freqs:
+                raise ValueError("frequencies iterable must contain at least one value.")
+
+        def _builder(inputs: np.ndarray) -> np.ndarray:
+            arr = np.asarray(inputs, dtype=np.float32)
+            if arr.ndim == 1:
+                arr = arr.reshape(-1, 1)
+            flat = arr.reshape(arr.shape[0], -1)
+            basis = flat
+            if normalise_input:
+                norms = np.linalg.norm(flat, axis=1, keepdims=True)
+                norms = np.maximum(norms, 1e-6)
+                basis = flat / norms
+            features: list[np.ndarray] = []
+            for freq in freqs:
+                scaled = basis * float(freq)
+                if include_sin:
+                    features.append(np.sin(scaled))
+                if include_cos:
+                    features.append(np.cos(scaled))
+            if not features:
+                raise RuntimeError("cosine context builder produced no features.")
+            return np.concatenate(features, axis=1).astype(np.float32, copy=False)
+
+        return _builder
+
+    def _auto_context(self, features_2d: np.ndarray) -> Optional[np.ndarray]:
+        builder = self._get_context_builder()
+        if builder is None:
+            return None
+        context = builder(features_2d)
+        context_arr = np.asarray(context, dtype=np.float32)
+        if context_arr.ndim == 1:
+            context_arr = context_arr.reshape(-1, 1)
+        if context_arr.shape[0] != features_2d.shape[0]:
+            raise ValueError(
+                "Context builder must preserve the number of samples along the first dimension."
+            )
+        return context_arr
 
     # ------------------------- Scaling helpers -------------------------
     def _make_internal_scaler(self) -> Optional[Dict[str, Any]]:
@@ -444,7 +528,11 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         if getattr(self, "input_shape_", None) is None:
             raise RuntimeError("Estimator is missing fitted input shape; inference is unavailable.")
 
-    def _prepare_inference_inputs(self, X: np.ndarray) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def _prepare_inference_inputs(
+        self,
+        X: np.ndarray,
+        context: Optional[np.ndarray] = None,
+    ) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
         self._ensure_fitted()
         X_arr = np.asarray(X, dtype=np.float32)
         if X_arr.ndim == len(self.input_shape_):
@@ -464,29 +552,68 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             "data_format": self.data_format,
             "per_element": bool(self.per_element),
         }
+        context_np: Optional[np.ndarray] = None
+        if context is not None:
+            context_np = np.asarray(context, dtype=np.float32)
+            if context_np.ndim == 1:
+                context_np = context_np.reshape(-1, 1)
+            if context_np.shape[0] != meta["n_samples"]:
+                raise ValueError(
+                    f"context has {context_np.shape[0]} samples but X has {meta['n_samples']}."
+                )
+        flat_for_context: Optional[np.ndarray] = None
 
         if not self.preserve_shape:
             X2d = self._flatten(X_arr)
             X2d = self._apply_fitted_scaler(X2d)
             meta["layout"] = "flat"
-            return X2d, meta
-
-        X_cf = np.moveaxis(X_arr, -1, 1) if self.data_format == "channels_last" else X_arr.copy()
-        meta["cf_shape"] = tuple(X_cf.shape[1:])
-        N, C = X_cf.shape[0], int(X_cf.shape[1])
-        X2d = X_cf.reshape(N, C, -1).transpose(0, 2, 1).reshape(-1, C)
-        X2d_scaled = self._apply_fitted_scaler(X2d)
-        if X2d_scaled is not X2d:
-            X_cf = X2d_scaled.reshape(N, -1, C).transpose(0, 2, 1).reshape(X_cf.shape)
-        use_cf_inputs = bool(
-            self.per_element or getattr(self, "_use_channel_first_train_inputs_", False)
-        )
-        meta["layout"] = "cf" if use_cf_inputs else "flat"
-        if use_cf_inputs:
-            inputs_np = X_cf.astype(np.float32, copy=False)
+            flat_for_context = X2d
+            inputs_np = X2d
         else:
-            inputs_np = X2d_scaled.reshape(N, -1).astype(np.float32, copy=False)
-        return inputs_np, meta
+            X_cf = np.moveaxis(X_arr, -1, 1) if self.data_format == "channels_last" else X_arr.copy()
+            meta["cf_shape"] = tuple(X_cf.shape[1:])
+            N, C = X_cf.shape[0], int(X_cf.shape[1])
+            X2d = X_cf.reshape(N, C, -1).transpose(0, 2, 1).reshape(-1, C)
+            X2d_scaled = self._apply_fitted_scaler(X2d)
+            flat_for_context = X2d_scaled if X2d_scaled is not X2d else X2d
+            if X2d_scaled is not X2d:
+                X_cf = X2d_scaled.reshape(N, -1, C).transpose(0, 2, 1).reshape(X_cf.shape)
+            use_cf_inputs = bool(
+                self.per_element or getattr(self, "_use_channel_first_train_inputs_", False)
+            )
+            meta["layout"] = "cf" if use_cf_inputs else "flat"
+            if use_cf_inputs:
+                inputs_np = X_cf.astype(np.float32, copy=False)
+            else:
+                inputs_np = flat_for_context.reshape(N, -1).astype(np.float32, copy=False)
+
+        if context_np is None and flat_for_context is not None:
+            auto_ctx = self._auto_context(flat_for_context.astype(np.float32, copy=False))
+            if auto_ctx is not None:
+                context_np = auto_ctx
+
+        if context_np is not None:
+            if context_np.shape[0] != meta["n_samples"]:
+                raise ValueError(
+                    f"Context builder returned {context_np.shape[0]} samples but inputs have {meta['n_samples']}."
+                )
+            if self._context_dim_ is None:
+                self._context_dim_ = int(context_np.shape[1])
+                if hasattr(self, "context_dim"):
+                    try:
+                        setattr(self, "context_dim", int(self._context_dim_))
+                    except Exception:
+                        pass
+            if self._context_dim_ is not None and self._context_dim_ not in (0, context_np.shape[1]):
+                raise ValueError(
+                    f"Expected context feature dimension {self._context_dim_}; received {context_np.shape[1]}."
+                )
+        elif self._context_dim_ not in (None, 0):
+            raise ValueError(
+                f"This estimator was fit expecting context_dim={self._context_dim_}; provide a matching context array."
+            )
+
+        return inputs_np, meta, context_np
 
     def _reshape_predictions(self, preds: np.ndarray, meta: Dict[str, Any]) -> np.ndarray:
         n_samples = int(meta["n_samples"])
@@ -514,7 +641,13 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
 
         return preds
 
-    def _run_model(self, inputs_np: np.ndarray, *, state_updates: bool = False) -> np.ndarray:
+    def _run_model(
+        self,
+        inputs_np: np.ndarray,
+        *,
+        context_np: Optional[np.ndarray] = None,
+        state_updates: bool = False,
+    ) -> np.ndarray:
         self._ensure_fitted()
         state_updates = bool(state_updates and self.stateful)
         model = self.model_
@@ -536,7 +669,12 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             model.to(device)
             with torch.no_grad():
                 tensor = torch.from_numpy(inputs_np.astype(np.float32, copy=False)).to(device)
-                outputs = model(tensor)
+                context_tensor = None
+                if context_np is not None:
+                    context_tensor = torch.from_numpy(
+                        context_np.astype(np.float32, copy=False)
+                    ).to(device)
+                outputs = model(tensor, context_tensor) if context_tensor is not None else model(tensor)
                 return outputs.detach().cpu().numpy()
         finally:
             model.train(prev_training)
@@ -894,6 +1032,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         X: np.ndarray,
         y: np.ndarray | None,
         *,
+        context: Optional[np.ndarray] = None,
         validation_data: Optional[ValidationDataLike] = None,
         verbose: int = 0,
         noisy: Optional[NoiseSpec] = None,
@@ -945,6 +1084,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             self,
             X,
             y,
+            context=context,
             validation_data=validation_data,
             noisy=noisy,
             verbose=verbose,
@@ -995,6 +1135,12 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             if prepared_state.y_vector is not None
             else self._target_vector_dim_
         )
+        self._context_dim_ = prepared_state.context_dim
+        if prepared_state.context_dim is not None and hasattr(self, "context_dim"):
+            try:
+                setattr(self, "context_dim", int(prepared_state.context_dim))
+            except Exception:
+                pass
 
         preserve_inputs = bool(self.preserve_shape and self.per_element)
         lsm_data = prepared_state.train_inputs
@@ -1034,14 +1180,14 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         )
         return self
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        inputs_np, meta = self._prepare_inference_inputs(X)
-        preds = self._run_model(inputs_np, state_updates=False)
+    def predict(self, X: np.ndarray, *, context: Optional[np.ndarray] = None) -> np.ndarray:
+        inputs_np, meta, context_np = self._prepare_inference_inputs(X, context)
+        preds = self._run_model(inputs_np, context_np=context_np, state_updates=False)
         return self._reshape_predictions(preds, meta)
 
-    def score(self, X: np.ndarray, y: np.ndarray) -> float:
+    def score(self, X: np.ndarray, y: np.ndarray, *, context: Optional[np.ndarray] = None) -> float:
         y_true = np.asarray(y, dtype=np.float32)
-        y_pred = self.predict(X)
+        y_pred = self.predict(X, context=context)
         if y_true.ndim == 1 and y_pred.ndim == 2 and y_pred.shape[1] == 1:
             y_pred = y_pred.reshape(-1)
         elif y_true.shape != y_pred.shape:
@@ -1057,6 +1203,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self,
         x: np.ndarray,
         *,
+        context: Optional[np.ndarray] = None,
         target: Optional[np.ndarray] = None,
         update_params: bool = False,
         update_state: bool = True,
@@ -1071,13 +1218,13 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                 f"Expected input with {len(self.input_shape_) + 1} dims; received shape {batch.shape}."
             )
 
-        inputs_np, meta = self._prepare_inference_inputs(batch)
-        preds = self._run_model(inputs_np, state_updates=bool(update_state))
+        inputs_np, meta, context_np = self._prepare_inference_inputs(batch, context)
+        preds = self._run_model(inputs_np, context_np=context_np, state_updates=bool(update_state))
         reshaped = self._reshape_predictions(preds, meta)
         if update_params:
             if target is None:
                 raise ValueError("step(..., update_params=True) requires a target array.")
-            self._apply_stream_update(inputs_np, target=target)
+            self._apply_stream_update(inputs_np, context_np=context_np, target=target)
         if isinstance(reshaped, np.ndarray):
             if reshaped.shape[0] == 1:
                 return reshaped[0]
@@ -1089,12 +1236,14 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self,
         X: np.ndarray,
         *,
+        context: Optional[np.ndarray] = None,
         reset_state: bool = False,
         return_sequence: bool = False,
         update_state: bool = True,
     ) -> Any:
         return self._sequence_rollout(
             X,
+            context_seq=context,
             targets=None,
             reset_state=reset_state,
             update_params=False,
@@ -1107,6 +1256,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         X: np.ndarray,
         y: np.ndarray,
         *,
+        context: Optional[np.ndarray] = None,
         reset_state: bool = True,
         return_sequence: bool = True,
         update_state: bool = True,
@@ -1115,6 +1265,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
 
         return self._sequence_rollout(
             X,
+            context_seq=context,
             targets=y,
             reset_state=reset_state,
             update_params=True,
@@ -1130,6 +1281,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self,
         X_seq: np.ndarray,
         *,
+        context_seq: Optional[np.ndarray],
         targets: Optional[np.ndarray],
         reset_state: bool,
         update_params: bool,
@@ -1141,6 +1293,15 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         steps = int(sequence.shape[0])
         if steps == 0:
             raise ValueError("predict_sequence requires at least one timestep.")
+
+        context_arr: Optional[np.ndarray] = None
+        expects_context = self._context_dim_ not in (None, 0)
+        if context_seq is not None:
+            context_arr = self._coerce_sequence_context(context_seq, steps)
+        elif expects_context:
+            raise ValueError(
+                f"This estimator was fit expecting context_dim={self._context_dim_}; provide a context sequence."
+            )
 
         targets_arr: Optional[np.ndarray] = None
         if targets is not None:
@@ -1154,9 +1315,11 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         outputs: list[Any] = []
         for idx in range(steps):
             tgt_step = None if targets_arr is None else targets_arr[idx]
+            ctx_step = None if context_arr is None else context_arr[idx : idx + 1]
             outputs.append(
                 self.step(
                     sequence[idx],
+                    context=ctx_step,
                     target=tgt_step,
                     update_params=bool(update_params and targets_arr is not None),
                     update_state=update_state,
@@ -1194,6 +1357,23 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             )
 
         return seq
+
+    def _coerce_sequence_context(self, context: np.ndarray, steps: int) -> np.ndarray:
+        arr = np.asarray(context, dtype=np.float32)
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        if arr.shape[0] != steps:
+            if arr.shape[0] == 1 and steps == 1:
+                arr = arr.reshape(1, arr.shape[1])
+            else:
+                raise ValueError(
+                    f"Context sequence length {arr.shape[0]} does not match sequence length {steps}."
+                )
+        if self._context_dim_ not in (None, 0, arr.shape[1]):
+            raise ValueError(
+                f"Context feature dimension {arr.shape[1]} does not match expected {self._context_dim_}."
+            )
+        return arr.astype(np.float32, copy=False)
 
     def _coerce_sequence_targets(self, targets: np.ndarray, steps: int) -> np.ndarray:
         arr = np.asarray(targets, dtype=np.float32)
@@ -1264,7 +1444,13 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
 
         return torch.from_numpy(arr.astype(np.float32, copy=False)).to(device)
 
-    def _apply_stream_update(self, inputs_np: np.ndarray, *, target: np.ndarray) -> None:
+    def _apply_stream_update(
+        self,
+        inputs_np: np.ndarray,
+        *,
+        context_np: Optional[np.ndarray],
+        target: np.ndarray,
+    ) -> None:
         self._ensure_streaming_ready()
         model = self.model_
         if model is None:
@@ -1288,7 +1474,10 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         try:
             model.train(True)
             xb = torch.from_numpy(inputs_np.astype(np.float32, copy=False)).to(device)
-            pred = model(xb)
+            context_t = None
+            if context_np is not None:
+                context_t = torch.from_numpy(context_np.astype(np.float32, copy=False)).to(device)
+            pred = model(xb, context_t) if context_t is not None else model(xb)
             target_t = self._coerce_stream_target(target, pred, device)
 
             optimizer.zero_grad(set_to_none=True)
@@ -1339,6 +1528,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             "target_cf_shape": self._target_cf_shape_,
             "target_vector_dim": self._target_vector_dim_,
             "output_shape_tuple": self._output_shape_tuple_,
+            "context_dim": self._context_dim_,
         }
         torch.save(payload, path)
         model.to(orig_device)
@@ -1392,6 +1582,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         estimator._output_shape_tuple_ = (
             tuple(output_shape_tuple) if output_shape_tuple is not None else None
         )
+        estimator._context_dim_ = payload.get("context_dim")
 
         estimator._hisso_trainer_ = None
         return estimator
@@ -1446,6 +1637,8 @@ class WaveResNetRegressor(PSANNRegressor):
         use_phase_shift: bool = True,
         dropout: float = 0.0,
         context_dim: Optional[int] = None,
+        context_builder: Optional[Union[str, Callable[[np.ndarray], np.ndarray]]] = None,
+        context_builder_params: Optional[Dict[str, Any]] = None,
         residual_alpha_init: float = 0.0,
         grad_clip_norm: Optional[float] = 5.0,
         first_layer_w0_initial: Optional[float] = 10.0,
@@ -1562,6 +1755,8 @@ class WaveResNetRegressor(PSANNRegressor):
             warm_start=warm_start,
             scaler=scaler,
             scaler_params=scaler_params,
+            context_builder=context_builder,
+            context_builder_params=context_builder_params,
         )
 
         self.first_layer_w0 = float(first_layer_w0)
@@ -1580,6 +1775,7 @@ class WaveResNetRegressor(PSANNRegressor):
         self.use_phase_shift = bool(use_phase_shift)
         self.dropout = float(dropout)
         self.context_dim = context_val
+        self._context_dim_ = context_val
         self.residual_alpha_init = float(residual_alpha_init)
         self.grad_clip_norm = float(grad_clip_norm) if grad_clip_norm is not None else None
 
@@ -1594,6 +1790,78 @@ class WaveResNetRegressor(PSANNRegressor):
         self._progressive_next_expand_epoch: Optional[int] = None
 
         self._wave_hidden_dim = int(self.hidden_units)
+
+    def fit(
+        self,
+        X: np.ndarray,
+        y: np.ndarray | None,
+        *,
+        context: Optional[np.ndarray] = None,
+        **kwargs: Any,
+    ) -> "WaveResNetRegressor":
+        validation_data = kwargs.get("validation_data")
+
+        builder_active = self._get_context_builder() is not None
+
+        inferred_context_dim: Optional[int] = None
+        if context is not None:
+            ctx_arr = np.asarray(context, dtype=np.float32)
+            if ctx_arr.ndim == 1:
+                ctx_arr = ctx_arr.reshape(-1, 1)
+            inferred_context_dim = int(ctx_arr.shape[1])
+
+        validation_context_dim: Optional[int] = None
+        if validation_data is not None and isinstance(validation_data, (tuple, list)):
+            val_tuple = tuple(validation_data)
+            if len(val_tuple) == 3 and val_tuple[2] is not None:
+                val_ctx = np.asarray(val_tuple[2], dtype=np.float32)
+                if val_ctx.ndim == 1:
+                    val_ctx = val_ctx.reshape(-1, 1)
+                validation_context_dim = int(val_ctx.shape[1])
+
+        if inferred_context_dim is not None:
+            if self.context_dim is not None and int(self.context_dim) != inferred_context_dim:
+                raise ValueError(
+                    f"Provided context feature dimension {inferred_context_dim} does not match "
+                    f"configured context_dim={self.context_dim}."
+                )
+            self.context_dim = inferred_context_dim
+            self._context_dim_ = inferred_context_dim
+        elif self.context_dim is not None:
+            if not builder_active:
+                raise ValueError(
+                    f"WaveResNetRegressor expects a context array matching context_dim={self.context_dim}; "
+                    "received context=None."
+                )
+            self._context_dim_ = int(self.context_dim)
+        elif builder_active:
+            self._context_dim_ = None
+        else:
+            self._context_dim_ = None
+
+        if validation_context_dim is not None:
+            expected_dim = self.context_dim
+            if expected_dim is None:
+                if builder_active:
+                    self.context_dim = validation_context_dim
+                    self._context_dim_ = validation_context_dim
+                else:
+                    raise ValueError(
+                        "Validation context was provided but estimator was constructed without context_dim. "
+                        "Specify context during fit to enable context-aware validation."
+                    )
+            elif validation_context_dim != int(expected_dim):
+                raise ValueError(
+                    f"Validation context dimension {validation_context_dim} does not match expected {expected_dim}."
+                )
+
+        fitted = cast(
+            "WaveResNetRegressor",
+            super().fit(X, y, context=context, **kwargs),
+        )
+        if self._context_dim_ is not None:
+            self.context_dim = int(self._context_dim_)
+        return fitted
 
     def _build_dense_core(
         self,
