@@ -35,7 +35,7 @@
 - PSANN Conv Spine (`scripts/run_light_probes.py:PSANNConvSpine`)
   - `PSANNConv1dNet` temporal backbone with small strided Conv1d; global temporal aggregator (last/mean); linear head to horizon.
 - MLP Regressor (`scripts/run_light_probes.py:MLPRegressor`)
-  - Flattened input → [Linear, ReLU]×depth → Linear(out_dim).
+  - Flattened input → [Linear, ReLU]xdepth → Linear(out_dim).
 - Training
   - Optimizer: Adam(lr=1e-3); loss: MSE.
   - Batch size: 256 (default in light runner); epochs per CLI.
@@ -80,7 +80,8 @@ Notes
 - For Jena and Beijing, PSANN+Conv spine consistently outperforms MLP under the same epoch budget.
 
 **Pending GPU sweep (runpod)**
-- Tooling: use `python -m psann.scripts.hisso_log_run --config <yaml> --output-dir runs/hisso --run-name <tag> --device cuda:0 --seed 42` (see `configs/hisso/` templates). The WaveResNet config expects `datasets/wave_resnet_small.npz`; stage it locally or override `--config` with the remote path before launching on runpod.
+- Tooling: use `python -m psann.scripts.hisso_log_run --config <yaml> --output-dir runs/hisso --run-name <tag> --device cuda:0 --seed 42` (see `configs/hisso/` templates). The WaveResNet config ships with a staged dataset at `datasets/wave_resnet_small.npz` (320/96/96 samples, 4x128 channels-first tensors, float32 prices aligned with M=3 outputs); copy this NPZ to the runpod workspace or point the config to its remote location before launching.
+- CPU baseline: `python -m psann.scripts.hisso_log_run --config configs/hisso/wave_resnet_cpu_smoke.yaml --output-dir runs/hisso --run-name wave_resnet_cpu_smoke --device cpu` completes in ~20.5s (reward_mean~-0.127, throughput~335 eps/s, Sharpe NaN due to a strictly negative equity curve); artifacts live under `runs/hisso/wave_resnet_cpu_smoke/`.
 - Capture: copy `metrics.json`, `events.csv`, `checkpoints/best.pt`, and `config_resolved.yaml` back into `runs/hisso/<tag>/` locally after each remote run.
 - `configs/hisso/dense_cpu_smoke.yaml` now produces price matrices aligned with the primary dimension; the run should succeed once rerun.
 - Experiments queued
@@ -156,7 +157,7 @@ This revision aligns the original plan to the datasets described in the companio
 
 **Notes**
 
-* Two input options: engineered 561‑feature windows (official split), or raw 50‑Hz sequences (128×9) from Inertial Signals.
+* Two input options: engineered 561‑feature windows (official split), or raw 50‑Hz sequences (128x9) from Inertial Signals.
 * Respect provided train/test splits by subject to avoid leakage.
 
 ### 5) Rossmann Store Sales

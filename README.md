@@ -101,6 +101,87 @@ Behind the scenes the estimator normalises arguments via `normalise_fit_args` an
 
 **Device & dtype.** The estimators operate internally in float32. Supplying `np.float32` arrays (as shown above) avoids extra copies. For GPU training, pass `device="cuda"` (or a specific `torch.device`) when constructing the estimator *before* calling `fit`; the helper will keep HISSO loops and inference on the pinned device.
 
+### Residual regression with `ResPSANNRegressor`
+
+```python
+import numpy as np
+from psann import ResPSANNRegressor
+
+rng = np.random.default_rng(1234)
+X = rng.uniform(-2.0, 2.0, size=(512, 4)).astype(np.float32)
+y = (np.sin(X[:, :1]) + 0.25 * X[:, 1:2]).astype(np.float32)
+
+est = ResPSANNRegressor(
+    hidden_layers=4,
+    hidden_units=48,
+    lr=1e-3,
+    epochs=120,
+    early_stopping=True,
+    patience=15,
+    random_state=1234,
+)
+est.fit(X, y, verbose=0)
+print("Residual R^2:", est.score(X, y))
+```
+
+`ResPSANNRegressor` keeps the same `.fit`/`.predict` interface but routes training through the residual backbone with DropPath, RMSNorm, and optional HISSO hooks enabled.
+
+### Convolutional regression with `ResConvPSANNRegressor`
+
+```python
+import numpy as np
+from psann import ResConvPSANNRegressor
+
+rng = np.random.default_rng(321)
+X = rng.normal(size=(64, 12, 3)).astype(np.float32)  # (N, length, channels)
+y = X.mean(axis=(1, 2), keepdims=True).astype(np.float32)
+
+conv_est = ResConvPSANNRegressor(
+    hidden_layers=3,
+    hidden_units=32,
+    conv_channels=24,
+    conv_kernel_size=3,
+    epochs=60,
+    batch_size=16,
+    data_format="channels_last",
+    random_state=321,
+)
+conv_est.fit(X, y, verbose=0)
+print("Conv R^2:", conv_est.score(X, y))
+```
+
+Passing `data_format="channels_last"` lets you keep inputs as `(N, length, channels)` arrays; the estimator handles the channel-first conversion internally while respecting `float32` inputs and the shared alias policy.
+
+### Wave-based regression with `WaveResNetRegressor`
+
+```python
+import numpy as np
+from psann import WaveResNetRegressor
+
+X = np.linspace(0, 2 * np.pi, 400, dtype=np.float32).reshape(-1, 1)
+context = np.stack(
+    [np.sin(X[:, 0]), np.cos(X[:, 0])],
+    axis=1,
+).astype(np.float32)
+y = (np.sin(3 * X) + 0.1 * np.cos(5 * X)).astype(np.float32)
+
+wave = WaveResNetRegressor(
+    hidden_layers=4,
+    hidden_units=64,
+    epochs=150,
+    lr=3e-4,
+    w0=30.0,
+    w0_warmup_epochs=20,
+    progressive_depth_initial=2,
+    progressive_depth_interval=25,
+    random_state=7,
+)
+wave.fit(X, y, context=context, verbose=0)
+print("WaveResNet R^2:", wave.score(X, y, context=context))
+```
+
+`WaveResNetRegressor` applies SIREN-style initialisation with optional `w0` warmup and progressive depth expansion. Providing explicit `float32` context arrays keeps inference aligned with the estimator's cached `context_dim`.
+
 ### Episodic HISSO with `HISSOOptions`
 
 ```python

@@ -1,0 +1,42 @@
+{
+  "device": "cpu",
+  "duration_seconds": 1.8662449999246746,
+  "hisso": {
+    "best_epoch": 5,
+    "episodes": 160,
+    "profile": {
+      "amp_dtype": null,
+      "amp_enabled": false,
+      "batch_episodes": 32,
+      "dataset_bytes": 1840,
+      "dataset_numpy_to_tensor_time_s": 4.3599982745945454e-05,
+      "dataset_transfer_batches": 1,
+      "dataset_transfer_time_s": 7.6000578701496124e-06,
+      "device": "cpu",
+      "episode_length": 24,
+      "episode_time_s_total": 0.6652539006900042,
+      "episode_view_is_shared": true,
+      "episodes_sampled": 160,
+      "epochs": 5,
+      "total_time_s": 0.6673851000377908
+    },
+    "reward_mean": -0.11111144903115928,
+    "reward_std": 4.260452256579418e-07,
+    "throughput_eps_per_sec": 239.74164240547168,
+    "transition_penalty": 0.0
+  },
+  "history_length": 5,
+  "portfolio_metrics": {
+    "cum_return": -1.0,
+    "log_return": -27.631021115928547,
+    "max_drawdown": -1.0,
+    "sharpe": -455.2206188721451,
+    "turnover": 0.001762140052098977
+  },
+  "start_time": "2025-10-29T06:00:12.406421",
+  "status": "success",
+  "test_loss": 0.15412986278533936,
+  "timestamp": "2025-10-29T06:00:14.247453",
+  "train_loss": 0.12217452377080917,
+  "val_loss": 0.11610642820596695
+}

@@ -1,0 +1,26 @@
+timestamp,level,message
+2025-10-29 06:10:44,032,ERROR,run.failed [Errno 2] No such file or directory: 'C:\\Users\\milin\\Documents\\psann\\configs\\hisso\\datasets\\wave_resnet_small.npz'
+2025-10-29 06:10:59,831,INFO,dataset.shapes train=[320, 4, 128] val=[96, 4, 128] test=[96, 4, 128]
+2025-10-29 06:10:59,831,DEBUG,dataset.targets train=[320, 3]
+2025-10-29 06:10:59,832,DEBUG,dataset.prices train=[320, 3]
+2025-10-29 06:10:59,872,ERROR,run.failed WaveResNetRegressor currently supports preserve_shape=False.
+2025-10-29 06:11:36,543,INFO,dataset.shapes train=[320, 4, 128] val=[96, 4, 128] test=[96, 4, 128]
+2025-10-29 06:11:36,544,DEBUG,dataset.targets train=[320, 3]
+2025-10-29 06:11:36,544,DEBUG,dataset.prices train=[320, 3]
+2025-10-29 06:11:36,553,INFO,trainer.state stateful=False state_reset=batch warmstart_shuffle=True
+2025-10-29 06:11:57,009,DEBUG,epoch=1 reward=-0.1810068697668612 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=2 reward=-0.17147953109815717 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=3 reward=-0.1532649351283908 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=4 reward=-0.14399819495156407 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=5 reward=-0.1292621372267604 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=6 reward=-0.12222442426718771 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=7 reward=-0.11486515076830983 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=8 reward=-0.11238193442113698 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=9 reward=-0.1116540958173573 episodes=32
+2025-10-29 06:11:57,009,DEBUG,epoch=10 reward=-0.11126952013000846 episodes=32
+2025-10-29 06:11:57,010,DEBUG,epoch=11 reward=-0.1111976564861834 episodes=32
+2025-10-29 06:11:57,010,DEBUG,epoch=12 reward=-0.11114770057611167 episodes=32
+2025-10-29 06:11:57,010,DEBUG,epoch=13 reward=-0.1111299057956785 episodes=32
+2025-10-29 06:11:57,010,DEBUG,epoch=14 reward=-0.11114162439480424 episodes=32
+2025-10-29 06:11:57,010,DEBUG,epoch=15 reward=-0.11112203099764884 episodes=32
+2025-10-29 06:11:57,058,INFO,run.completed duration=20.456s

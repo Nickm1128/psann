@@ -1,0 +1,36 @@
+estimator:
+  target: psann.WaveResNetRegressor
+  params:
+    hidden_layers: 3
+    hidden_units: 48
+    epochs: 15
+    batch_size: 16
+    lr: 0.0005
+    random_state: 37
+    device: cpu
+    preserve_shape: false
+    data_format: channels_first
+    w0_warmup_epochs: 5
+    progressive_depth_initial: 2
+    progressive_depth_interval: 5
+
+hisso:
+  enabled: true
+  window: 32
+  primary_transform: softmax
+  transition_penalty: 0.01
+  mixed_precision: false
+  supervised:
+    y_key: y_train
+    epochs: 2
+    batch_size: 32
+
+data:
+  npz: ../../datasets/wave_resnet_small.npz
+
+training:
+  verbose: 1
+
+evaluation:
+  portfolio_prices_key: prices_test
+  trans_cost: 0.001
