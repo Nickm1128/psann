@@ -70,6 +70,62 @@ from .estimators._fit_utils import (
 from .estimators._fit_utils import (
     _build_optimizer as _build_optimizer_helper,
 )
+from .hisso import HISSOOptions, HISSOTrainerConfig, ensure_hisso_trainer_config
+
+
+def _serialize_hisso_cfg(cfg: Optional[HISSOTrainerConfig]) -> Optional[Dict[str, Any]]:
+    if cfg is None:
+        return None
+    return {
+        "episode_length": int(cfg.episode_length),
+        "episodes_per_batch": int(cfg.episodes_per_batch),
+        "primary_dim": int(cfg.primary_dim),
+        "primary_transform": cfg.primary_transform,
+        "random_state": cfg.random_state,
+        "transition_penalty": float(cfg.transition_penalty),
+    }
+
+
+def _deserialize_hisso_cfg(data: Any) -> Optional[HISSOTrainerConfig]:
+    if data is None:
+        return None
+    if isinstance(data, HISSOTrainerConfig):
+        return data
+    if isinstance(data, Mapping):
+        return ensure_hisso_trainer_config(data)
+    raise TypeError(f"Unable to deserialize HISSO trainer config from type {type(data)!r}")
+
+
+def _serialize_hisso_options(options: Optional[HISSOOptions]) -> Optional[Dict[str, Any]]:
+    if options is None:
+        return None
+    return {
+        "episode_length": int(options.episode_length),
+        "transition_penalty": float(options.transition_penalty),
+        "primary_transform": options.primary_transform,
+        "reward_fn": options.reward_fn,
+        "context_extractor": options.context_extractor,
+        "input_noise_std": options.input_noise_std,
+        "supervised": options.supervised,
+    }
+
+
+def _deserialize_hisso_options(data: Any) -> Optional[HISSOOptions]:
+    if data is None:
+        return None
+    if isinstance(data, HISSOOptions):
+        return data
+    if isinstance(data, Mapping):
+        return HISSOOptions(
+            episode_length=int(data.get("episode_length", 64)),
+            transition_penalty=float(data.get("transition_penalty", 0.0)),
+            primary_transform=str(data.get("primary_transform", "identity")),
+            reward_fn=data.get("reward_fn"),
+            context_extractor=data.get("context_extractor"),
+            input_noise_std=data.get("input_noise_std"),
+            supervised=data.get("supervised"),
+        )
+    raise TypeError(f"Unable to deserialize HISSO options from type {type(data)!r}")
 
 
 class PSANNRegressor(BaseEstimator, RegressorMixin):
@@ -189,7 +245,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self.scaler = scaler
         self.scaler_params = scaler_params or None
         self.context_builder = context_builder
-        self.context_builder_params = context_builder_params or {}
+        self.context_builder_params = (
+            copy.deepcopy(context_builder_params) if context_builder_params is not None else {}
+        )
         self._context_builder_callable_: Optional[Callable[[np.ndarray], np.ndarray]] = None
         self._use_channel_first_train_inputs_ = False
         self._preproc_cfg_ = {
@@ -230,6 +288,93 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             tuple(output_shape) if output_shape is not None else None
         )
         self._context_dim_: Optional[int] = None
+        self._model_device_: Optional[torch.device] = None
+
+    @classmethod
+    def with_conv_stem(
+        cls,
+        *,
+        conv_channels: Optional[int] = None,
+        conv_kernel_size: Optional[int] = None,
+        per_element: bool = False,
+        data_format: str = "channels_first",
+        preserve_shape: bool = True,
+        **kwargs: Any,
+    ) -> "PSANNRegressor":
+        """Instantiate an estimator configured with the convolutional fit path.
+
+        This helper mirrors the historical ``*ConvPSANNRegressor`` classes by
+        enabling ``preserve_shape`` training, ensuring channel-first tensors are
+        used during optimisation, and forwarding the configured convolutional
+        parameters. The returned estimator can be trained on 1D/2D/3D inputs
+        without switching to a separate subclass.
+        """
+
+        params = dict(kwargs)
+        params.setdefault("preserve_shape", preserve_shape)
+        params.setdefault("data_format", data_format)
+        params.setdefault("per_element", per_element)
+        if conv_channels is not None:
+            params["conv_channels"] = conv_channels
+        if conv_kernel_size is not None:
+            params["conv_kernel_size"] = int(conv_kernel_size)
+        estimator = cls(**params)
+        estimator.enable_conv_stem(
+            data_format=estimator.data_format,
+            per_element=estimator.per_element,
+        )
+        return estimator
+
+    def enable_conv_stem(
+        self,
+        *,
+        data_format: Optional[str] = None,
+        per_element: Optional[bool] = None,
+    ) -> "PSANNRegressor":
+        """Switch the estimator to the convolutional training pipeline."""
+
+        if data_format is not None:
+            fmt = str(data_format).lower()
+            if fmt not in {"channels_first", "channels_last"}:
+                raise ValueError("data_format must be 'channels_first' or 'channels_last'.")
+            self.data_format = fmt
+        self.preserve_shape = True
+        if per_element is not None:
+            self.per_element = bool(per_element)
+        self._use_channel_first_train_inputs_ = True
+        self._conv_stem_config_ = {
+            "data_format": self.data_format,
+            "per_element": bool(self.per_element),
+            "conv_kernel_size": int(self.conv_kernel_size),
+            "conv_channels": int(self.conv_channels),
+        }
+        return self
+
+    def set_params(self, **params: Any):
+        if not params:
+            return self
+        normalised = self._normalize_param_aliases(params)
+        reset_builder = False
+        if "context_builder" in normalised:
+            reset_builder = True
+        if "context_builder_params" in normalised:
+            reset_builder = True
+            params_value = normalised.get("context_builder_params")
+            if params_value is None:
+                normalised["context_builder_params"] = {}
+            else:
+                normalised["context_builder_params"] = copy.deepcopy(params_value)
+        result = super().set_params(**normalised)
+        if reset_builder:
+            self._context_builder_callable_ = None
+            if getattr(self, "context_builder", None) is None and "context_dim" not in normalised:
+                self._context_dim_ = None
+                if hasattr(self, "context_dim") and "context_dim" not in normalised:
+                    try:
+                        setattr(self, "context_dim", None)
+                    except Exception:
+                        pass
+        return result
 
     def gradient_hook(self, _: nn.Module) -> None:
         """Hook executed after backward before the optimiser step."""
@@ -280,6 +425,16 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         else:
             out.pop("conv_channels", None)
         return out
+
+    def _ensure_model_device(self, device: torch.device) -> None:
+        model = getattr(self, "model_", None)
+        if model is None:
+            return
+        current = getattr(self, "_model_device_", None)
+        if current == device:
+            return
+        model.to(device)
+        self._model_device_ = device
 
     def _get_context_builder(self) -> Optional[Callable[[np.ndarray], np.ndarray]]:
         builder = getattr(self, "_context_builder_callable_", None)
@@ -655,6 +810,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             raise RuntimeError("Estimator is not fitted yet; no model available.")
 
         device = self._device()
+        self._ensure_model_device(device)
+        model = self.model_
         prev_training = model.training
         try:
             if state_updates:
@@ -666,14 +823,23 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                 if hasattr(model, "set_state_updates"):
                     model.set_state_updates(False)
 
-            model.to(device)
             with torch.no_grad():
-                tensor = torch.from_numpy(inputs_np.astype(np.float32, copy=False)).to(device)
+                inputs_arr = (
+                    inputs_np if inputs_np.dtype == np.float32 else inputs_np.astype(np.float32, copy=False)
+                )
+                tensor = torch.from_numpy(inputs_arr)
+                if device.type != "cpu":
+                    tensor = tensor.to(device=device, dtype=torch.float32)
                 context_tensor = None
                 if context_np is not None:
-                    context_tensor = torch.from_numpy(
-                        context_np.astype(np.float32, copy=False)
-                    ).to(device)
+                    ctx_arr = (
+                        context_np
+                        if context_np.dtype == np.float32
+                        else context_np.astype(np.float32, copy=False)
+                    )
+                    context_tensor = torch.from_numpy(ctx_arr)
+                    if device.type != "cpu":
+                        context_tensor = context_tensor.to(device=device, dtype=torch.float32)
                 outputs = model(tensor, context_tensor) if context_tensor is not None else model(tensor)
                 return outputs.detach().cpu().numpy()
         finally:
@@ -1080,6 +1246,11 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self._hisso_trainer_ = None
         self._hisso_trained_ = False
 
+        if not self.warm_start:
+            self._scaler_state_ = None
+            self._scaler_spec_ = None
+            self._scaler_kind_ = None
+
         fit_args = normalise_fit_args(
             self,
             X,
@@ -1160,10 +1331,11 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         rebuild = not (self.warm_start and isinstance(getattr(self, "model_", None), nn.Module))
         if rebuild:
             self.model_ = build_model_from_hooks(hooks, request)
+            self._model_device_ = None
         self._model_rebuilt_ = bool(rebuild)
 
         device = self._device()
-        self.model_.to(device)
+        self._ensure_model_device(device)
         self._after_model_built()
 
         if hisso:
@@ -1495,15 +1667,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                     model.set_state_updates(bool(prev_state_updates))
             model.train(prev_mode)
 
-    def save(self, path: str) -> None:
-        self._ensure_fitted()
-        model = self.model_
-        orig_device = torch.device("cpu")
-        for param in model.parameters():
-            orig_device = param.device
-            break
-        model_cpu = copy.deepcopy(model).cpu()
-        payload = {
+    def _build_serialized_payload(self, model_cpu: torch.nn.Module) -> Dict[str, Any]:
+        return {
             "class": self.__class__.__name__,
             "params": self.get_params(deep=True),
             "model": model_cpu,
@@ -1529,7 +1694,22 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             "target_vector_dim": self._target_vector_dim_,
             "output_shape_tuple": self._output_shape_tuple_,
             "context_dim": self._context_dim_,
+            "hisso_cfg": _serialize_hisso_cfg(getattr(self, "_hisso_cfg_", None)),
+            "hisso_options": _serialize_hisso_options(getattr(self, "_hisso_options_", None)),
+            "hisso_reward_fn": getattr(self, "_hisso_reward_fn_", None),
+            "hisso_context_extractor": getattr(self, "_hisso_context_extractor_", None),
+            "hisso_trained": bool(getattr(self, "_hisso_trained_", False)),
         }
+
+    def save(self, path: str) -> None:
+        self._ensure_fitted()
+        model = self.model_
+        orig_device = torch.device("cpu")
+        for param in model.parameters():
+            orig_device = param.device
+            break
+        model_cpu = copy.deepcopy(model).cpu()
+        payload = self._build_serialized_payload(model_cpu)
         torch.save(payload, path)
         model.to(orig_device)
 
@@ -1584,7 +1764,13 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         )
         estimator._context_dim_ = payload.get("context_dim")
 
+        estimator._hisso_cfg_ = _deserialize_hisso_cfg(payload.get("hisso_cfg"))
+        estimator._hisso_options_ = _deserialize_hisso_options(payload.get("hisso_options"))
+        estimator._hisso_reward_fn_ = payload.get("hisso_reward_fn")
+        estimator._hisso_context_extractor_ = payload.get("hisso_context_extractor")
+        estimator._hisso_trained_ = bool(payload.get("hisso_trained", False))
         estimator._hisso_trainer_ = None
+        estimator._hisso_cache_ = None
         return estimator
 
 
@@ -2199,6 +2385,38 @@ class ResPSANNRegressor(PSANNRegressor):
             residual_alpha_init=self.residual_alpha_init,
         )
 
+    def _build_conv_core(
+        self,
+        spatial_ndim: int,
+        in_channels: int,
+        output_dim: int,
+        *,
+        segmentation_head: bool,
+    ) -> nn.Module:
+        if int(spatial_ndim) == 2:
+            return ResidualPSANNConv2dNet(
+                int(in_channels),
+                int(output_dim),
+                hidden_layers=self.hidden_layers,
+                conv_channels=self.conv_channels,
+                hidden_channels=self.conv_channels,
+                kernel_size=self.conv_kernel_size,
+                act_kw=self.activation,
+                activation_type=self.activation_type,
+                w0_first=self.w0_first,
+                w0_hidden=self.w0_hidden,
+                norm=self.norm,
+                drop_path_max=self.drop_path_max,
+                residual_alpha_init=self.residual_alpha_init,
+                segmentation_head=bool(segmentation_head),
+            )
+        return super()._build_conv_core(
+            spatial_ndim,
+            in_channels,
+            output_dim,
+            segmentation_head=segmentation_head,
+        )
+
 
 class ResConvPSANNRegressor(ResPSANNRegressor):
     """Residual 2D convolutional PSANN regressor with HISSO support."""
@@ -2308,23 +2526,11 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         *,
         segmentation_head: bool,
     ) -> nn.Module:
-        if spatial_ndim != 2:
-            raise ValueError("ResConvPSANNRegressor currently supports 2D inputs only")
-        return ResidualPSANNConv2dNet(
-            int(in_channels),
-            int(output_dim),
-            hidden_layers=self.hidden_layers,
-            conv_channels=self.conv_channels,
-            hidden_channels=self.conv_channels,
-            kernel_size=self.conv_kernel_size,
-            act_kw=self.activation,
-            activation_type=self.activation_type,
-            w0_first=self.w0_first,
-            w0_hidden=self.w0_hidden,
-            norm=self.norm,
-            drop_path_max=self.drop_path_max,
-            residual_alpha_init=self.residual_alpha_init,
-            segmentation_head=bool(segmentation_head),
+        return super()._build_conv_core(
+            spatial_ndim,
+            in_channels,
+            output_dim,
+            segmentation_head=segmentation_head,
         )
 
     def fit(
@@ -2429,7 +2635,7 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
             self.model_ = build_model_from_hooks(hooks, request)
 
         device = self._device()
-        self.model_.to(device)
+        self._ensure_model_device(device)
 
         result = maybe_run_hisso(hooks, request, fit_args=fit_args)
         if result is None:

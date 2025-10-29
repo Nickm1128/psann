@@ -6,7 +6,7 @@
 - Example:
   ```python
   import torch
-  from psann.models import WaveResNet
+  from psann import WaveResNet
 
   model = WaveResNet(
       input_dim=2,

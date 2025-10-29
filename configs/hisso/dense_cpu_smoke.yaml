@@ -1,0 +1,33 @@
+estimator:
+  target: psann.PSANNRegressor
+  params:
+    hidden_layers: 1
+    hidden_units: 32
+    epochs: 5
+    batch_size: 48
+    lr: 0.001
+    random_state: 19
+    device: cpu
+
+hisso:
+  enabled: true
+  window: 24
+  primary_transform: softmax
+  transition_penalty: 0.0
+  mixed_precision: false
+
+data:
+  loader: psann.scripts.hisso_log_run.toy_hisso_dataset
+  kwargs:
+    steps: 192
+    features: 4
+    seed: 3
+    train_fraction: 0.6
+    val_fraction: 0.2
+
+training:
+  verbose: 1
+
+evaluation:
+  portfolio_prices_key: prices_test
+  trans_cost: 0.0

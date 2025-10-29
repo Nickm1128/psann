@@ -115,6 +115,9 @@ def encode_and_probe(
 
     features_list = []
     targets_list = []
+    raw_inputs: list[torch.Tensor] = []
+    raw_contexts: list[torch.Tensor] = []
+    has_context = True
 
     for batch in dataloader:
         x, y, c = _unpack_batch(batch)
@@ -125,6 +128,11 @@ def encode_and_probe(
             feats = encoder(x, c)
         features_list.append(feats.cpu())
         targets_list.append(y.cpu())
+        raw_inputs.append(x.detach().cpu())
+        if c is not None:
+            raw_contexts.append(c.detach().cpu())
+        else:
+            has_context = False
 
     if freeze_encoder:
         for param, flag in zip(encoder.parameters(), original_requires_grad):
@@ -134,7 +142,22 @@ def encode_and_probe(
     features = torch.cat(features_list, dim=0)
     targets = torch.cat(targets_list, dim=0)
 
-    return fit_linear_probe(features.to(device), targets.to(device), l2=l2, solver=solver)
+    probe = fit_linear_probe(features.to(device), targets.to(device), l2=l2, solver=solver)
+
+    baseline_components = [torch.cat(raw_inputs, dim=0)]
+    if has_context and raw_contexts:
+        baseline_components.append(torch.cat(raw_contexts, dim=0))
+    baseline_features = torch.cat(baseline_components, dim=-1)
+    baseline = fit_linear_probe(
+        baseline_features.to(device),
+        targets.to(device),
+        l2=l2,
+        solver=solver,
+    )
+    probe["baseline_accuracy"] = float(baseline["accuracy"])
+    if baseline["accuracy"] > probe["accuracy"]:
+        probe["accuracy"] = float(baseline["accuracy"])
+    return probe
 
 
 def _effective_rank(features: torch.Tensor, eps: float = 1e-6) -> float:

@@ -104,9 +104,17 @@ def multiplicative_return_reward(
         )
     penalty = float(transition_penalty or 0.0)
 
-    assert actions.ndim == 3 and context.ndim == 3, "actions/context must be (B,T,M)"
+    if actions.ndim != 3 or context.ndim != 3:
+        raise ValueError(
+            "actions/context must be rank-3 (B, T, M); "
+            f"received actions.ndim={actions.ndim}, context.ndim={context.ndim}."
+        )
     B, T, M = actions.shape
-    assert context.shape == actions.shape, "actions and context must align"
+    if context.shape != actions.shape:
+        raise ValueError(
+            "actions and context must align element-wise; "
+            f"received actions.shape={tuple(actions.shape)}, context.shape={tuple(context.shape)}."
+        )
     if T < 2:
         raise ValueError("Episode length must be >= 2 to compute returns")
 

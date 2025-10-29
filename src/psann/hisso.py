@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import math
 import time
 import warnings
 from dataclasses import dataclass, replace
@@ -197,6 +199,77 @@ def _call_context_extractor(
     return _coerce_context_output(context, device=device, dtype=dtype)
 
 
+@contextlib.contextmanager
+def _guard_cuda_capture() -> Iterable[None]:
+    """Temporarily neutralise CUDA graph capture checks when the driver is unavailable."""
+
+    if not torch.cuda.is_available():
+        yield
+        return
+
+    patched = False
+    original = None
+    try:
+        try:
+            torch.cuda.is_current_stream_capturing()
+        except RuntimeError:
+            original = torch.cuda.is_current_stream_capturing
+            torch.cuda.is_current_stream_capturing = lambda: False
+            patched = True
+        yield
+    finally:
+        if patched and original is not None:
+            torch.cuda.is_current_stream_capturing = original
+
+
+def _storage_ptr(tensor: torch.Tensor) -> Optional[int]:
+    """Return the underlying storage pointer for ``tensor`` if available."""
+
+    if hasattr(tensor, "untyped_storage"):
+        try:
+            return tensor.untyped_storage().data_ptr()
+        except RuntimeError:
+            return None
+    if hasattr(tensor, "storage"):
+        try:
+            return tensor.storage().data_ptr()
+        except RuntimeError:
+            return None
+    return None
+
+
+def _align_context_for_reward(actions: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+    """Match context shape to the primary actions for reward computation."""
+
+    if context.shape == actions.shape:
+        return context
+
+    if context.shape[:-1] != actions.shape[:-1]:
+        raise ValueError(
+            "HISSO reward expects actions/context to share batch/time dimensions; "
+            f"got {tuple(actions.shape)} vs {tuple(context.shape)}."
+        )
+
+    target_dim = actions.shape[-1]
+    ctx_dim = context.shape[-1]
+
+    if target_dim == ctx_dim:
+        return context
+
+    if target_dim == 1:
+        return context.mean(dim=-1, keepdim=True)
+
+    if ctx_dim == 1:
+        return context.expand(*context.shape[:-1], target_dim)
+
+    if ctx_dim > target_dim:
+        return context[..., :target_dim]
+
+    repeats = math.ceil(target_dim / ctx_dim)
+    expanded = context.repeat_interleave(repeats, dim=-1)
+    return expanded[..., :target_dim]
+
+
 def coerce_warmstart_config(
     hisso_supervised: Optional[Mapping[str, Any] | bool],
     y_default: Optional[np.ndarray],
@@ -284,7 +357,7 @@ def run_hisso_supervised_warmstart(
     )
 
     device = estimator._device()
-    estimator.model_.to(device)
+    estimator._ensure_model_device(device)
 
     optimizer = estimator._build_optimizer(estimator.model_)
     if config.lr is not None:
@@ -310,14 +383,15 @@ def run_hisso_supervised_warmstart(
     )
 
     loss_fn = estimator._make_loss()
-    run_training_loop(
-        estimator.model_,
-        optimizer=optimizer,
-        loss_fn=loss_fn,
-        train_loader=dataloader,
-        device=device,
-        cfg=loop_cfg,
-    )
+    with _guard_cuda_capture():
+        run_training_loop(
+            estimator.model_,
+            optimizer=optimizer,
+            loss_fn=loss_fn,
+            train_loader=dataloader,
+            device=device,
+            cfg=loop_cfg,
+        )
     estimator.model_.eval()
 
 
@@ -354,6 +428,8 @@ class HISSOTrainer:
         reward_fn: Optional[RewardFn],
         context_extractor: Optional[ContextExtractor],
         input_noise_std: Optional[float],
+        use_amp: bool = False,
+        amp_dtype: Optional[torch.dtype] = None,
     ) -> None:
         self.model = model
         self.cfg = cfg
@@ -369,12 +445,31 @@ class HISSOTrainer:
             "total_time_s": 0.0,
             "episode_length": int(cfg.episode_length),
             "batch_episodes": int(cfg.episodes_per_batch),
+            "dataset_bytes": 0,
+            "dataset_transfer_batches": 0,
+            "dataset_numpy_to_tensor_time_s": 0.0,
+            "dataset_transfer_time_s": 0.0,
+            "episodes_sampled": 0,
+            "episode_view_is_shared": None,
+            "episode_time_s_total": 0.0,
+            "amp_enabled": False,
+            "amp_dtype": None,
         }
         self.optimizer = torch.optim.Adam(
             (p for p in self.model.parameters() if p.requires_grad),
             lr=float(lr),
         )
         self._rng = np.random.default_rng(cfg.random_state)
+        self.use_amp = bool(use_amp and device.type == "cuda" and torch.cuda.is_available())
+        self.amp_dtype = amp_dtype if amp_dtype is not None else torch.float16
+        self.scaler: Optional[Any] = None
+        if self.use_amp:
+            self.profile["amp_enabled"] = True
+            self.profile["amp_dtype"] = str(self.amp_dtype)
+            if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
+                self.scaler = torch.amp.GradScaler("cuda", enabled=True)
+            else:  # pragma: no cover - legacy fallback
+                self.scaler = torch.cuda.amp.GradScaler(enabled=True)
 
     # ------------------------------------------------------------------
     # Training loop
@@ -395,7 +490,26 @@ class HISSOTrainer:
         if data.size == 0:
             raise ValueError("HISSO training requires non-empty inputs.")
 
-        x_tensor = torch.from_numpy(data).to(self.device)
+        transfer_start = time.perf_counter()
+        tensor_cpu = torch.from_numpy(data)
+        after_from_numpy = time.perf_counter()
+        x_tensor = tensor_cpu.to(self.device)
+        after_to_device = time.perf_counter()
+
+        numpy_to_tensor_time = after_from_numpy - transfer_start
+        host_to_device_time = after_to_device - after_from_numpy
+        self.profile.update(
+            {
+                "dataset_bytes": int(data.nbytes),
+                "dataset_transfer_batches": 1,
+                "dataset_numpy_to_tensor_time_s": max(numpy_to_tensor_time, 0.0),
+                "dataset_transfer_time_s": max(host_to_device_time, 0.0),
+                "episodes_sampled": 0,
+                "episode_view_is_shared": None,
+                "episode_time_s_total": 0.0,
+            }
+        )
+
         episode_len = max(1, int(self.cfg.episode_length))
         total_steps = int(x_tensor.shape[0])
         episode_len = min(episode_len, total_steps)
@@ -403,54 +517,88 @@ class HISSOTrainer:
         self.model.to(self.device)
         self.history.clear()
 
-        for epoch_idx in range(max(1, int(epochs))):
-            self.model.train()
-            epoch_start = time.perf_counter()
+        with _guard_cuda_capture():
+            for epoch_idx in range(max(1, int(epochs))):
+                self.model.train()
+                epoch_start = time.perf_counter()
 
-            total_reward = 0.0
-            episode_count = 0
+                total_reward = 0.0
+                episode_count = 0
+                epoch_episode_time = 0.0
 
-            for start in self._episode_starts(total_steps, episode_len):
-                end = start + episode_len
-                episode = x_tensor[start:end]
+                for start in self._episode_starts(total_steps, episode_len):
+                    end = start + episode_len
+                    episode = x_tensor[start:end]
 
-                inputs = episode
-                if self.input_noise_std:
-                    noise = torch.randn_like(inputs) * float(self.input_noise_std)
-                    inputs = inputs + noise
+                    batch_start = time.perf_counter()
+                    inputs = episode
+                    if self.input_noise_std:
+                        noise = torch.randn_like(inputs) * float(self.input_noise_std)
+                        inputs = inputs + noise
 
-                context = self._extract_context(inputs)
-                outputs = self.model(inputs)
-                if isinstance(outputs, tuple):
-                    outputs = outputs[0]
-                if outputs.ndim > 2:
-                    outputs = outputs.view(outputs.shape[0], -1)
+                    context = self._extract_context(inputs)
+                    amp_ctx = (
+                        torch.cuda.amp.autocast(
+                            device_type=self.device.type,
+                            dtype=self.amp_dtype,
+                        )
+                        if self.use_amp
+                        else contextlib.nullcontext()
+                    )
+                    self.optimizer.zero_grad(set_to_none=True)
+                    with amp_ctx:
+                        outputs = self.model(inputs)
+                        if isinstance(outputs, tuple):
+                            outputs = outputs[0]
+                        if outputs.ndim > 2:
+                            outputs = outputs.view(outputs.shape[0], -1)
 
-                primary = self._apply_primary_transform(outputs)
-                reward_tensor = self._coerce_reward(primary, context)
-                loss = -reward_tensor.mean()
+                        primary = self._apply_primary_transform(outputs)
+                        reward_tensor = self._coerce_reward(primary, context)
+                        loss = -reward_tensor.mean()
 
-                self.optimizer.zero_grad(set_to_none=True)
-                loss.backward()
-                clip_grad_norm_(self.model.parameters(), 1.0)
-                self.optimizer.step()
+                    if self.use_amp:
+                        if self.scaler is None:  # pragma: no cover - defensive
+                            raise RuntimeError("AMP enabled but GradScaler is unavailable.")
+                        self.scaler.scale(loss).backward()
+                        self.scaler.unscale_(self.optimizer)
+                        clip_grad_norm_(self.model.parameters(), 1.0)
+                        self.scaler.step(self.optimizer)
+                        self.scaler.update()
+                    else:
+                        loss.backward()
+                        clip_grad_norm_(self.model.parameters(), 1.0)
+                        self.optimizer.step()
 
-                total_reward += float(reward_tensor.detach().mean().item())
-                episode_count += 1
+                    total_reward += float(reward_tensor.detach().mean().item())
+                    episode_count += 1
+                    self.profile["episodes_sampled"] = int(self.profile.get("episodes_sampled", 0)) + 1
 
-            duration = time.perf_counter() - epoch_start
+                    if self.profile.get("episode_view_is_shared") is None:
+                        base_ptr = _storage_ptr(x_tensor)
+                        episode_ptr = _storage_ptr(episode)
+                        self.profile["episode_view_is_shared"] = (
+                            base_ptr is not None and episode_ptr is not None and base_ptr == episode_ptr
+                        )
 
-            avg_reward = total_reward / max(episode_count, 1)
-            self.history.append(
-                {
-                    "epoch": epoch_idx + 1,
-                    "reward": avg_reward,
-                    "episodes": episode_count,
-                }
-            )
-            self.profile["total_time_s"] += duration
+                    epoch_episode_time += time.perf_counter() - batch_start
+
+                duration = time.perf_counter() - epoch_start
+
+                avg_reward = total_reward / max(episode_count, 1)
+                self.history.append(
+                    {
+                        "epoch": epoch_idx + 1,
+                        "reward": avg_reward,
+                        "episodes": episode_count,
+                    }
+                )
+                self.profile["total_time_s"] += duration
+                self.profile["episode_time_s_total"] += epoch_episode_time
 
         self.profile["epochs"] = len(self.history)
+        if self.profile.get("episode_view_is_shared") is None:
+            self.profile["episode_view_is_shared"] = True
         self.model.eval()
 
     # ------------------------------------------------------------------
@@ -482,6 +630,8 @@ class HISSOTrainer:
     def _coerce_reward(self, primary: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
         actions = primary
         ctx = context
+        if ctx.ndim > 2:
+            ctx = ctx.reshape(ctx.shape[0], -1)
         if actions.ndim == 1:
             actions = actions.unsqueeze(0).unsqueeze(-1)
         elif actions.ndim == 2:
@@ -491,10 +641,7 @@ class HISSOTrainer:
         elif ctx.ndim == 2:
             ctx = ctx.unsqueeze(0)
         ctx = ctx.to(device=actions.device, dtype=actions.dtype)
-        if actions.shape != ctx.shape:
-            raise ValueError(
-                f"HISSO reward expects actions/context with matching shape; got {tuple(actions.shape)} vs {tuple(ctx.shape)}."
-            )
+        ctx = _align_context_for_reward(actions, ctx)
         reward = self.reward_fn(actions, ctx)
         if isinstance(reward, torch.Tensor):
             reward_tensor = reward
@@ -524,6 +671,8 @@ def run_hisso_training(
     lr_min: Optional[float] = None,
     input_noise_std: Optional[NoiseSpec] = None,
     verbose: int = 0,
+    use_amp: bool = False,
+    amp_dtype: Optional[torch.dtype] = None,
 ) -> HISSOTrainer:
     """Instantiate the lightweight HISSO trainer and execute one optimisation run."""
 
@@ -537,6 +686,8 @@ def run_hisso_training(
         reward_fn=reward_fn,
         context_extractor=context_fn,
         input_noise_std=input_noise_std,
+        use_amp=use_amp,
+        amp_dtype=amp_dtype,
     )
     trainer.train(
         X_train_arr,
@@ -649,13 +800,17 @@ def hisso_evaluate_reward(
     X_np = np.asarray(X_obs, dtype=np.float32)
     inputs_t = torch.from_numpy(X_np).to(device)
 
-    context_t = _call_context_extractor(context_extractor, inputs_t)
-
     cfg = _resolve_hisso_config(estimator, trainer_cfg)
     preds = estimator.predict(X_obs)
     transform = _resolve_primary_transform(cfg, options)
     primary_np = _apply_primary_transform_numpy(preds, transform)
     primary_t = torch.from_numpy(primary_np).to(device)
+
+    context_t = _call_context_extractor(context_extractor, inputs_t)
+    context_t = context_t.to(device=primary_t.device, dtype=primary_t.dtype)
+    if context_t.ndim > 2:
+        context_t = context_t.reshape(context_t.shape[0], -1)
+    context_t = _align_context_for_reward(primary_t, context_t)
 
     reward = reward_fn(primary_t, context_t)
     if isinstance(reward, torch.Tensor):
@@ -683,4 +838,7 @@ def ensure_hisso_trainer_config(
             random_state=value.get("random_state", None),
             transition_penalty=float(value.get("transition_penalty", 0.0)),
         )
-    raise ValueError("Unsupported HISSO trainer configuration format.")
+    raise TypeError(
+        "Unsupported HISSO trainer configuration format; "
+        f"received {type(value).__name__}."
+    )

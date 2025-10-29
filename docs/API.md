@@ -8,10 +8,12 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 
 ### Constructor parameters
 
+> **Alias policy.** `hidden_width` and `hidden_channels` remain as deprecated aliases so existing pipelines keep working. They always normalise to the canonical `hidden_units` / `conv_channels` values via `PSANNRegressor.set_params`; when both names are supplied the canonical keyword wins and a `UserWarning` is emitted.
+
 **Architecture**
 - `hidden_layers: int = 2` - number of PSANN blocks.
 - `hidden_units: int = 64` - width/features per hidden block (preferred name).
-- `hidden_width: int | None` - deprecated alias for `hidden_units`; conflicts emit a warning and the canonical `hidden_units` value wins.
+- `hidden_width: int | None` - deprecated alias for `hidden_units`; conflicts emit a warning and the canonical `hidden_units` value wins (automatically normalised by `set_params`).
 - `w0: float = 30.0` - SIREN-style initialisation scale.
 - `activation: ActivationConfig | None` - forwarded to `SineParam`.
 - `activation_type: str = "psann" | "relu" | "tanh"` - nonlinearity per block.
@@ -34,7 +36,7 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `preserve_shape: bool = False` - use convolutional body instead of flattening.
 - `data_format: "channels_first" | "channels_last"` - layout when preserving shape.
 - `conv_kernel_size: int = 1` - kernel size for convolutional blocks.
-- `conv_channels: int | None` - channel count inside conv blocks (defaults to `hidden_units`; the legacy `hidden_channels` alias is still accepted but must match).
+- `conv_channels: int | None` - channel count inside conv blocks (defaults to `hidden_units`; the legacy `hidden_channels` alias is still accepted but must match and is normalised via `set_params`).
 - `per_element: bool = False` - return outputs at every spatial position (1x1 convolutional head) instead of pooled targets.
 - `output_shape: tuple[int, ...] | None` - target shape for pooled heads; defaults to `(target_dim,)` inferred from `y`.
 
@@ -55,6 +57,7 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 **HISSO configuration**
 - `hisso_window: int | None` - episode length when training with `hisso=True` (defaults to 64).
 - `hisso_reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None` - reward callback that consumes transformed primary outputs and context.
+- **Device tip:** HISSO runs entirely on the estimator’s current device. Set `device="cuda"` (or the desired `torch.device`) before calling `fit` to keep episodes on GPU, and supply float32 inputs/contexts to avoid host copies.
 - `hisso_context_extractor: Callable[[torch.Tensor], torch.Tensor] | None` - optional callable that derives context tensors from inputs.
 - `hisso_primary_transform: str | None` - transform applied to primary outputs before reward evaluation (`"identity"` | `"softmax"` | `"tanh"`).
 - `hisso_transition_penalty: float | None` - smoothness penalty applied between HISSO steps (alias `hisso_trans_cost` is tolerated for compatibility).
@@ -112,7 +115,7 @@ When HISSO is enabled and no targets are provided the primary dimension defaults
 1. Configure the estimator with `stateful=True`, provide a `StateConfig(...)`, and set `stream_lr` if online updates are required.
 2. Fit on supervised data as usual; optionally stage a HISSO warm start via `hisso_supervised` before reinforcement fine-tuning.
 3. Use `predict_sequence(...)` for open-loop rollouts, or `predict_sequence_online(...)` when teacher forcing and online adaptation are required.
-4. Utilities such as `psann.utils.make_drift_series`, `make_shock_series`, and `make_regime_switch_ts` provide quick regression regimes for exercising the streaming APIs.
+4. Utilities such as `psann.make_drift_series`, `psann.make_shock_series`, and `psann.make_regime_switch_ts` provide quick regression regimes for exercising the streaming APIs.
 
 ## psann.SineParam
 

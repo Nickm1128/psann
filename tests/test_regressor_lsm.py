@@ -4,7 +4,7 @@ import pytest
 pytest.importorskip("torch")
 
 from psann import PSANNRegressor
-from psann.lsm import LSMConv2dExpander, LSMExpander
+from psann.lsm import LSM, LSMConv2d, LSMConv2dExpander, LSMExpander
 
 
 def _make_dense_regression(seed: int = 0):
@@ -31,6 +31,7 @@ def test_regressor_with_lsm_expander(lsm_train):
         output_dim=12,
         hidden_layers=1,
         hidden_units=16,
+        hidden_width=None,
         epochs=1,
         lr=5e-3,
         batch_size=12,
@@ -71,6 +72,7 @@ def test_regressor_with_lsmconv2d_expander(lsm_train):
         out_channels=2,
         hidden_layers=1,
         hidden_channels=8,
+        conv_channels=None,
         epochs=1,
         lr=5e-3,
         random_state=77,
@@ -83,7 +85,7 @@ def test_regressor_with_lsmconv2d_expander(lsm_train):
         data_format="channels_first",
         per_element=True,
         hidden_layers=1,
-        hidden_units=24,
+        hidden_units=12,
         conv_channels=12,
         epochs=5,
         batch_size=6,
@@ -104,3 +106,81 @@ def test_regressor_with_lsmconv2d_expander(lsm_train):
     score_source = conv_preproc if lsm_train else expander
     score = score_source.score_reconstruction(X)
     assert np.isfinite(score)
+
+
+def test_regressor_with_lsm_spec_uses_expanded_dim_and_freezes_preproc():
+    X, y = _make_dense_regression()
+    output_dim = 10
+    lsm_spec = {
+        "type": "lsmexpander",
+        "output_dim": output_dim,
+        "hidden_units": 8,
+        "hidden_width": None,
+        "epochs": 0,
+        "lr": 5e-3,
+        "batch_size": 16,
+        "random_state": 17,
+    }
+
+    reg = PSANNRegressor(
+        hidden_layers=2,
+        hidden_units=16,
+        epochs=6,
+        batch_size=12,
+        lr=5e-3,
+        early_stopping=False,
+        lsm=lsm_spec,
+        lsm_train=False,
+        lsm_pretrain_epochs=0,
+        random_state=11,
+    )
+
+    reg.fit(X, y)
+
+    preproc = reg.model_.preproc
+    assert isinstance(preproc, LSM)
+    assert preproc.output_dim == output_dim
+    assert all(not p.requires_grad for p in preproc.parameters())
+    first_block = reg.model_.core.body[0]
+    assert first_block.linear.in_features == output_dim
+
+
+def test_regressor_with_conv_lsm_spec_sets_channels_and_freezes():
+    X, y = _make_conv_regression()
+    out_channels = 3
+    lsm_spec = {
+        "conv": True,
+        "out_channels": out_channels,
+        "conv_channels": 6,
+        "hidden_channels": None,
+        "epochs": 0,
+        "lr": 5e-3,
+        "random_state": 23,
+    }
+
+    reg = PSANNRegressor(
+        preserve_shape=True,
+        data_format="channels_first",
+        per_element=True,
+        hidden_layers=1,
+        hidden_units=6,
+        conv_channels=6,
+        epochs=4,
+        batch_size=6,
+        lr=5e-3,
+        early_stopping=False,
+        lsm=lsm_spec,
+        lsm_train=False,
+        lsm_pretrain_epochs=0,
+        random_state=19,
+    )
+
+    reg.fit(X, y)
+
+    preproc = reg.model_.preproc
+    assert isinstance(preproc, LSMConv2d)
+    assert preproc.out_channels == out_channels
+    assert all(not p.requires_grad for p in preproc.parameters())
+    core = reg.model_.core
+    assert core.body[0].conv.in_channels == out_channels
+    assert core.head.in_channels == core.body[-1].conv.out_channels

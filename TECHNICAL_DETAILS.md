@@ -1,4 +1,4 @@
-# PSANN Technical Details
+ï»¿# PSANN Technical Details
 
 This document explains the behaviour of the classes exported by PSANN. The README focuses on how to install and run examples; here we cover the mathematics and control flow behind the implementation. References below use the fully qualified module path (for example `psann.activations.SineParam`).
 
@@ -70,6 +70,19 @@ If `per_element = True`, the head is a 1x1 convolution that emits `y` with the s
 
 `psann.sklearn.ResPSANNRegressor` and `psann.sklearn.ResConvPSANNRegressor` are thin wrappers that select the residual variant of the dense or convolutional bodies while reusing the estimator plumbing (argument normalisation, HISSO hooks, streaming API).
 
+Both `PSANNRegressor` and `ResPSANNRegressor` expose `with_conv_stem(...)` / `enable_conv_stem(...)` helpers that wire the estimator into the convolutional training path without switching classes. The helpers flip `preserve_shape=True`, force channel-first training batches, and honour `conv_channels`, `conv_kernel_size`, and `per_element` so higher-dimensional inputs can be handled with the same API as dense fits.
+
+### 2.5 Context builders
+
+Estimators can automatically synthesise auxiliary context features via `context_builder`:
+
+- `None` leaves inputs unchanged. You can still pass explicit context arrays to `fit`/`predict`.
+- `"cosine"` instantiates the bundled cosine basis builder. It honours `context_builder_params` such as `frequencies`, `include_sin`, `include_cos`, and `normalise_input`, then caches the callable for reuse.
+- Custom callables receive a flattened `np.float32` array with shape `(n_samples, input_dim)` and must return a `float32` array with the same sample dimension.
+
+When `_auto_context` is invoked during `fit`, the builder output is validated, coerced to `float32`, and its feature dimension is stored in `_context_dim_`. Calling `set_params` with new `context_builder` or `context_builder_params` clears the cached callable so the next invocation rebuilds it with the updated configuration.
+
+
 ## 3. Preprocessors and LSMs (`psann.lsm`, `psann.preproc`)
 
 PSANN supports optional Learned Sparse Map (LSM) expanders that turn low-dimensional inputs into high-dimensional, structured features:
@@ -128,16 +141,20 @@ The estimator accepts string aliases or callables:
 
 ### 4.4 Fit pipeline
 
-1. `normalise_fit_args` coerces inputs (`X`, `y`, optional HISSO kwargs) into `NormalisedFitArgs`. It validates dtypes, handles `validation_data`, and enforces reproducibility by calling `seed_all`.
-2. `prepare_inputs_and_scaler` applies scaling, handles shape conversions, and returns `PreparedInputState` containing:
-   - flattened and channels-first tensors,
-   - target shapes,
-   - scaler state,
-   - metadata for HISSO.
-3. Hooks are assembled into a `ModelBuildRequest`. `build_model_from_hooks` constructs the torch module and attaches preprocessors.
-4. `run_supervised_training` or `maybe_run_hisso` executes the appropriate training routine.
+1. `normalise_fit_args` coerces features and targets to contiguous `np.float32`, wires through any user-provided context arrays, and merges HISSO kwargs. It also seeds RNGs for reproducibility.
+2. `prepare_inputs_and_scaler` applies scalers, executes `_auto_context` when `context_builder` is set, caches the resulting context dimension, and returns a `PreparedInputState` with float32 tensors plus HISSO metadata.
+3. `_make_fit_context` builds the `ModelBuildRequest`, attaches preprocessors, and moves the model to the target device via `_ensure_model_device` before training hooks run.
+4. `run_supervised_training` (or `maybe_run_hisso` for episodic runs) executes the loop using the cached device/dtype policy.
 
-Early stopping is implemented by tracking validation loss and storing the best `state_dict`. When `early_stopping=True` and a plateau is detected, the best weights are restored.
+Early stopping tracks validation loss, stores the best `state_dict`, and restores those weights when the patience window expires.
+
+**Shuffle vs. stateful sequences.** The training dataloader chooses `shuffle=False` whenever `stateful=True` and `state_reset` is `"epoch"` or `"none"` so recurrent/stateful models see contiguous batches. Use the default `state_reset="batch"` (or `stateful=False`) to retain shuffled mini-batches.
+### 4.5 Device & dtype policy
+
+- Inputs, targets, and context features are coerced to `float32` up front. Supplying `np.float32` arrays avoids extra copies before tensors are created.
+- Setting `device="cuda"` (or a concrete `torch.device`) prior to `fit` keeps the backbone, preprocessors, and HISSO state on that device. `_ensure_model_device` caches the last move to skip redundant transfers.
+- Validation and inference reuse the cached device; CPU predictions return `float32` NumPy arrays while GPU paths stay on-device unless `predict(..., return_numpy=True)` is requested.
+- Context builders and preprocessors must return `float32` arrays so downstream tensor materialisation never needs mid-pipeline dtype casts.
 
 ## 5. Persistent state controllers (`psann.state`)
 
@@ -222,6 +239,8 @@ HISSO (Horizon-Informed Sampling Strategy Optimisation) turns supervised estimat
    hisso_evaluate_reward(estimator, X, targets=None) -> scalar reward
    ```
 
+7. Remote logging CLI: `psann.scripts.hisso_log_run` loads JSON/YAML configs (see `configs/hisso/`) and drives episodic runs on remote nodes. It captures metrics (`metrics.json`), event logs (`events.csv`), checkpoints, and a resolved-config snapshot so GPU jobs can be synced back into this repository. Mixed precision toggles automatically when the config sets `mixed_precision=true` and the target device is CUDA.
+
 ## 7. Wave-based backbones (`psann.models`, `psann.utils`)
 
 This section details the WaveResNet family and the rationale behind its design. These models leverage sinusoidal activations with SIREN-style initialisation to capture oscillatory and high-frequency structure while preserving stable gradients.
@@ -232,22 +251,22 @@ This section details the WaveResNet family and the rationale behind its design. 
 
 Structure:
 
-- Stem: `h = W0 x + b0`, activation `SineParam(w0_first · h)`. The scalar `w0_first` scales the input frequency as in SIREN.
+- Stem: `h = W0 x + b0`, activation `SineParam(w0_first Â· h)`. The scalar `w0_first` scales the input frequency as in SIREN.
 - Residual stack: for each block `k = 1..depth`:
 
   ```
   u = W1 h + b1
-  u = w0_hidden · u
+  u = w0_hidden Â· u
   if context: u ? u + F(c)              # additive phase shift
   v = SineParam(u)                       # per-feature amplitude/frequency/decay
   if context: v ? FiLM(v, c)             # multiplicative/additive gain from context
   v = W2 v + b2
   if norm: v ? RMSNorm(v) or identity
-  out = h + a · Dropout(v)               # learnable residual scale a
+  out = h + a Â· Dropout(v)               # learnable residual scale a
   h = out
   ```
 
-  - `SineParam` implements `A · exp(-d · g(z)) · sin(f · z)` with per-feature, optionally trainable amplitude `A`, frequency `f`, and damping `d` (see §1). In WaveResNet these parameters are per hidden feature and can be frozen or learned via the `activation_config.learnable` setting. The model constructor also exposes `trainable_params` for convenience.
+  - `SineParam` implements `A Â· exp(-d Â· g(z)) Â· sin(f Â· z)` with per-feature, optionally trainable amplitude `A`, frequency `f`, and damping `d` (see Â§1). In WaveResNet these parameters are per hidden feature and can be frozen or learned via the `activation_config.learnable` setting. The model constructor also exposes `trainable_params` for convenience.
   - `F(c)` is a learned linear projection from the context that acts as an additive phase shift before the sine; `FiLM(v, c)` applies feature-wise affine modulation after the nonlinearity. Both can be toggled independently.
   - Normalisation: choose between none, weight normalization (applied to linears), or RMSNorm on the residual branch output.
   - The residual scale `a` is a learned scalar per block initialised from `residual_alpha_init` (commonly `0.0` for residual-in-residual training stability).
@@ -307,4 +326,5 @@ These scripts run in CI to catch regressions introduced by code changes. They re
 - The README explains installation and provides gentle usage examples.
 - This document explains how the components work: mathematical definitions for the sine activation, state controllers, preprocessors, optimisers, HISSO, and wave backbones.
 - For exhaustive argument reference, consult `docs/API.md`. For runnable scenarios, see the scripts listed in `docs/examples/README.md`.
+
 

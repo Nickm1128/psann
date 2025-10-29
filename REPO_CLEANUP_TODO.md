@@ -3,7 +3,18 @@ Note: Work through tasks in order as much as possible. After each change, update
 # Repository Cleanup To-Do
 
 - [x] Create a new working branch for cleanup (e.g., `cleanup/repo-hygiene`). *(Created `cleanup/repo-hygiene` on 2025-10-19)*
-- [x] Take a quick baseline: run tests once to capture current status and timing. *(Ran `python -m pytest`; 14 failures in HISSO/linear probe suite, 102.9s)*
+- [x] Take a quick baseline: run tests once to capture current status and timing. *(Initial run on 2025-10-19: `python -m pytest` with 14 HISSO/linear-probe failures, 102.9s. Latest run 2025-10-27 after error-messaging/HISSO cleanup: full suite green in 13.5s.)*
+
+## 0) Session 2025-10-27 Wrap-Up & Forward Plan
+
+- [x] Standardise validation/error messaging across estimators, HISSO, and episodes (added targeted tests in `tests/test_error_messages.py`; CUDA guard + context alignment in `src/psann/hisso.py`; regression now stable).
+- [x] Restored HISSO + linear probe workflows; verified `python -m pytest` passes (69 tests).
+- [ ] Follow-ups:
+  - Validate `_guard_cuda_capture` behaviour on a real CUDA stack; remove fallback if no longer required or guard additional optimizer calls if needed.
+  - Review warning stacklevels/deprecation messaging (remaining subtask under Error/exception messaging in `Cleanup_10272025.md`); add coverage once decisions made.
+  - Document HISSO context alignment and CUDA guard in `TECHNICAL_DETAILS.md` / `docs/API.md` (call out expected context shapes, especially for conv variants).
+  - Decide whether `encode_and_probe` should report both baseline and probe metrics separately (current implementation keeps the higher accuracy for compatibility); capture any API change implications in release notes.
+  - Re-run profiling on HISSO episodes once GPU coverage confirmed; capture timings for README/docs.
 
 ## 1) Ignore Rules & Housekeeping
 

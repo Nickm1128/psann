@@ -30,7 +30,7 @@ These scripts share the refactored helper pipeline (`normalise_fit_args`, `prepa
 - **26_hisso_unsupervised_allocation.py** — unsupervised HISSO training on synthetic prices that relies exclusively on the reward registry (~2 min).
 - **27_hisso_lsm_allocation.py** — attaches an LSM expander before HISSO to illustrate hybrid preprocessing + episodic optimisation (~2.5 min).
 
-Each HISSO script uses the neutral terminology (`transition_penalty`) and the shared helpers introduced with `HISSOOptions`. After training, utilities such as `psann.hisso.hisso_infer_series` and `psann.hisso.hisso_evaluate_reward` reuse the stored configuration.
+Each HISSO script uses the neutral terminology (`transition_penalty`) and the shared helpers introduced with `HISSOOptions`. After training, utilities such as `psann.hisso_infer_series` and `psann.hisso_evaluate_reward` reuse the stored configuration.
 
 ## Benchmarks and profiling
 
@@ -43,6 +43,7 @@ Run the benchmark scripts from the project root; outputs land under `docs/benchm
 ## Diagnostics
 
 - **WaveResNet diagnostics (docs/wave_resnet.md)** — covers Jacobian/NTK utilities, participation ratio, and mutual information probes for backbone analysis.
+- All examples assume float32 NumPy arrays. If you plan to train on GPU, pass `device="cuda"` to the estimator before calling `fit` so the training loop (and HISSO, when enabled) stay on-device.
 
 ## Retired content
 

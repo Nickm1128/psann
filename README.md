@@ -97,6 +97,10 @@ print("R^2:", model.score(X, y))
 
 Behind the scenes the estimator normalises arguments via `normalise_fit_args` and prepares data/scalers through `psann.estimators._fit_utils.prepare_inputs_and_scaler`, so dense, residual, and convolutional variants share the same fit surface.
 
+**Parameter aliases.** The constructor still accepts legacy names such as `hidden_width` and `hidden_channels`, but they are treated as deprecated aliases. Whether you pass them to `__init__` or later through `set_params`, the estimator maps them back to the canonical `hidden_units` / `conv_channels` entries and warns when both names disagree.
+
+**Device & dtype.** The estimators operate internally in float32. Supplying `np.float32` arrays (as shown above) avoids extra copies. For GPU training, pass `device="cuda"` (or a specific `torch.device`) when constructing the estimator *before* calling `fit`; the helper will keep HISSO loops and inference on the pinned device.
+
 ### Episodic HISSO with `HISSOOptions`
 
 ```python
@@ -135,7 +139,11 @@ model.fit(
 )
 ```
 
-`HISSOOptions` keeps reward, context, noise, and transformation choices in one place. The estimator records the resolved options after fitting so helpers such as `psann.hisso.hisso_infer_series` and `psann.hisso.hisso_evaluate_reward` can reuse them.
+`HISSOOptions` keeps reward, context, noise, and transformation choices in one place. The estimator records the resolved options after fitting so helpers such as `psann.hisso_infer_series` and `psann.hisso_evaluate_reward` can reuse them.
+
+### Context builders
+
+Setting `context_builder="cosine"` (or supplying a callable) instructs the estimator to synthesise auxiliary context features during `fit`, `predict`, and sequence roll-outs. Builder parameter dictionaries are deep-copied, so mutating your original config after `set_params` will not affect the estimator. Calling `set_params(context_builder=None)` clears the cached builder and resets the inferred `context_dim`, letting you switch back to explicit context arrays cleanly.
 
 ### Custom data preparation
 
@@ -153,13 +161,13 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 
 ## Core components
 
-- **Sine activations** (`psann.activations.SineParam`) expose learnable amplitude, frequency, and decay with optional bounds and SIREN-friendly initialisation.
-- **LSM expanders** (`psann.lsm`) provide sparse learned feature maps; `build_preprocessor` wires dict specs or modules into estimators with optional pretraining and separate learning rates.
-- **State controllers** (`psann.state.StateController`) keep per-feature persistent gains for streaming/online workflows. Configurable via `StateConfig`.
+- **Sine activations** (`psann.SineParam`) expose learnable amplitude, frequency, and decay with optional bounds and SIREN-friendly initialisation.
+- **LSM expanders** (`psann.LSM`, `psann.LSMExpander`, `psann.LSMConv2d`, `psann.LSMConv2dExpander`) provide sparse learned feature maps; `build_preprocessor` wires dict specs or modules into estimators with optional pretraining and separate learning rates.
+- **State controllers** (`psann.StateController`) keep per-feature persistent gains for streaming/online workflows. Configurable via `StateConfig`.
 - **Shared fit helpers** (`psann.estimators._fit_utils`) normalise arguments, materialise scalers, route through residual and convolutional builders, and orchestrate HISSO plans.
-- **Wave backbones** (`psann.models`) surface `WaveResNet`, `WaveEncoder`, `WaveRNNCell`, and `scan_regimes` for standalone experiments and spectral diagnostics outside the sklearn wrappers.
-- **HISSO** (`psann.hisso`) offers declarative reward configuration (`HISSOOptions`), supervised warm starts, episode construction, and inference helpers that reuse the cached configuration.
-- **Utilities** (`psann.utils`) include Jacobian/NTK probes, participation ratio, mutual-information proxies, and linear probes for diagnostics.
+- **Wave backbones** (`psann.WaveResNet`, `psann.WaveEncoder`, `psann.WaveRNNCell`, `psann.scan_regimes`) surface the standalone components for experiments and spectral diagnostics outside the sklearn wrappers.
+- **HISSO** (`psann.HISSOOptions`, `psann.hisso_infer_series`, `psann.hisso_evaluate_reward`) offers declarative reward configuration, supervised warm starts, episode construction, and inference helpers that reuse the cached configuration.
+- **Utilities** (`psann.jacobian_spectrum`, `psann.ntk_eigens`, `psann.participation_ratio`, `psann.mutual_info_proxy`, `psann.encode_and_probe`, `psann.fit_linear_probe`, `psann.make_context_rotating_moons`, `psann.make_drift_series`, `psann.make_shock_series`, `psann.make_regime_switch_ts`) cover diagnostics and synthetic regimes.
 - **Token helpers** (`SimpleWordTokenizer`, `SineTokenEmbedder`) remain for experiments that need sine embeddings, but no language-model trainer ships in this release.
 
 ## HISSO at a glance
@@ -170,6 +178,46 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 4. After training, `hisso_infer_series(estimator, series)` and `hisso_evaluate_reward(estimator, series, targets=None)` reuse the cached configuration to score new data.
 
 The project ships CPU benchmark baselines (`docs/benchmarks/`) and CI scripts (`scripts/benchmark_hisso_variants.py`, `scripts/compare_hisso_benchmarks.py`) to catch HISSO regressions.
+
+### HISSO logging CLI
+
+Use `python -m psann.scripts.hisso_log_run` to run HISSO sessions on remote nodes and collect reproducible artefacts. The command accepts JSON/YAML configs (see `configs/hisso/` templates) and emits:
+- `metrics.json` with loss/reward/throughput summaries and optional portfolio metrics.
+- `events.csv` containing append-only epoch logs and runtime notes (device, shuffle policy, AMP state).
+- `checkpoints/` with the best estimator snapshot (and `latest.pt` when `--keep-checkpoints` is passed).
+- `config_resolved.yaml` mirroring the resolved estimator/device settings for traceability.
+
+Example:
+```bash
+python -m psann.scripts.hisso_log_run \
+  --config configs/hisso/dense_cpu_smoke.yaml \
+  --output-dir runs/hisso \
+  --run-name dense_cpu_debug \
+  --device cpu \
+  --seed 7
+```
+When `device` points to a CUDA target and the config enables `mixed_precision`, the trainer switches to AMP + GradScaler automatically.
+
+### Convolutional stems
+
+`PSANNRegressor.with_conv_stem(...)` and `ResPSANNRegressor.with_conv_stem(...)` return estimators wired into the convolutional training path without instantiating the legacy `*ConvPSANNRegressor` wrappers. The helpers enable `preserve_shape`, switch training to channel-first tensors, and honour `conv_channels`, `conv_kernel_size`, and `per_element` flags. Example:
+```python
+est = PSANNRegressor.with_conv_stem(
+    hidden_layers=2,
+    hidden_units=32,
+    conv_channels=16,
+    conv_kernel_size=3,
+    epochs=20,
+    batch_size=32,
+    random_state=42,
+)
+est.fit(images, targets)
+```
+Residual variants reuse the same call while producing `ResidualPSANNConv2dNet` cores when 2D inputs are supplied.
+
+### Stateful dataloaders
+
+When `stateful=True`, the training dataloader preserves sequence order. PSANN disables shuffling whenever `state_reset` is `"epoch"` or `"none"` so stateful models consume contiguous batches; keep the default `state_reset="batch"` to retain randomised mini-batches.
 
 ## Docs and examples
 

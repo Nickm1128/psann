@@ -46,8 +46,11 @@ def sharpe_ratio(returns: np.ndarray, *, risk_free: float = 0.0, eps: float = 1e
     No annualization assumed (step=1); scale externally if needed.
     """
     r = np.asarray(returns, dtype=np.float64)
+    if r.size < 2:
+        return 0.0
     excess = r - risk_free
-    std = np.std(excess, ddof=1) + eps
+    std = float(np.std(excess, ddof=1))
+    std = max(std, eps)
     return float(np.mean(excess) / std)
 
 

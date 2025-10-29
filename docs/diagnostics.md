@@ -4,8 +4,13 @@ Use the diagnostics helpers to evaluate feature quality before committing to lon
 
 ```python
 import torch
-from psann.models import WaveResNet
-from psann.utils import jacobian_spectrum, ntk_eigens, participation_ratio, mutual_info_proxy
+from psann import (
+    WaveResNet,
+    jacobian_spectrum,
+    ntk_eigens,
+    participation_ratio,
+    mutual_info_proxy,
+)
 
 torch.manual_seed(42)
 model = WaveResNet(input_dim=2, hidden_dim=64, depth=12, output_dim=1, context_dim=4)

@@ -79,6 +79,15 @@ Notes
 - EAF lite split is tiny and noisy; negative R2 indicates limited predictability at this granularity; the loader already falls back to top heats when none meet the 120-row minimum.
 - For Jena and Beijing, PSANN+Conv spine consistently outperforms MLP under the same epoch budget.
 
+**Pending GPU sweep (runpod)**
+- Tooling: use `python -m psann.scripts.hisso_log_run --config <yaml> --output-dir runs/hisso --run-name <tag> --device cuda:0 --seed 42` (see `configs/hisso/` templates). The WaveResNet config expects `datasets/wave_resnet_small.npz`; stage it locally or override `--config` with the remote path before launching on runpod.
+- Capture: copy `metrics.json`, `events.csv`, `checkpoints/best.pt`, and `config_resolved.yaml` back into `runs/hisso/<tag>/` locally after each remote run.
+- `configs/hisso/dense_cpu_smoke.yaml` now produces price matrices aligned with the primary dimension; the run should succeed once rerun.
+- Experiments queued
+  - HISSO WaveResNet small (`configs/hisso/wave_resnet_small.yaml`) on synthetic portfolio data.
+- Dense CPU baseline rerun after staging the GPU node.
+- Reporting: update this compendium with throughput, reward curves, and memory figures once artifacts land; mirror highlights in `README.md` and notebooks (`PSANN_WaveResNet_Context_Demo.ipynb`, `PSANN_SineParam_Comparison.ipynb`) so guidance matches the CLI entry point.
+
 **Prior Outputs (Local)**
 - Predictions (NPZ arrays) and metrics bundle: `outputs/colab_results (1)/`
   - Prediction files by task + model, e.g.,

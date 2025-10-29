@@ -141,7 +141,7 @@ def normalise_fit_args(
     X: np.ndarray,
     y: Optional[np.ndarray],
     *,
-    context: Optional[np.ndarray],
+    context: Optional[np.ndarray] = None,
     validation_data: Optional[ValidationInput],
     noisy: Optional[NoiseSpec],
     verbose: int,
@@ -155,7 +155,10 @@ def normalise_fit_args(
     val_pair: Optional[ValidationInput] = None
     if validation_data is not None:
         if not isinstance(validation_data, (tuple, list)):
-            raise ValueError("validation_data must be a tuple (X, y) or (X, y, context)")
+            raise TypeError(
+                "validation_data must be a tuple/list (X, y) or (X, y, context); "
+                f"received {type(validation_data).__name__}."
+            )
         val_tuple = tuple(validation_data)
         if len(val_tuple) == 2:
             X_val = np.asarray(val_tuple[0], dtype=np.float32)
@@ -173,7 +176,9 @@ def normalise_fit_args(
                 )
             val_pair = (X_val, y_val, ctx_val)
         else:
-            raise ValueError("validation_data must be length 2 or 3")
+            raise ValueError(
+                f"validation_data must contain 2 or 3 elements; received {len(val_tuple)}."
+            )
 
     X_arr = np.asarray(X, dtype=np.float32)
     y_arr = None
@@ -284,8 +289,7 @@ def _prepare_flatten_inputs(
             if estimator.output_shape is not None:
                 primary_dim = int(np.prod(estimator.output_shape))
             else:
-                inferred = int(np.prod(estimator.input_shape_)) if estimator.input_shape_ else 1
-                primary_dim = max(1, inferred)
+                primary_dim = 1
         else:
             # Non-HISSO regressors require explicit targets
             primary_dim = 1
@@ -325,14 +329,16 @@ def _prepare_preserve_shape_inputs(
         raise ValueError("data_format must be 'channels_first' or 'channels_last'.")
 
     X_cf = np.moveaxis(X, -1, 1) if estimator.data_format == "channels_last" else X
-    estimator._internal_input_shape_cf_ = tuple(X_cf.shape[1:])
+    cf_shape = X_cf.shape
+    estimator._internal_input_shape_cf_ = tuple(cf_shape[1:])
 
     N, C = X_cf.shape[0], int(X_cf.shape[1])
     X2d = X_cf.reshape(N, C, -1).transpose(0, 2, 1).reshape(-1, C)
     scaler_transform = estimator._scaler_fit_update(X2d)
     if scaler_transform is not None:
-        X2d_scaled = scaler_transform(X2d)
-        X_cf = X2d_scaled.reshape(N, -1, C).transpose(0, 2, 1).reshape(X_cf.shape)
+        X2d = scaler_transform(X2d)
+    X_cf = X2d.reshape(N, -1, C).transpose(0, 2, 1).reshape(cf_shape)
+    X_cf = X_cf.astype(np.float32, copy=False)
 
     train_context: Optional[np.ndarray] = None
     context_dim: Optional[int] = None
@@ -381,7 +387,11 @@ def _prepare_preserve_shape_inputs(
             else:
                 y_cf = y[:, None, ...]
         if y_cf is None:
-            raise ValueError("Unable to align targets with per-element configuration.")
+            raise ValueError(
+                "Unable to align targets with per-element configuration; "
+                f"expected y.ndim in ({X_cf.ndim}, {X_cf.ndim - 1}), "
+                f"received shape {np.shape(y)}."
+            )
         y_cf = y_cf.astype(np.float32, copy=False)
         y_vec = y_cf.reshape(y_cf.shape[0], -1)
         primary_dim = int(n_targets)
@@ -399,7 +409,11 @@ def _prepare_preserve_shape_inputs(
                 )
         primary_dim = int(y_vec.shape[1])
 
-    X_flat = estimator._flatten(X).astype(np.float32, copy=False)
+    if estimator.data_format == "channels_last":
+        X_scaled = np.moveaxis(X_cf, 1, -1)
+    else:
+        X_scaled = X_cf
+    X_flat = estimator._flatten(X_scaled).astype(np.float32, copy=False)
     if train_context is None:
         auto_context = estimator._auto_context(X_flat)
         if auto_context is not None:
@@ -408,7 +422,7 @@ def _prepare_preserve_shape_inputs(
     use_cf_inputs = bool(
         estimator.per_element or getattr(estimator, "_use_channel_first_train_inputs_", False)
     )
-    train_inputs = X_cf.astype(np.float32, copy=False) if use_cf_inputs else X_flat
+    train_inputs = X_cf if use_cf_inputs else X_flat
 
     if use_cf_inputs and y_cf is not None:
         train_targets = y_cf
@@ -556,6 +570,8 @@ def run_hisso_stage(
         lr_min=float(fit_args.lr_min) if fit_args.lr_min is not None else None,
         input_noise_std=plan.options.input_noise_std,
         verbose=int(fit_args.verbose),
+        use_amp=bool(getattr(estimator, "_hisso_use_amp", False)),
+        amp_dtype=getattr(estimator, "_hisso_amp_dtype", None),
     )
 
     estimator._hisso_options_ = plan.options
@@ -579,7 +595,8 @@ def run_supervised_training(
     """Execute the optimiser/dataloader/loop flow shared by all estimators."""
 
     device = estimator._device()
-    model.to(device)
+    estimator._ensure_model_device(device)
+    model = estimator.model_
 
     optimizer = _build_optimizer(estimator, model)
     estimator._optimizer_ = optimizer
@@ -729,18 +746,20 @@ def _prepare_validation_tensors(
                 f"validation context has {ctx_val.shape[0]} samples but X has {X_val.shape[0]}."
             )
     else:
-        raise ValueError("validation_data must be length 2 or 3")
+        raise ValueError(
+            f"validation_data must contain 2 or 3 elements; received {len(validation)}."
+        )
 
-    if ctx_val is None:
-        flat_val = estimator._flatten(X_val)
-        flat_val_scaled = estimator._apply_fitted_scaler(flat_val)
-        auto_ctx = estimator._auto_context(flat_val_scaled)
-        if auto_ctx is not None:
-            ctx_val = auto_ctx
+    layout_cf = bool(
+        estimator.preserve_shape
+        and isinstance(prepared.train_inputs, np.ndarray)
+        and prepared.train_inputs.ndim >= 3
+    )
 
-    ctx_val_t: Optional[torch.Tensor] = None
-    if ctx_val is not None:
-        ctx_val_t = torch.from_numpy(ctx_val.astype(np.float32, copy=False)).to(device)
+    X_val_cf: Optional[np.ndarray] = None
+    X_val_cf_scaled: Optional[np.ndarray] = None
+    inputs_np: Optional[np.ndarray] = None
+    flat_for_context: Optional[np.ndarray] = None
 
     if estimator.preserve_shape:
         X_val_cf = np.moveaxis(X_val, -1, 1) if estimator.data_format == "channels_last" else X_val
@@ -748,46 +767,128 @@ def _prepare_validation_tensors(
             raise ValueError(
                 "PreparedInputState missing channels-first shape for preserve_shape=True."
             )
-        if X_val_cf.shape[1] != prepared.internal_shape_cf[0]:
-            raise ValueError("validation_data channels mismatch.")
-        X_val_t = torch.from_numpy(X_val_cf.astype(np.float32, copy=False)).to(device)
-        if estimator.per_element:
-            if estimator.data_format == "channels_last":
-                if y_val.ndim == X_val.ndim:
-                    y_val_cf = np.moveaxis(y_val, -1, 1)
-                elif y_val.ndim == X_val.ndim - 1:
-                    y_val_cf = y_val[:, None, ...]
-                else:
-                    raise ValueError(
-                        "validation y must match X spatial dims with optional channel last."
-                    )
-            else:
-                if y_val.ndim == X_val_cf.ndim:
-                    y_val_cf = y_val
-                elif y_val.ndim == X_val_cf.ndim - 1:
-                    y_val_cf = y_val[:, None, ...]
-                else:
-                    raise ValueError(
-                        "validation y must match X spatial dims, optional channel first."
-                    )
-            y_val_t = torch.from_numpy(y_val_cf.astype(np.float32, copy=False)).to(device)
+        expected_cf = tuple(prepared.internal_shape_cf)
+        actual_cf = tuple(X_val_cf.shape[1:])
+        if actual_cf != expected_cf:
+            expected_channels = expected_cf[0] if expected_cf else None
+            actual_channels = actual_cf[0] if actual_cf else None
+            if expected_channels is not None and actual_channels is not None and tuple(
+                expected_cf[1:]
+            ) == tuple(actual_cf[1:]):
+                raise ValueError(
+                    f"validation_data channels mismatch: expected {expected_channels}, "
+                    f"received {actual_channels}."
+                )
+            raise ValueError(
+                "validation_data X spatial layout mismatch: "
+                f"expected {expected_cf}, received {actual_cf}."
+            )
+        N_val, C_val = X_val_cf.shape[0], int(X_val_cf.shape[1])
+        X_val_2d = X_val_cf.reshape(N_val, C_val, -1).transpose(0, 2, 1).reshape(-1, C_val)
+        X_val_2d = estimator._apply_fitted_scaler(X_val_2d)
+        X_val_cf_scaled = (
+            X_val_2d.reshape(N_val, -1, C_val).transpose(0, 2, 1).reshape(X_val_cf.shape)
+        ).astype(np.float32, copy=False)
+        if layout_cf:
+            inputs_np = X_val_cf_scaled
         else:
-            y_val_flat = y_val.reshape(y_val.shape[0], -1).astype(np.float32, copy=False)
-            y_val_t = torch.from_numpy(y_val_flat).to(device)
+            if estimator.data_format == "channels_last":
+                X_val_scaled = np.moveaxis(X_val_cf_scaled, 1, -1)
+            else:
+                X_val_scaled = X_val_cf_scaled
+            inputs_np = estimator._flatten(X_val_scaled).astype(np.float32, copy=False)
+        flat_for_context = estimator._flatten(
+            np.moveaxis(X_val_cf_scaled, 1, -1)
+            if estimator.data_format == "channels_last"
+            else X_val_cf_scaled
+        ).astype(np.float32, copy=False)
+    else:
+        n_features = int(np.prod(estimator.input_shape_))
+        actual_shape = tuple(X_val.shape[1:])
+        expected_shape = tuple(estimator.input_shape_)
+        if actual_shape != expected_shape:
+            if int(np.prod(actual_shape)) != n_features:
+                raise ValueError(
+                    f"validation_data X has shape {actual_shape}, expected {expected_shape} "
+                    f"(prod must match {n_features})."
+                )
+        X_val_flat = estimator._flatten(X_val)
+        X_val_flat_scaled = estimator._apply_fitted_scaler(X_val_flat).astype(
+            np.float32, copy=False
+        )
+        inputs_np = X_val_flat_scaled
+        flat_for_context = X_val_flat_scaled
+
+    if inputs_np is None:
+        raise RuntimeError("Failed to prepare validation inputs; internal bug likely.")
+
+    device_is_cpu = device.type == "cpu"
+
+    def _to_tensor(arr: np.ndarray) -> torch.Tensor:
+        tensor = torch.from_numpy(arr.astype(np.float32, copy=False))
+        if device_is_cpu:
+            return tensor
+        return tensor.to(device=device, dtype=torch.float32)
+
+    if ctx_val is None and flat_for_context is not None:
+        auto_ctx = estimator._auto_context(flat_for_context.astype(np.float32, copy=False))
+        if auto_ctx is not None:
+            ctx_val = auto_ctx
+
+    ctx_val_t: Optional[torch.Tensor] = None
+    if ctx_val is not None:
+        ctx_val_t = _to_tensor(ctx_val)
+
+    X_val_t = _to_tensor(inputs_np)
+
+    if layout_cf and estimator.per_element:
+        if X_val_cf is None or X_val_cf_scaled is None:
+            raise RuntimeError(
+                "Per-element validation requires channel-first tensors; inputs were missing."
+            )
+        if estimator.data_format == "channels_last":
+            if y_val.ndim == X_val.ndim:
+                y_val_cf = np.moveaxis(y_val, -1, 1)
+            elif y_val.ndim == X_val.ndim - 1:
+                y_val_cf = y_val[:, None, ...]
+            else:
+                raise ValueError(
+                    "validation y ndim must be "
+                    f"{X_val.ndim} or {X_val.ndim - 1} for data_format='channels_last'; "
+                    f"received shape {tuple(y_val.shape)} (ndim={y_val.ndim})."
+                )
+        else:
+            if y_val.ndim == X_val_cf.ndim:
+                y_val_cf = y_val
+            elif y_val.ndim == X_val_cf.ndim - 1:
+                y_val_cf = y_val[:, None, ...]
+            else:
+                raise ValueError(
+                    "validation y ndim must be "
+                    f"{X_val_cf.ndim} or {X_val_cf.ndim - 1} for data_format='channels_first'; "
+                    f"received shape {tuple(y_val.shape)} (ndim={y_val.ndim})."
+                )
+        if tuple(y_val_cf.shape[2:]) != tuple(X_val_cf.shape[2:]):
+            raise ValueError(
+                "validation y spatial dimensions do not match X; "
+                f"expected {tuple(X_val_cf.shape[2:])}, received {tuple(y_val_cf.shape[2:])}."
+            )
+        if int(y_val_cf.shape[1]) != int(prepared.output_dim):
+            raise ValueError(
+                "validation y channel dimension mismatch: "
+                f"expected {int(prepared.output_dim)}, received {int(y_val_cf.shape[1])}."
+            )
+        y_val_t = _to_tensor(y_val_cf)
         return X_val_t, y_val_t, ctx_val_t
 
-    n_features = int(np.prod(estimator.input_shape_))
-    if tuple(X_val.shape[1:]) != estimator.input_shape_:
-        if int(np.prod(X_val.shape[1:])) != n_features:
-            raise ValueError(
-                f"validation_data X has shape {X_val.shape[1:]}, expected {estimator.input_shape_} "
-                f"(prod must match {n_features})."
-            )
-    X_val_flat = estimator._flatten(X_val)
-    X_val_t = torch.from_numpy(X_val_flat.astype(np.float32, copy=False)).to(device)
-
     y_val_flat = y_val.reshape(y_val.shape[0], -1).astype(np.float32, copy=False)
-    y_val_t = torch.from_numpy(y_val_flat.astype(np.float32, copy=False)).to(device)
+    expected_targets = int(prepared.output_dim)
+    if y_val_flat.shape[1] != expected_targets:
+        raise ValueError(
+            "validation y target dimension mismatch: "
+            f"expected {expected_targets}, received {y_val_flat.shape[1]}."
+        )
+    y_val_t = _to_tensor(y_val_flat)
     return X_val_t, y_val_t, ctx_val_t
 
 
@@ -823,7 +924,10 @@ def _prepare_noise_tensor(
                 raise ValueError(
                     f"noisy shape {arr.shape} not compatible with input shape {estimator.input_shape_}"
                 )
-        return torch.from_numpy(std.astype(np.float32, copy=False)).to(device)
+        std_t = torch.from_numpy(std.astype(np.float32, copy=False))
+        if device.type == "cpu":
+            return std_t
+        return std_t.to(device=device, dtype=torch.float32)
 
     n_features = int(np.prod(estimator.input_shape_))
     if np.isscalar(noisy):
@@ -838,7 +942,10 @@ def _prepare_noise_tensor(
             raise ValueError(
                 f"noisy shape {arr.shape} not compatible with flattened feature dimension {n_features}"
             )
-    return torch.from_numpy(std.astype(np.float32, copy=False)).to(device)
+    std_t = torch.from_numpy(std.astype(np.float32, copy=False))
+    if device.type == "cpu":
+        return std_t
+    return std_t.to(device=device, dtype=torch.float32)
 
 
 def _resolve_validation_inputs(
