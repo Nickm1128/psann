@@ -69,6 +69,20 @@ def test_portfolio_metrics_handles_minimal_history():
     assert metrics["turnover"] == pytest.approx(0.0)
 
 
+def test_portfolio_metrics_handles_underflow_without_nan():
+    steps = 160
+    allocations = np.ones((steps, 1), dtype=np.float64)
+    # Prices decay exponentially to drive the equity curve towards underflow.
+    prices = (1e-4) ** np.arange(steps, dtype=np.float64)
+    prices = prices.reshape(-1, 1)
+
+    metrics = portfolio_metrics(allocations, prices)
+
+    assert np.isfinite(metrics["sharpe"])
+    assert metrics["sharpe"] <= 0.0
+    assert np.isfinite(metrics["log_return"])
+
+
 def test_reward_strategy_registry_requires_explicit_overwrite():
     original_registry = dict(REWARD_REGISTRY)
     bundle = RewardStrategyBundle(

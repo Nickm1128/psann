@@ -279,6 +279,10 @@ python -m psann.scripts.hisso_log_run \
 ```
 When `device` points to a CUDA target and the config enables `mixed_precision`, the trainer switches to AMP + GradScaler automatically.
 
+Looking for a guided walkthrough? Use the paired notebooks (both ship with Colab badges):
+- `notebooks/HISSO_Logging_CLI_Walkthrough.ipynb` – CPU-first dry run with TODO placeholders.
+- `notebooks/HISSO_Logging_GPU_Run.ipynb` – installs a published PyPI release (or a Git commit when specified via PSANN_PACKAGE_SPEC) and executes the logging CLI on CUDA to collect final metrics and checkpoints.
+
 ### Convolutional stems
 
 `PSANNRegressor.with_conv_stem(...)` and `ResPSANNRegressor.with_conv_stem(...)` return estimators wired into the convolutional training path without instantiating the legacy `*ConvPSANNRegressor` wrappers. The helpers enable `preserve_shape`, switch training to channel-first tensors, and honour `conv_channels`, `conv_kernel_size`, and `per_element` flags. Example:
@@ -323,3 +327,4 @@ The notebook **PSANN_Parity_and_Probes.ipynb** (now under `notebooks/`) reproduc
 - **Run:** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/v1.0.0/notebooks/PSANN_Parity_and_Probes.ipynb)
 
 Experiments used **Python 3.9**, dependencies pinned in `pyproject.toml` (install `[compat]` for constrained environments).
+- When using the Colab notebook, set PSANN_PACKAGE_SPEC to the desired release (e.g., 'psann==0.10.10') or a git URL so the wheel includes 'psann.scripts'.

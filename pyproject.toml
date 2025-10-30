@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psann"
-version = "0.10.9"
+version = "0.10.10"
 description = "PSANN: Parameterized Sine-Activated Neural Networks (primary-output, sklearn-style, PyTorch backend)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
   "numpy>=1.23",
   "torch>=2.1",
+  "pyyaml>=6.0",
 ]
 
 [project.urls]

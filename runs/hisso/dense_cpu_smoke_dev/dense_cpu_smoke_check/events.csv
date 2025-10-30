@@ -1,0 +1,11 @@
+timestamp,level,message
+2025-10-30 10:10:46,981,INFO,dataset.shapes train=[115, 4] val=[38, 4] test=[39, 4]
+2025-10-30 10:10:46,981,DEBUG,dataset.targets train=[115, 3]
+2025-10-30 10:10:46,981,DEBUG,dataset.prices train=[115, 3]
+2025-10-30 10:10:46,984,INFO,trainer.state stateful=False state_reset=batch warmstart_shuffle=None
+2025-10-30 10:10:48,462,DEBUG,epoch=1 reward=-0.11111229006201029 episodes=32
+2025-10-30 10:10:48,462,DEBUG,epoch=2 reward=-0.11111134896054864 episodes=32
+2025-10-30 10:10:48,462,DEBUG,epoch=3 reward=-0.11111126421019435 episodes=32
+2025-10-30 10:10:48,462,DEBUG,epoch=4 reward=-0.11111119762063026 episodes=32
+2025-10-30 10:10:48,462,DEBUG,epoch=5 reward=-0.11111114430241287 episodes=32
+2025-10-30 10:10:48,478,INFO,run.completed duration=1.478s

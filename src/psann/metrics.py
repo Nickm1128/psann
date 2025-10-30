@@ -46,6 +46,12 @@ def sharpe_ratio(returns: np.ndarray, *, risk_free: float = 0.0, eps: float = 1e
     No annualization assumed (step=1); scale externally if needed.
     """
     r = np.asarray(returns, dtype=np.float64)
+    if r.size == 0:
+        return 0.0
+    finite_mask = np.isfinite(r)
+    if not np.any(finite_mask):
+        return 0.0
+    r = r[finite_mask]
     if r.size < 2:
         return 0.0
     excess = r - risk_free
@@ -82,7 +88,11 @@ def portfolio_metrics(
     P = prices.detach().cpu().numpy() if isinstance(prices, torch.Tensor) else np.asarray(prices)
     curve = equity_curve(A, P, trans_cost=trans_cost)
     # Compute per-step arithmetic returns aligned to curve[1:]
-    rets = curve[1:] / curve[:-1] - 1.0
+    prev_curve = np.maximum(curve[:-1], 1e-12)
+    next_curve = curve[1:]
+    rets = np.divide(next_curve, prev_curve, out=np.zeros_like(next_curve), where=prev_curve > 0.0) - 1.0
+    # Guard against underflow-driven NaNs/infs by treating total capital loss as -1 return.
+    rets = np.nan_to_num(rets, nan=-1.0, posinf=-1.0, neginf=-1.0)
     return {
         "cum_return": float(curve[-1] - 1.0),
         "log_return": float(np.log(max(curve[-1], 1e-12))),

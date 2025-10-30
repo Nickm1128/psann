@@ -6,6 +6,10 @@ This directory hosts exploratory and reproducibility notebooks that complement t
 
 - [**PSANN_Parity_and_Probes.ipynb**](PSANN_Parity_and_Probes.ipynb) &nbsp;[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/main/notebooks/PSANN_Parity_and_Probes.ipynb)\
   Demonstrates the compute-parity experiment suite discussed in `data_descriptions.txt` and the accompanying reports. Designed for Google Colab.
+- [**HISSO_Logging_CLI_Walkthrough.ipynb**](HISSO_Logging_CLI_Walkthrough.ipynb) &nbsp;[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/main/notebooks/HISSO_Logging_CLI_Walkthrough.ipynb)\
+  CPU-first draft for the HISSO logging CLI workflow. Captures the command template, explains the emitted artifacts, and includes TODO markers for GPU-derived metrics/screenshots that will be filled in after the remote sweep.
+- [**HISSO_Logging_GPU_Run.ipynb**](HISSO_Logging_GPU_Run.ipynb) &nbsp;[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/main/notebooks/HISSO_Logging_GPU_Run.ipynb)\
+  Colab-ready automation that installs the published `psann` wheel, synthesises datasets, and executes the HISSO logging CLI on CUDA to collect metrics, event logs, and checkpoints for the final GPU sweep.
 
 ## How to run
 
