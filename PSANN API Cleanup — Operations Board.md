@@ -8,7 +8,7 @@
 ### Autosummary (Codex must update)
 - **Progress (weighted):** `75 / 189` checkboxes complete → `39.7%` (simple)  
 - **Progress (complexity-weighted):** `63.6%` _(Codex: compute using the "Weighted Progress" rules below every time boxes change)_
-- **Open items:** `0` in "Now", `3` in "Next", `0` in "Blocked"
+- **Open items:** `0` in "Now", `0` in "Next", `3` in "Blocked"
 - **Latest GPU sweep:** Runpod L4, CUDA 12.1, Torch 2.8.0+cu128; WaveResNet HISSO metrics logged (see Runs).
 
 ---
@@ -52,7 +52,7 @@ weighted_progress = 100 * done_K / total_K
 ### B) **Next — Docs & CI polish (CPU)**
 - (c=2) Tighten **README Quick Start** examples for `WaveResNetRegressor` and `ResConvPSANNRegressor` with deterministic seeds and dtype/device tips. ✅ archived
 - (c=2) CI markers: keep slow HISSO tests behind `-m slow`; verify the marker count after adding/removing tests. ✅ archived
-- (c=2) “Technical details” section: call out **dataloader shuffle policy** for stateful models and `preserve_shape` semantics.
+- (c=2) “Technical details” section: call out **dataloader shuffle policy** for stateful models and `preserve_shape` semantics. ✅ archived
 
 ### C) **GPU Sweep (run last, only if slot available)**
 - (c=3) Run **HISSO logging CLI** for WaveResNet on Runpod L4; export to `runs/hisso/wave_resnet_cuda_runpod_YYYYMMDD_HHMMSS/`. Record throughput, best epoch, train/val/test, reward_mean, turnover, AMP status.
