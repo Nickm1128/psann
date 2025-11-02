@@ -216,7 +216,11 @@ def test_training_loop_early_stopping_runs_on_cuda():
 
     inputs = torch.randn(12, 2)
     targets = torch.zeros(12, 1)
-    loader = DataLoader(TensorDataset(inputs, targets), batch_size=4, shuffle=False)
+    # Use a single batch per epoch so the scheduled loss advances once per epoch,
+    # matching the early-stopping expectations in this test.
+    loader = DataLoader(
+        TensorDataset(inputs, targets), batch_size=len(inputs), shuffle=False
+    )
 
     cfg = TrainingLoopConfig(
         epochs=4,

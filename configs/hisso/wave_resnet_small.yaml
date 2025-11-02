@@ -25,7 +25,7 @@ hisso:
     batch_size: 32
 
 data:
-  npz: datasets/wave_resnet_small.npz
+  npz: ../../datasets/wave_resnet_small.npz
 
 training:
   verbose: 1
