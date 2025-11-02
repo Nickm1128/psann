@@ -279,6 +279,10 @@ python -m psann.scripts.hisso_log_run \
   --device cpu \
   --seed 7
 ```
+Logging directories:
+- Local shells: prefer `runs/hisso/` under the repo for easy diffing and archival.
+- Colab/Runpod: prefer `/content/hisso_logs/` so artifacts persist in the notebook workspace or can be zipped for download.
+The CLI intentionally requires an explicit `--output-dir`; no implicit defaults are applied.
 When `device` points to a CUDA target and the config enables `mixed_precision`, the trainer switches to AMP + GradScaler automatically.
 
 Looking for a guided walkthrough? Use the paired notebooks (both ship with Colab badges):
