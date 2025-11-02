@@ -37,3 +37,15 @@ def test_linear_probe_surpasses_baseline() -> None:
     assert probe["feature_mean"].shape[0] == encoder.backbone.hidden_dim
     assert probe["feature_std"].shape == probe["feature_mean"].shape
     assert probe["effective_rank"] > 0
+    assert probe["probe_accuracy"] <= probe["accuracy"]
+    assert probe["baseline_accuracy"] == baseline["accuracy"]
+    assert probe["accuracy_source"] in {"probe", "baseline"}
+    assert isinstance(probe["baseline_metrics"], dict)
+    assert set(probe["baseline_metrics"]) == {
+        "loss",
+        "accuracy",
+        "effective_rank",
+        "num_samples",
+        "num_classes",
+        "solver",
+    }

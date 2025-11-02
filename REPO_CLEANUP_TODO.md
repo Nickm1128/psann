@@ -11,9 +11,9 @@ Note: Work through tasks in order as much as possible. After each change, update
 - [x] Restored HISSO + linear probe workflows; verified `python -m pytest` passes (69 tests).
 - [ ] Follow-ups:
   - Validate `_guard_cuda_capture` behaviour on a real CUDA stack; remove fallback if no longer required or guard additional optimizer calls if needed.
-  - Review warning stacklevels/deprecation messaging (remaining subtask under Error/exception messaging in `Cleanup_10272025.md`); add coverage once decisions made.
-  - Document HISSO context alignment and CUDA guard in `TECHNICAL_DETAILS.md` / `docs/API.md` (call out expected context shapes, especially for conv variants).
-  - Decide whether `encode_and_probe` should report both baseline and probe metrics separately (current implementation keeps the higher accuracy for compatibility); capture any API change implications in release notes.
+  - [x] Reviewed warning stacklevels/deprecation messaging; HISSO non-scalar input noise warning now uses `stacklevel=2` with regression coverage in `tests/test_warning_stacklevels.py`. *(2025-10-31)*
+  - [x] Documented HISSO context alignment and CUDA guard in `TECHNICAL_DETAILS.md` / `docs/API.md` (call out expected context shapes, especially for conv variants). *(Updated 2025-10-31 with context-shape rules and CUDA capture guard note.)*
+  - [x] Decided on explicit reporting for `encode_and_probe` (adds `probe_accuracy`, `baseline_accuracy`, `baseline_metrics`, and `accuracy_source` fields while keeping `accuracy` as the max); release notes updated in `docs/migration.md`. *(2025-10-31)*
   - Re-run profiling on HISSO episodes once GPU coverage confirmed; capture timings for README/docs.
 
 ## 1) Ignore Rules & Housekeeping

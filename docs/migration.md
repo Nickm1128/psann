@@ -4,6 +4,10 @@ Guidance for upgrading projects to the refactored training surface introduced af
 
 ## What changed
 
+- **0.10.12 diagnostics tweaks (2025-10-31)**  
+  - `psann.utils.encode_and_probe` now returns explicit `probe_accuracy`, `baseline_accuracy`, and a `baseline_metrics` summary while keeping `accuracy` as the higher of the two for backwards compatibility.  
+  - Inspect `accuracy_source` to determine whether the linear probe or the raw baseline features produced the winning score when tracking regressions across releases.
+
 - **0.10.5 housekeeping (2025-10-19)**  
   - Development tooling extras now install coverage and build so CI can publish coverage reports and validate wheels.  
   - HISSO integration tests are marked `slow` to unblock quick `pytest -m "not slow"` iterations while the refactor settles.  

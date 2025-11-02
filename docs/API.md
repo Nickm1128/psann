@@ -57,8 +57,8 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 **HISSO configuration**
 - `hisso_window: int | None` - episode length when training with `hisso=True` (defaults to 64).
 - `hisso_reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None` - reward callback that consumes transformed primary outputs and context.
-- **Device tip:** HISSO runs entirely on the estimator’s current device. Set `device="cuda"` (or the desired `torch.device`) before calling `fit` to keep episodes on GPU, and supply float32 inputs/contexts to avoid host copies.
-- `hisso_context_extractor: Callable[[torch.Tensor], torch.Tensor] | None` - optional callable that derives context tensors from inputs.
+- **Device tip:** HISSO runs entirely on the estimator’s current device. Set `device="cuda"` (or the desired `torch.device`) before calling `fit` to keep episodes on GPU, and supply float32 inputs/contexts to avoid host copies. On CPU-only machines that still install CUDA wheels the training loop is wrapped in a guard that suppresses `torch.cuda.is_current_stream_capturing()` failures when the runtime is missing, so HISSO can run without a GPU driver.
+- `hisso_context_extractor: Callable[[torch.Tensor], torch.Tensor] | None` - optional callable that derives context tensors from inputs; outputs are coerced onto the estimator’s device/dtype and aligned to the primary action width (singleton channels broadcast, wider contexts are trimmed or repeated). Temporal/episode mismatches raise a `ValueError` that reports both shapes.
 - `hisso_primary_transform: str | None` - transform applied to primary outputs before reward evaluation (`"identity"` | `"softmax"` | `"tanh"`).
 - `hisso_transition_penalty: float | None` - smoothness penalty applied between HISSO steps (alias `hisso_trans_cost` is tolerated for compatibility).
 - `hisso_supervised: Mapping[str, Any] | bool | None` - opt into a supervised warm start before HISSO (provide `{"y": targets}` to reuse labels).

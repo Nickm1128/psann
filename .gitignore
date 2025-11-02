@@ -3,6 +3,7 @@ dist/
 build/
 *.venv/
 .venv/
+.venv*/
 *.egg-info/
 *.egg
 *.whl
@@ -40,6 +41,8 @@ outputs/
 outputs_non_visual_data.zip
 tmp_extract/
 tmp_outputs/
+.pip_inspect/
+runs/
 
 # Examples artifacts
 examples/logs/

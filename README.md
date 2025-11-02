@@ -314,7 +314,7 @@ When `stateful=True`, the training dataloader preserves sequence order. PSANN di
 
 - Predictive extras and growth schedules are gone; legacy `extras_*` arguments are accepted but ignored with warnings for backward compatibility.
 - Terminology has converged on `transition_penalty` within HISSO; the `trans_cost` alias still functions but will be removed in a later release.
-- CPU benchmarks run in CI; GPU baselines remain on the roadmap once shared hardware is available.
+- CPU benchmarks run in CI; initial CUDA smoke runs now live in `runs/hisso/dense/` and `runs/hisso/wave_resnet/`: dense (seed 7) duration 2.68 s, throughput 203 eps/s, train/val/test loss 0.245/0.304/0.231, reward_mean -0.111; WaveResNet (seed 11) duration 3.34 s, throughput 161 eps/s, train/val/test loss 1.435/1.402/1.569, reward_mean -0.182 (std 0.068). Colab did not expose CUDA memory metrics, so instrument `torch.cuda.max_memory_allocated()` during the runpod sweep before promoting the numbers to release notes.
 - Upcoming work highlighted in `REPO_CLEANUP_TODO.md` includes broader reward coverage, lint/type sweeps, and release tooling improvements.
 
 ### Reproducibility

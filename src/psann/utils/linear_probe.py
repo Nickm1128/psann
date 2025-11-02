@@ -142,22 +142,38 @@ def encode_and_probe(
     features = torch.cat(features_list, dim=0)
     targets = torch.cat(targets_list, dim=0)
 
-    probe = fit_linear_probe(features.to(device), targets.to(device), l2=l2, solver=solver)
+    probe_metrics = fit_linear_probe(features.to(device), targets.to(device), l2=l2, solver=solver)
 
     baseline_components = [torch.cat(raw_inputs, dim=0)]
     if has_context and raw_contexts:
         baseline_components.append(torch.cat(raw_contexts, dim=0))
     baseline_features = torch.cat(baseline_components, dim=-1)
-    baseline = fit_linear_probe(
+    baseline_metrics = fit_linear_probe(
         baseline_features.to(device),
         targets.to(device),
         l2=l2,
         solver=solver,
     )
-    probe["baseline_accuracy"] = float(baseline["accuracy"])
-    if baseline["accuracy"] > probe["accuracy"]:
-        probe["accuracy"] = float(baseline["accuracy"])
-    return probe
+
+    result: Dict[str, object] = dict(probe_metrics)
+    result["probe_accuracy"] = float(probe_metrics["accuracy"])
+    result["baseline_accuracy"] = float(baseline_metrics["accuracy"])
+    result["baseline_metrics"] = {
+        "loss": float(baseline_metrics["loss"]),
+        "accuracy": float(baseline_metrics["accuracy"]),
+        "effective_rank": float(baseline_metrics["effective_rank"]),
+        "num_samples": baseline_metrics["num_samples"],
+        "num_classes": baseline_metrics["num_classes"],
+        "solver": baseline_metrics["solver"],
+    }
+    accuracy_source = "probe"
+    best_accuracy = probe_metrics["accuracy"]
+    if baseline_metrics["accuracy"] > best_accuracy:
+        accuracy_source = "baseline"
+        best_accuracy = baseline_metrics["accuracy"]
+    result["accuracy"] = float(best_accuracy)
+    result["accuracy_source"] = accuracy_source
+    return result
 
 
 def _effective_rank(features: torch.Tensor, eps: float = 1e-6) -> float:

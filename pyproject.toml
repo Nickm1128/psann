@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psann"
-version = "0.10.10"
+version = "0.10.15"
 description = "PSANN: Parameterized Sine-Activated Neural Networks (primary-output, sklearn-style, PyTorch backend)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -45,12 +45,38 @@ exclude = [
   ".github",
   ".idea",
   ".vscode",
+  ".pip_inspect",
+  ".venv*",
   "benchmarks",
+  "datasets",
   "docs",
   "downloads_tmp",
   "examples",
   "notebooks",
-  "scripts",
+  "runs",
+  "tests",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/psann/**",
+  "pyproject.toml",
+  "README.md",
+  "LICENSE",
+]
+exclude = [
+  ".github",
+  ".idea",
+  ".vscode",
+  ".pip_inspect",
+  ".venv*",
+  "benchmarks",
+  "datasets",
+  "docs",
+  "downloads_tmp",
+  "examples",
+  "notebooks",
+  "runs",
   "tests",
 ]
 

@@ -225,6 +225,10 @@ HISSO (Horizon-Informed Sampling Strategy Optimisation) turns supervised estimat
 
    Other rewards can be registered through `psann.rewards.register_reward_strategy`.
 
+   The context extractor path is tolerant to a range of return types. `_call_context_extractor` always feeds tensors on the model device to the user callback, falls back to NumPy views when the callable rejects tensors, then coerces the result back onto the original device/dtype. `_align_context_for_reward` keeps the reward arguments compatible with the primary head: it verifies that batch/episode axes match, averages or repeats scalar context channels when the primary dimension is 1, expands singleton context dim to match wider actions, and trims or tiles multi-channel context so the last dimension equals the action width. Any mismatch on the temporal axes raises a `ValueError` with both shapes to help diagnose context bugs quickly.
+
+   During both the supervised warm start and the episodic loop we wrap `run_training_loop(...)` in `_guard_cuda_capture()`. This guard is a no-op on CPU. When CUDA is installed but `torch.cuda.is_current_stream_capturing()` would fail because the runtime is unavailable (common on headless CPU-only machines), the guard temporarily patches the check to return `False`, preventing spurious `RuntimeError` exceptions while still restoring the original behaviour once the call completes.
+
 5. Gradients are accumulated across the episode and optimised with the same loss infrastructure. After training, the estimator retains:
 
    - `_hisso_options_` (resolved configuration),

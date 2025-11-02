@@ -19,6 +19,33 @@ if TYPE_CHECKING:
 
 
 # ---------------------------------------------------------------------------
+# Autocast compatibility helpers
+# ---------------------------------------------------------------------------
+
+def _autocast_context(
+    device: torch.device,
+    dtype: Optional[torch.dtype],
+) -> Any:
+    """Return an autocast context compatible with current torch version/device."""
+
+    amp_mod = getattr(torch, "amp", None)
+    if amp_mod is not None and hasattr(amp_mod, "autocast"):
+        try:
+            return amp_mod.autocast(device.type, dtype=dtype)
+        except TypeError:
+            # Older signatures omit device_type; fall back to dtype-only invocation.
+            return amp_mod.autocast(dtype=dtype)  # type: ignore[call-arg]
+    if device.type == "cuda":
+        return torch.cuda.amp.autocast(dtype=dtype)
+    if hasattr(torch, "autocast"):
+        try:
+            return torch.autocast(device.type, dtype=dtype)  # type: ignore[attr-defined]
+        except TypeError:  # pragma: no cover - defensive
+            return torch.autocast("cuda", dtype=dtype)  # type: ignore[attr-defined]
+    return contextlib.nullcontext()
+
+
+# ---------------------------------------------------------------------------
 # Warm-start configuration
 # ---------------------------------------------------------------------------
 
@@ -83,6 +110,7 @@ class HISSOOptions:
                 warnings.warn(
                     "HISSO currently supports scalar input noise; ignoring non-scalar noise specification.",
                     RuntimeWarning,
+                    stacklevel=2,
                 )
 
         resolved_reward = reward_fn or _default_reward_fn
@@ -538,10 +566,7 @@ class HISSOTrainer:
 
                     context = self._extract_context(inputs)
                     amp_ctx = (
-                        torch.cuda.amp.autocast(
-                            device_type=self.device.type,
-                            dtype=self.amp_dtype,
-                        )
+                        _autocast_context(self.device, self.amp_dtype)
                         if self.use_amp
                         else contextlib.nullcontext()
                     )

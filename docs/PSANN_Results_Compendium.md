@@ -79,16 +79,19 @@ Notes
 - EAF lite split is tiny and noisy; negative R2 indicates limited predictability at this granularity; the loader already falls back to top heats when none meet the 120-row minimum.
 - For Jena and Beijing, PSANN+Conv spine consistently outperforms MLP under the same epoch budget.
 
-**Pending GPU sweep (runpod)**
-- Tooling: use `python -m psann.scripts.hisso_log_run --config <yaml> --output-dir runs/hisso --run-name <tag> --device cuda:0 --seed 42` (see `configs/hisso/` templates). The WaveResNet config ships with a staged dataset at `datasets/wave_resnet_small.npz` (320/96/96 samples, 4x128 channels-first tensors, float32 prices aligned with M=3 outputs); copy this NPZ to the runpod workspace or point the config to its remote location before launching.
-- CPU baseline: `python -m psann.scripts.hisso_log_run --config configs/hisso/wave_resnet_cpu_smoke.yaml --output-dir runs/hisso --run-name wave_resnet_cpu_smoke --device cpu` completes in ~20.5s (reward_mean~-0.127, throughput~335 eps/s, Sharpe NaN due to a strictly negative equity curve); artifacts live under `runs/hisso/wave_resnet_cpu_smoke/`.
-- Capture: copy `metrics.json`, `events.csv`, `checkpoints/best.pt`, and `config_resolved.yaml` back into `runs/hisso/<tag>/` locally after each remote run.
-- `configs/hisso/dense_cpu_smoke.yaml` now produces price matrices aligned with the primary dimension; the run should succeed once rerun.
-- Experiments queued
-  - HISSO WaveResNet small (`configs/hisso/wave_resnet_small.yaml`) on synthetic portfolio data.
-- Dense CPU baseline rerun after staging the GPU node.
-- Reporting: update this compendium with throughput, reward curves, and memory figures once artifacts land; mirror highlights in `README.md` and notebooks (`PSANN_WaveResNet_Context_Demo.ipynb`, `PSANN_SineParam_Comparison.ipynb`) so guidance matches the CLI entry point.
-
+**GPU sweep status (Colab first, runpod fallback)**
+- Tooling: primary path remains the Colab notebook `notebooks/HISSO_Logging_GPU_Run.ipynb`, which installs the released wheel, stages configs/data under `/content/hisso_*`, and runs `python -m psann.scripts.hisso_log_run --config <yaml> --output-dir <dir> --run-name <tag> --device cuda:0`. Same invocation ports to runpod for longer CUDA windows.
+- CPU baselines (2025-11-01, seed 42):
+  - Dense: `runs/hisso/dense_cpu_smoke_dev/prep_20251101/metrics.json` - duration 31.1 s, reward_mean -0.111, throughput 777 eps/s, Sharpe -5.9e3.
+  - WaveResNet: `runs/hisso/wave_resnet_cpu_smoke_dev/prep_20251101/metrics.json` - duration 3.45 s, reward_mean -0.127, throughput 229 eps/s, Sharpe -2.21.
+- Colab CUDA runs (2025-11-01; dense seed 7, wave seed 11; mixed precision float16):
+  - Dense: `runs/hisso/dense/dense_cuda_colab_gpu_20251101_180009/metrics.json` - duration 2.68 s, throughput 203 eps/s, train/val/test loss 0.245 / 0.304 / 0.231, best_epoch 4 of 8, reward_mean -0.111 (std 4.7e-08), transition_penalty 0.0, turnover 1.15e-4. Wall time shrinks 11.6x relative to the CPU prep despite launch overhead on the tiny synthetic dataset.
+  - WaveResNet: `runs/hisso/wave_resnet/wave_resnet_cuda_colab_gpu_20251101_180016/metrics.json` - duration 3.34 s, throughput 161 eps/s, train/val/test loss 1.435 / 1.402 / 1.569, best_epoch 10 of 10, reward_mean -0.182 (std 0.068), transition_penalty 0.01, turnover 2.65. Reward variance widens alongside the higher turnover flagged in the CPU baseline.
+  - Observations: dense throughput trails the CPU smoke because the workload is launch bound, but both CUDA runs cut wall time materially while keeping reward means aligned with their CPU counterparts.
+- Capture: artifacts synced locally (`metrics.json`, `events.csv`, `config_resolved.yaml`, `checkpoints/best.pt`). The notebook now logs device, throughput, reward, and loss summaries; CUDA memory was not exposed in Colab, so add `torch.cuda.max_memory_allocated()` probes during the runpod sweep if contention becomes a concern.
+- Next CUDA steps:
+  - Run HISSO regression suite under CUDA once the runpod slot is available (pytest tests/test_hisso_primary.py::test_hisso_fit_sets_trainer_state -k cuda plus nightly selection).
+  - Tune WaveResNet episodes/penalty if the negative reward mean persists on richer datasets; capture findings in this compendium and the README GPU appendix.
 **Prior Outputs (Local)**
 - Predictions (NPZ arrays) and metrics bundle: `outputs/colab_results (1)/`
   - Prediction files by task + model, e.g.,
