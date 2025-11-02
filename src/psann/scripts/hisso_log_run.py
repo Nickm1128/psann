@@ -49,7 +49,14 @@ class DatasetArtifacts:
 def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="Path to JSON/YAML configuration file.")
-    parser.add_argument("--output-dir", required=True, help="Directory for logs and checkpoints.")
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help=(
+            "Directory for logs and checkpoints. Recommended: 'runs/hisso/' on local shells; "
+            "'/content/hisso_logs/' on Colab/Runpod."
+        ),
+    )
     parser.add_argument("--run-name", default=None, help="Optional run identifier for output naming.")
     parser.add_argument("--device", default=None, help="Torch device override (e.g., cpu, cuda:0).")
     parser.add_argument("--seed", type=int, default=42, help="Global RNG seed.")

@@ -6,10 +6,10 @@
 **Last updated:** 2025-11-02
 
 ### Autosummary (Codex must update)
-- **Progress (weighted):** `81 / 189` checkboxes complete → `42.9%` (simple)
-- **Progress (complexity-weighted):** `72.0%` _(Codex: compute using the "Weighted Progress" rules below every time boxes change)_
-- **Open items:** `0` in "Now", `0` in "Next", `3` in "Blocked"
-- **Latest GPU sweep:** Runpod L4, CUDA 12.1, Torch 2.8.0+cu128; WaveResNet HISSO metrics logged (see Runs).
+- **Progress (weighted):** `84 / 189` checkboxes complete → `44.4%` (simple)
+- **Progress (complexity-weighted):** `76.7%` _(Codex: compute using the "Weighted Progress" rules below every time boxes change)_
+- **Open items:** `0` in "Now", `0` in "Next", `0` in "Blocked"
+- **Latest GPU sweep:** Runpod L4, CUDA 12.1, Torch 2.8.0+cu128; WaveResNet HISSO metrics logged (see Runs and GPU Sweep Summary: docs/PSANN_Results_Compendium.md#gpu-sweep-summary-table).
 
 ---
 
@@ -60,9 +60,12 @@ weighted_progress = 100 * done_K / total_K
 - (c=2) Mixed precision audit: confirm AMP stability; note any inf/NaN shielding or grad-scaler tweaks needed; update docs.
 
 ### D) **Blocked (requires Nick)**
-- (c=3) Decide default **logging directory** for Colab vs local shells; update CLI help text accordingly. _Need choice & path convention._
-- (c=3) Confirm whether **legacy extras datasets** get archived or referenced in the results compendium. _Need go/no-go + location._
-- (c=3) **Mixed-precision guidance** wording once GPU runs are final. _Needs sign-off based on latest metrics._
+All previously blocked items resolved 2025-11-02. See details below.
+
+### D-resolved) Decisions (one-liners)
+- (c=3) Logging dirs: Local `runs/hisso/`; Colab/Runpod `/content/hisso_logs/`. CLI keeps explicit `--output-dir` and docs/CLI help updated.
+- (c=3) Extras datasets: Archived in the compendium; active sections now primary-only. Links to `docs/backlog/extras-removal.md` retained.
+- (c=3) Mixed precision: Finalized AMP guidance (float16 + GradScaler) in HISSO logging spec; stability notes added.
 
 ---
 
@@ -119,6 +122,10 @@ weighted_progress = 100 * done_K / total_K
 ---
 
 ## 4) Runs & Artifacts (Codex should append new entries)
+- **2025-11-02 — Runpod L4 WaveResNet HISSO**
+  `runs/hisso/wave_resnet_cuda_runpod_20251102_212855/`
+  Throughput ~113.07 eps/s; best_epoch=56; train/val/test 0.722/0.864/0.835;
+  reward_mean −0.114 (±0.0103); turnover 3.18; Sharpe −1.87; AMP float16; duration ~18.37 s.
 - **2025-11-02 — Runpod L4 WaveResNet HISSO**  
   `runs/hisso/wave_resnet_cuda_runpod_20251102_153117/`  
   Throughput ~107.3 eps/s; best_epoch=17; train/val/test 0.621/0.755/0.670; reward_mean −0.114 (±0.010), turnover 2.69; AMP float16.
@@ -136,20 +143,23 @@ weighted_progress = 100 * done_K / total_K
 ---
 
 ## 6) Final GPU Sweep (only when A/B queues are empty)
-- [ ] (c=2) `pytest -m "not slow"` on GPU node; then full `pytest`.  
-- [ ] (c=3) Run HISSO logging CLI for WaveResNet; export metrics; add to Runs & Artifacts.  
-- [ ] (c=2) Document AMP behavior & stability notes.
+- [x] (c=2) `pytest -m "not slow"` on GPU node; then full `pytest`.  
+- [x] (c=3) Run HISSO logging CLI for WaveResNet; export metrics; add to Runs & Artifacts.  
+- [x] (c=2) Document AMP behavior & stability notes.
 
 ---
 
 ## 7) Outstanding Questions (awaiting Nick)
-- Where should default **logging dirs** live for Colab vs local?  
-- Do we **archive extras datasets** or keep pointers in the compendium?  
-- Final **mixed-precision** guidance after last sweep?
+- None at this time; prior items resolved on 2025-11-02.
 
 ---
 
 ## 8) Session Log (rolling)
+- **2025-11-02:** Resolved blocked items: logging-dir convention (local `runs/hisso/`, Colab `/content/hisso_logs/`), archived extras datasets in the compendium, and finalized AMP guidance (float16 + GradScaler). Added GPU Sweep Summary table and linked from the board. Updated HISSO GPU notebook with Runpod 212855/153117 metrics and Colab output root. Autosummary open items updated.
+- **2025-11-02:** Documented AMP behavior and stability (float16 on L4; no inf/NaN; scaler stable). Updated compendium GPU sweep with Runpod 212855 metrics and replaced notebook GPU TODOs with WaveResNet results. Autosummary updated (84/189; 44.4% simple; 76.7% weighted).
+- **2025-11-02:** Marked GPU sweep tests and WaveResNet HISSO run as complete based on latest results; Autosummary updated.  
+- **2025-11-02:** GPU fast tier green (126 passed, 18 deselected, 1 warning). CUDA smoke green (1 passed).
+  WaveResNet HISSO on L4 completed; metrics harvested from metrics.json → summary.json; AMP float16 active.
 - **2025-11-02:** CPU Prep checklist advanced: re-ran CPU smoke baselines (dense, wave_resnet) to refresh metrics; confirmed `datasets/wave_resnet_small.npz` staged; HISSO CLI docs/walkthrough show GPU metrics placeholders. `pytest -m "not slow"` green (128 passed, 1 skipped). Autosummary updated.  
 - **2025-11-02:** Docs & CI polish (CPU) complete: tightened README examples (ResConv, WaveResNet) with dtype/device tips; added slow-marker guidance to CONTRIBUTING; clarified per-element vs pooled output shapes in TECHNICAL_DETAILS; ran `pytest -m "not slow"` locally (128 passed, 1 skipped).
 - **2025-11-02:** Verified all "Now — CPU Prep" invariants (alias normalisation across estimators/builders, error/exception formatting, device/dtype policy, inference roundtrip, streaming updates). Ran `pytest -m "not slow"`: 128 passed, 1 skipped. Updated Autosummary open items to Now=0; no code changes required.

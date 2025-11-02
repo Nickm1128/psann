@@ -31,6 +31,10 @@
     - y: (97, 1), (20, 1), (20, 1)
 - Additional (planned, not executed here): HAR Smartphone, Rossmann Store Sales.
 
+### Archived datasets (extras)
+- Predictive “extras” datasets, heads, and growth-schedule mixes used in earlier demos are archived. New results and sweeps cover the primary-output pipeline only.
+- See `docs/backlog/extras-removal.md` and `docs/README.md` for migration notes and historical references.
+
 **Methods**
 - PSANN Conv Spine (`scripts/run_light_probes.py:PSANNConvSpine`)
   - `PSANNConv1dNet` temporal backbone with small strided Conv1d; global temporal aggregator (last/mean); linear head to horizon.
@@ -90,7 +94,15 @@ Notes
   - Observations: dense throughput trails the CPU smoke because the workload is launch bound, but both CUDA runs cut wall time materially while keeping reward means aligned with their CPU counterparts.
 - Capture: artifacts synced locally (`metrics.json`, `events.csv`, `config_resolved.yaml`, `checkpoints/best.pt`). The notebook now logs device, throughput, reward, and loss summaries; CUDA memory was not exposed in Colab, so add `torch.cuda.max_memory_allocated()` probes during the runpod sweep if contention becomes a concern.
 - Runpod CUDA run (2025-11-02; NVIDIA L4; mixed precision float16):
+  - WaveResNet (config `configs/hisso/wave_resnet_small.yaml`): `runs/hisso/wave_resnet_cuda_runpod_20251102_212855/` — duration ~18.37 s, throughput ~113.07 eps/s; best_epoch 56; train/val/test loss 0.722 / 0.864 / 0.835; reward_mean −0.114 (std 0.0103); turnover 3.18; Sharpe −1.87; AMP float16.
   - WaveResNet (config `configs/hisso/wave_resnet_small.yaml`): `runs/hisso/wave_resnet_cuda_runpod_20251102_153117/` — duration 19.41 s over 1920 episodes (~107.3 eps/s), best_epoch 17, train/val/test loss 0.621 / 0.755 / 0.670, reward_mean -0.114 (std 0.010), turnover 2.69.
+
+### GPU Sweep Summary Table
+
+| Run ID | Device | Duration (s) | Throughput (eps/s) | Best Epoch | Train/Val/Test | Reward Mean (±std) | Turnover | AMP |
+| --- | --- | ---:| ---:| ---:| --- | --- | ---:| --- |
+| 212855 | Runpod L4 | 18.37 | 113.07 | 56 | 0.722 / 0.864 / 0.835 | −0.114 (±0.0103) | 3.18 | float16 |
+| 153117 | Runpod L4 | 19.41 | 107.3 | 17 | 0.621 / 0.755 / 0.670 | −0.114 (±0.0100) | 2.69 | float16 |
   - Notes: results reflect a longer episode budget than the Colab smoke; AMP remained stable. Instrument memory via `torch.cuda.max_memory_allocated()` if running concurrent jobs on the pod.
 - Next CUDA steps:
   - Run HISSO regression suite under CUDA once the runpod slot is available (pytest tests/test_hisso_primary.py::test_hisso_fit_sets_trainer_state -k cuda plus nightly selection).
