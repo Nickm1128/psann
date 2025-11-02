@@ -6,8 +6,8 @@
 **Last updated:** 2025-11-02
 
 ### Autosummary (Codex must update)
-- **Progress (weighted):** `78 / 189` checkboxes complete → `41.3%` (simple)
-- **Progress (complexity-weighted):** `71.1%` _(Codex: compute using the "Weighted Progress" rules below every time boxes change)_
+- **Progress (weighted):** `81 / 189` checkboxes complete → `42.9%` (simple)
+- **Progress (complexity-weighted):** `72.0%` _(Codex: compute using the "Weighted Progress" rules below every time boxes change)_
 - **Open items:** `0` in "Now", `0` in "Next", `3` in "Blocked"
 - **Latest GPU sweep:** Runpod L4, CUDA 12.1, Torch 2.8.0+cu128; WaveResNet HISSO metrics logged (see Runs).
 
@@ -129,9 +129,9 @@ weighted_progress = 100 * done_K / total_K
 ---
 
 ## 5) CPU Prep Before GPU Run (quick checklist)
-- [ ] (c=1) Re-run **CPU smoke baselines**: `runs/hisso/dense_smoke_cpu_dev` and `runs/hisso/wave_resnet_cpu_smoke` after any loader or dtype/device edits.  
-- [ ] (c=1) Confirm **datasets/wave_resnet_small.npz** is staged for remote.  
-- [ ] (c=1) Ensure **HISSO logging CLI** docs are current; leave placeholders where GPU metrics will be inserted.
+- [x] (c=1) Re-run **CPU smoke baselines**: `runs/hisso/dense_smoke_cpu_dev` and `runs/hisso/wave_resnet_cpu_smoke` after any loader or dtype/device edits.  
+- [x] (c=1) Confirm **datasets/wave_resnet_small.npz** is staged for remote.  
+- [x] (c=1) Ensure **HISSO logging CLI** docs are current; leave placeholders where GPU metrics will be inserted.
 
 ---
 
@@ -150,6 +150,7 @@ weighted_progress = 100 * done_K / total_K
 ---
 
 ## 8) Session Log (rolling)
+- **2025-11-02:** CPU Prep checklist advanced: re-ran CPU smoke baselines (dense, wave_resnet) to refresh metrics; confirmed `datasets/wave_resnet_small.npz` staged; HISSO CLI docs/walkthrough show GPU metrics placeholders. `pytest -m "not slow"` green (128 passed, 1 skipped). Autosummary updated.  
 - **2025-11-02:** Docs & CI polish (CPU) complete: tightened README examples (ResConv, WaveResNet) with dtype/device tips; added slow-marker guidance to CONTRIBUTING; clarified per-element vs pooled output shapes in TECHNICAL_DETAILS; ran `pytest -m "not slow"` locally (128 passed, 1 skipped).
 - **2025-11-02:** Verified all "Now — CPU Prep" invariants (alias normalisation across estimators/builders, error/exception formatting, device/dtype policy, inference roundtrip, streaming updates). Ran `pytest -m "not slow"`: 128 passed, 1 skipped. Updated Autosummary open items to Now=0; no code changes required.
 - **2025-11-02:** CUDA validation passed on Runpod L4; WaveResNet HISSO run logged; docs refreshed.  
