@@ -151,6 +151,7 @@ print("Conv R^2:", conv_est.score(X, y))
 ```
 
 Passing `data_format="channels_last"` lets you keep inputs as `(N, length, channels)` arrays; the estimator handles the channel-first conversion internally while respecting `float32` inputs and the shared alias policy.
+Tip: For GPU training set `device="cuda"` on construction, and keep NumPy arrays as `np.float32` to avoid extra copies.
 
 ### Wave-based regression with `WaveResNetRegressor`
 
@@ -181,6 +182,7 @@ print("WaveResNet R^2:", wave.score(X, y, context=context))
 ```
 
 `WaveResNetRegressor` applies SIREN-style initialisation with optional `w0` warmup and progressive depth expansion. Providing explicit `float32` context arrays keeps inference aligned with the estimator's cached `context_dim`.
+Tip: Specify `device="cuda"` for GPU runs; use `np.float32` inputs (including `context`) to stay on the fast path without extra dtype casts.
 
 ### Episodic HISSO with `HISSOOptions`
 

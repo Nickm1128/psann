@@ -66,6 +66,8 @@ y = SineParam(z, feature_dim=channel_dim)
 
 If `per_element = True`, the head is a 1x1 convolution that emits `y` with the same spatial layout as the input. Otherwise the tensor is pooled (global average) and a dense head computes the output.
 
+Output shapes: with `preserve_shape=True` and `per_element=True`, predictions follow the input layout `(N, C_out, ...)` (or `(N, ..., C_out)` for channels-last inputs). With `per_element=False`, predictions are pooled to `(N, target_dim)` regardless of spatial dimensions.
+
 ### 2.4 Residual wrappers
 
 `psann.sklearn.ResPSANNRegressor` and `psann.sklearn.ResConvPSANNRegressor` are thin wrappers that select the residual variant of the dense or convolutional bodies while reusing the estimator plumbing (argument normalisation, HISSO hooks, streaming API).

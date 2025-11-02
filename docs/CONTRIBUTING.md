@@ -24,6 +24,7 @@ Thanks for helping with the PSANN cleanup. This document captures the house rule
 
 - Run `pytest` (or the targeted module tests) before and after changes touching training loops or helpers. Extras-focused suites remain skipped while that feature is reworked.
 - For documentation-only changes, sanity-check code snippets with `python -m compileall path/to/file.py` when feasible to avoid syntax drift.
+- Mark long-running or GPU/HISSO tests with `@pytest.mark.slow`, and keep quick iterations to CPU by running `python -m pytest -m "not slow"`.
 
 ## Documentation & task tracking
 
