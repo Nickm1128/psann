@@ -6,8 +6,8 @@
 **Last updated:** 2025-11-02
 
 ### Autosummary (Codex must update)
-- **Progress (weighted):** `75 / 189` checkboxes complete → `39.7%` (simple)  
-- **Progress (complexity-weighted):** `63.6%` _(Codex: compute using the "Weighted Progress" rules below every time boxes change)_
+- **Progress (weighted):** `78 / 189` checkboxes complete → `41.3%` (simple)
+- **Progress (complexity-weighted):** `71.1%` _(Codex: compute using the "Weighted Progress" rules below every time boxes change)_
 - **Open items:** `0` in "Now", `0` in "Next", `3` in "Blocked"
 - **Latest GPU sweep:** Runpod L4, CUDA 12.1, Torch 2.8.0+cu128; WaveResNet HISSO metrics logged (see Runs).
 
