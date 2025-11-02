@@ -1,0 +1,41 @@
+checkpoints:
+  best: /workspace/psann/runs/hisso/wave_resnet_cuda_runpod_20251102_153117/checkpoints/best.pt
+config_path: /workspace/psann/configs/hisso/wave_resnet_small.yaml
+data:
+  test_shape:
+    - 96
+    - 4
+    - 128
+  train_shape:
+    - 320
+    - 4
+    - 128
+  val_shape:
+    - 96
+    - 4
+    - 128
+estimator:
+  params:
+    batch_size: 32
+    data_format: channels_first
+    device: "cuda:0"
+    epochs: 60
+    hidden_layers: 4
+    hidden_units: 64
+    lr: 0.0005
+    preserve_shape: false
+    random_state: 23
+    w0_warmup_epochs: 10
+  target: psann.WaveResNetRegressor
+hisso:
+  amp_dtype: float16
+  enabled: true
+  episodes_per_batch: 32
+  mixed_precision: true
+  primary_transform: softmax
+  trans_cost: null
+  transition_penalty: 0.02
+  window: 48
+output_dir: /workspace/psann/runs/hisso/wave_resnet_cuda_runpod_20251102_153117
+seed: 123
+timestamp: "2025-11-02T15:31:19.840893"

@@ -1,0 +1,42 @@
+{
+  "device": "cuda:0",
+  "duration_seconds": 19.411776232998818,
+  "hisso": {
+    "best_epoch": 17,
+    "episodes": 1920,
+    "profile": {
+      "amp_dtype": "torch.float16",
+      "amp_enabled": true,
+      "batch_episodes": 32,
+      "dataset_bytes": 655360,
+      "dataset_numpy_to_tensor_time_s": 1.2179836630821228e-05,
+      "dataset_transfer_batches": 1,
+      "dataset_transfer_time_s": 0.00014503998681902885,
+      "device": "cuda:0",
+      "episode_length": 48,
+      "episode_time_s_total": 17.867435289314017,
+      "episode_view_is_shared": true,
+      "episodes_sampled": 1920,
+      "epochs": 60,
+      "total_time_s": 17.892714770976454
+    },
+    "reward_mean": -0.11382887360717481,
+    "reward_std": 0.010309950221588286,
+    "throughput_eps_per_sec": 107.30624304783574,
+    "transition_penalty": 0.02
+  },
+  "history_length": 60,
+  "portfolio_metrics": {
+    "cum_return": -1.0,
+    "log_return": -27.631021115928547,
+    "max_drawdown": -1.0,
+    "sharpe": -8.923352571814696,
+    "turnover": 2.69068315244819
+  },
+  "start_time": "2025-11-02T15:31:19.840904",
+  "status": "success",
+  "test_loss": 0.6697075963020325,
+  "timestamp": "2025-11-02T15:31:39.431459",
+  "train_loss": 0.6211861968040466,
+  "val_loss": 0.7554986476898193
+}

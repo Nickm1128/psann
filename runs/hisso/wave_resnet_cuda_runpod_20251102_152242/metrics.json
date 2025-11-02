@@ -1,0 +1,5 @@
+{
+  "error": "Traceback (most recent call last):\n  File \"/workspace/psann/src/psann/scripts/hisso_log_run.py\", line 457, in main\n    dataset = _load_dataset(config.get(\"data\", {}), config_path.parent)\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/psann/src/psann/scripts/hisso_log_run.py\", line 149, in _load_dataset\n    with np.load(npz_path, allow_pickle=False) as data:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venvs/psann/lib/python3.12/site-packages/numpy/lib/_npyio_impl.py\", line 454, in load\n    fid = stack.enter_context(open(os.fspath(file), \"rb\"))\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/workspace/psann/configs/hisso/datasets/wave_resnet_small.npz'\n",
+  "start_time": "2025-11-02T15:22:44.454490",
+  "status": "error"
+}

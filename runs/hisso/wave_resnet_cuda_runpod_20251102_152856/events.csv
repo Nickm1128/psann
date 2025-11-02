@@ -1,0 +1,5 @@
+timestamp,level,message
+2025-11-02 15:28:59,135,INFO,dataset.shapes train=[320, 4, 128] val=[96, 4, 128] test=[96, 4, 128]
+2025-11-02 15:28:59,136,DEBUG,dataset.targets train=[320, 3]
+2025-11-02 15:28:59,136,DEBUG,dataset.prices train=[320, 3]
+2025-11-02 15:28:59,147,ERROR,run.failed WaveResNetRegressor currently supports preserve_shape=False.
