@@ -105,3 +105,31 @@ def test_hisso_logging_cli_emits_metrics(tmp_path):
     resolved_yaml = resolved_path.read_text(encoding="utf-8")
     assert "hisso:" in resolved_yaml
     assert "output_dir" in resolved_yaml
+
+
+def test_hisso_logging_cli_respects_output_dir(tmp_path):
+    config_path = tmp_path / "config.json"
+    _write_config(config_path)
+
+    out_root = tmp_path / "outdir"
+    run_name = "dircheck"
+
+    exit_code = hisso_log_run.main(
+        [
+            "--config",
+            str(config_path),
+            "--output-dir",
+            str(out_root),
+            "--run-name",
+            run_name,
+            "--device",
+            "cpu",
+        ]
+    )
+
+    assert exit_code == 0
+
+    run_dir = out_root / run_name
+    assert run_dir.exists() and run_dir.is_dir()
+    assert (run_dir / "metrics.json").exists()
+    assert (run_dir / "events.csv").exists()

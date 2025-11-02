@@ -28,3 +28,8 @@ Use this guide to locate the right document and to see which notes are still act
 - The extras deprecation effort is tracked in `backlog/extras-removal.md`; update both files together when status changes.
 - If a document moves to Archive status, add a banner at the top explaining why and where to find current guidance.
 - When adding new documentation, link it here and mark the status so downstream readers know whether it is normative guidance or planning material.
+
+## Logging Directories
+
+- Recommended locations: use `runs/hisso/` for local shells; use `/content/hisso_logs/` on Colab/Runpod.
+- The HISSO logging CLI accepts `--output-dir` to control where artifacts are written. See `python -m psann.scripts.hisso_log_run -h` for details.

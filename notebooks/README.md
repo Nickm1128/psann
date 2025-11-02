@@ -19,6 +19,11 @@ This directory hosts exploratory and reproducibility notebooks that complement t
 4. Review and adjust the configuration cell (`GLOBAL_CONFIG`, toggles) so the run fits your available time and GPU budget.
 5. Enable the heavier training sections only when you are ready for 30–45 minutes of runtime; the lightweight diagnostics finish in ~10 minutes on T4.
 
+## Logging directories
+
+- Recommended locations: `runs/hisso/` for local shells; `/content/hisso_logs/` on Colab/Runpod.
+- Pass `--output-dir` to the HISSO logging CLI (`python -m psann.scripts.hisso_log_run`) to control where metrics, checkpoints, and events are written.
+
 ## Notebook hygiene
 
 - Outputs are cleared before commit to keep diffs small.

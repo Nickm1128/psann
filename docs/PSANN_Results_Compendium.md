@@ -99,6 +99,8 @@ Notes
 
 ### GPU Sweep Summary Table
 
+Short caption: Runpod L4 WaveResNet-small CUDA runs; see notebooks/HISSO_Logging_GPU_Run.ipynb#runpod-cuda-metrics-2025-11-02 for the source notebook cell with full Runpod metrics and context.
+
 | Run ID | Device | Duration (s) | Throughput (eps/s) | Best Epoch | Train/Val/Test | Reward Mean (±std) | Turnover | AMP |
 | --- | --- | ---:| ---:| ---:| --- | --- | ---:| --- |
 | 212855 | Runpod L4 | 18.37 | 113.07 | 56 | 0.722 / 0.864 / 0.835 | −0.114 (±0.0103) | 3.18 | float16 |
