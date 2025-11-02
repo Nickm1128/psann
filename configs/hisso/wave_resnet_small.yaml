@@ -8,7 +8,7 @@ estimator:
     lr: 0.0005
     random_state: 23
     device: cuda:0
-    preserve_shape: true
+    preserve_shape: false
     data_format: channels_first
     w0_warmup_epochs: 10
 
