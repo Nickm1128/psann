@@ -89,6 +89,9 @@ Notes
   - WaveResNet: `runs/hisso/wave_resnet/wave_resnet_cuda_colab_gpu_20251101_180016/metrics.json` - duration 3.34 s, throughput 161 eps/s, train/val/test loss 1.435 / 1.402 / 1.569, best_epoch 10 of 10, reward_mean -0.182 (std 0.068), transition_penalty 0.01, turnover 2.65. Reward variance widens alongside the higher turnover flagged in the CPU baseline.
   - Observations: dense throughput trails the CPU smoke because the workload is launch bound, but both CUDA runs cut wall time materially while keeping reward means aligned with their CPU counterparts.
 - Capture: artifacts synced locally (`metrics.json`, `events.csv`, `config_resolved.yaml`, `checkpoints/best.pt`). The notebook now logs device, throughput, reward, and loss summaries; CUDA memory was not exposed in Colab, so add `torch.cuda.max_memory_allocated()` probes during the runpod sweep if contention becomes a concern.
+- Runpod CUDA run (2025-11-02; NVIDIA L4; mixed precision float16):
+  - WaveResNet (config `configs/hisso/wave_resnet_small.yaml`): `runs/hisso/wave_resnet_cuda_runpod_20251102_153117/` — duration 19.41 s over 1920 episodes (~107.3 eps/s), best_epoch 17, train/val/test loss 0.621 / 0.755 / 0.670, reward_mean -0.114 (std 0.010), turnover 2.69.
+  - Notes: results reflect a longer episode budget than the Colab smoke; AMP remained stable. Instrument memory via `torch.cuda.max_memory_allocated()` if running concurrent jobs on the pod.
 - Next CUDA steps:
   - Run HISSO regression suite under CUDA once the runpod slot is available (pytest tests/test_hisso_primary.py::test_hisso_fit_sets_trainer_state -k cuda plus nightly selection).
   - Tune WaveResNet episodes/penalty if the negative reward mean persists on richer datasets; capture findings in this compendium and the README GPU appendix.
