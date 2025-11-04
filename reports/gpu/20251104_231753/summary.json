@@ -1,0 +1,68 @@
+{
+  "results": {
+    "GPU-01": {
+      "error": "num_samples should be a positive integer value, but got num_samples=0",
+      "status": "error"
+    },
+    "GPU-02": {
+      "amp_dtype": "torch.bfloat16",
+      "amp_loss": 3.591346,
+      "fp32_loss": 3.589915,
+      "rel_diff": 0.000399,
+      "status": "ok"
+    },
+    "GPU-03": {
+      "respsann": {
+        "elapsed_s": 0.0905,
+        "tokens": 20480,
+        "tokens_per_s": 226367.83
+      },
+      "status": "ok",
+      "waveresnet": {
+        "elapsed_s": 0.0913,
+        "tokens": 20480,
+        "tokens_per_s": 224423.25
+      }
+    },
+    "GPU-04": {
+      "reason": "gradient checkpointing not implemented in Trainer",
+      "status": "skipped"
+    },
+    "GPU-05": {
+      "reason": "requires >=2 CUDA devices",
+      "status": "skipped"
+    },
+    "GPU-06": {
+      "reason": "DeepSpeed/FSDP hooks not implemented",
+      "status": "skipped"
+    },
+    "GPU-07": {
+      "length": 24,
+      "sample": "hmhhmhh?bzehxhj?fbzmghxt",
+      "status": "ok"
+    },
+    "GPU-08": {
+      "error": "num_samples should be a positive integer value, but got num_samples=0",
+      "status": "error"
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 1,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA L40S",
+        "total_memory_gb": 44.4
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.9.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251104_231753"
+}

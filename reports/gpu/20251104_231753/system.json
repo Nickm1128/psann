@@ -1,0 +1,18 @@
+{
+  "bf16_supported": true,
+  "cuda_available": true,
+  "device_count": 1,
+  "gpus": [
+    {
+      "index": 0,
+      "major": 8,
+      "minor": 9,
+      "name": "NVIDIA L40S",
+      "total_memory_gb": 44.4
+    }
+  ],
+  "platform": "linux",
+  "python": "3.12.3",
+  "torch": "2.9.0+cu128",
+  "torch_cuda_version": "12.8"
+}
