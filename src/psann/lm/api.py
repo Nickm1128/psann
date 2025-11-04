@@ -458,6 +458,12 @@ class psannLM:
     # ------------------------ Persistence API ----------------------
     def save(self, path: str) -> None:
         model = self._model or self._ensure_model(int(self.vocab_size or 32000))
+        # Record the device where the model currently resides, to help
+        # loaders place the model consistently when CUDA is available.
+        try:
+            dev = str(next(model.parameters()).device)
+        except StopIteration:
+            dev = "cpu"
         payload = {
             "config": {
                 "base": self.base,
@@ -476,6 +482,7 @@ class psannLM:
                 "overrides": self.config_overrides,
             },
             "state_dict": model.state_dict(),
+            "device": dev,
         }
         torch.save(payload, path)
 
@@ -496,4 +503,8 @@ class psannLM:
         )
         model = inst._ensure_model(int(inst.vocab_size or 32000))
         model.load_state_dict(payload["state_dict"])  # type: ignore[index]
+        # If original checkpoint reports CUDA and it's available, place model on CUDA
+        saved_dev = str(payload.get("device", "cpu")).lower()
+        if saved_dev.startswith("cuda") and torch.cuda.is_available():
+            model.to(torch.device("cuda"))
         return inst
