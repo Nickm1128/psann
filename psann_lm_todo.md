@@ -15,14 +15,14 @@
 
 ## Progress Tracker (Codex MUST keep updated)
 
-* **Tasks complete:** `59 / 80` - `73.75%`
-* **Last edit (UTC):** `2025-11-04 19:42`
+* **Tasks complete:** `62 / 80` - `77.50%`
+* **Last edit (UTC):** `2025-11-04 23:21`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
 
-  * Full test suite green on RunPod: 162 passed, 1 skipped.
-  * Fixed LM save/load device mismatch; auto-CUDA trainer/generation enabled.
-  * Next: execute GPU block (AMP parity, throughput, checkpointing) on pod.
+  * GPU run 20251104_231753 captured; results stored under `reports/gpu/20251104_231753`.
+  * Passed: GPU-02 (AMP parity bf16 rel_diff≈0.000399), GPU-03 (≈226k tok/s), GPU-07 (generation ok).
+  * Errors: GPU-01 and GPU-08 (torch.multinomial num_samples=0); will investigate batching/sampling path.
 
 > **Codex:**
 >
@@ -112,13 +112,21 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 ## GPU-REQUIRED WORK BLOCK
 
 * [ ] **GPU-01:** Set up environment (CUDA/cuDNN, PyTorch versions) and verify with a 1-step forward/backward on a tiny model.
-* [ ] **GPU-02:** AMP sanity check (bf16/fp16) on tiny model; compare loss parity with fp32 on a dummy batch.
-* [ ] **GPU-03:** Throughput benchmark on synthetic data for both bases (`respsann`, `waveresnet`); log tokens/s vs batch_tokens.
+  - Result (20251104_231753): ERROR `num_samples should be a positive integer value, but got num_samples=0` (investigate sampler/sampling path).
+* [x] **GPU-02:** AMP sanity check (bf16/fp16) on tiny model; compare loss parity with fp32 on a dummy batch.
+  - Result: bf16 vs fp32 rel_diff ≈ 0.000399 (ok), torch 2.9.0+cu128 on L40S.
+* [x] **GPU-03:** Throughput benchmark on synthetic data for both bases (`respsann`, `waveresnet`); log tokens/s vs batch_tokens.
+  - Result: respsann ≈ 226,368 tok/s; waveresnet ≈ 224,423 tok/s (B=4, T=256, steps=20).
 * [ ] **GPU-04:** Activate gradient checkpointing; measure memory and wall-clock deltas.
+  - Skipped: not implemented in Trainer.
 * [ ] **GPU-05:** DDP on 2+ GPUs; confirm loss/repro parity with single-GPU.
+  - Skipped: single GPU pod (requires >=2 CUDA devices).
 * [ ] **GPU-06:** Optional DeepSpeed/FSDP hooks for large models.
-* [ ] **GPU-07:** Generation smoke test with top-k/top-p sampling; verify no NaNs and reasonable outputs.
+  - Skipped: not implemented.
+* [x] **GPU-07:** Generation smoke test with top-k/top-p sampling; verify no NaNs and reasonable outputs.
+  - Result: length=24; sample: `hmhhmhh?bzehxhj?fbzmghxt`.
 * [ ] **GPU-08:** Save/load checkpoints; verify resume produces loss continuity within tolerance.
+  - Result (20251104_231753): ERROR `num_samples should be a positive integer value, but got num_samples=0` during roundtrip generation; parameters equality validated in CPU tests; investigate GPU generation state.
 
 ---
 
@@ -303,6 +311,8 @@ train:
 ---
 
 ## Session History (latest at top)
+
+* [2025-11-04 23:21 UTC] GPU report 20251104_231753: AMP parity ok (bf16 rel_diff≈0.000399), throughput ~226k tok/s, generation smoke ok; GPU-01/08 errors (multinomial num_samples=0); TODO updated.
 
 * [2025-11-04 19:42 UTC] Full suite green (162 passed, 1 skipped); fixed LM save/load device; CUDA auto-select in trainer/generation; prepped to run GPU block on pod.
 

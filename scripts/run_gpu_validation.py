@@ -80,7 +80,8 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
 
 def gpu_01_forward_backward() -> Dict[str, Any]:
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0)
+    # Use a small max_length to ensure at least one chunk from tiny texts
+    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0)
     lm = psannLM(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
     t0 = time.time()
     lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
@@ -207,7 +208,8 @@ def gpu_07_generation_smoke() -> Dict[str, Any]:
 
 def gpu_08_save_load(outdir: Path) -> Dict[str, Any]:
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0)
+    # Use a small max_length to ensure dataset has samples for tiny texts
+    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0)
     lm = psannLM(base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
     lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
 
@@ -311,4 +313,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
