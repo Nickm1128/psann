@@ -1,49 +1,44 @@
-"""Pytest configuration for PSANN tests.
+import json
+import os
+from datetime import datetime
+from pathlib import Path
 
-This module registers targeted warning filters so that the default ``pytest``
-run stays signal-rich while still exercising deprecated pathways that we
-intentionally cover for backwards compatibility. Each filter matches a known
-warning emitted by those regression tests; unexpected warnings continue to
-surface normally.
-"""
-
-from __future__ import annotations
-
-_WARNING_FILTERS = (
-    (
-        r"`conv_channels` has no effect when preserve_shape=False; ignoring value\.",
-        "UserWarning",
-    ),
-    (
-        r"`conv_channels` differs from `hidden_units`; using `conv_channels` for convolutional paths\.",
-        "UserWarning",
-    ),
-    (
-        r"conv_channels has no effect for WaveResNetRegressor; ignoring value\.",
-        "RuntimeWarning",
-    ),
-    (
-        r"conv_kernel_size has no effect for WaveResNetRegressor; ignoring value\.",
-        "RuntimeWarning",
-    ),
-    (
-        r".*`hidden_width` is deprecated; use `hidden_units` instead\.",
-        "DeprecationWarning",
-    ),
-    (
-        r".*`hidden_channels` is deprecated; use `conv_channels` instead\.",
-        "DeprecationWarning",
-    ),
-    (
-        r"`torch\.nn\.utils\.weight_norm` is deprecated in favor of `torch\.nn\.utils\.parametrizations\.weight_norm`\.",
-        "FutureWarning",
-    ),
-)
+import pytest
 
 
-def pytest_configure(config) -> None:
-    for message, category_name in _WARNING_FILTERS:
-        config.addinivalue_line(
-            "filterwarnings",
-            f"ignore:{message}:{category_name}",
-        )
+def _default_outdir() -> Path:
+    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    return Path("outputs") / "gpu_tests" / ts
+
+
+@pytest.fixture(scope="session")
+def output_dir() -> Path:
+    out = Path(os.environ.get("PSANN_OUTPUT_DIR", _default_outdir()))
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+@pytest.fixture(scope="session")
+def torch_available():
+    try:
+        import torch  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+@pytest.fixture(scope="session")
+def cuda_available(torch_available):
+    if not torch_available:
+        return False
+    import torch
+
+    return bool(torch.cuda.is_available())
+
+
+def write_json(path: Path, data: dict):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, sort_keys=True)
+
