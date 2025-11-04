@@ -16,13 +16,13 @@
 ## Progress Tracker (Codex MUST keep updated)
 
 * **Tasks complete:** `59 / 80` - `73.75%`
-* **Last edit (UTC):** `2025-11-04 16:45`
+* **Last edit (UTC):** `2025-11-04 19:42`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
 
-  * Recomputed checklist (59/80, 73.75%) and updated timestamp.
-  * WRN cached conv state + test done; tokenizer/data checked; residual gating + sine ranges.
-  * Ready for GPU block; recorded entry in Session History.
+  * Full test suite green on RunPod: 162 passed, 1 skipped.
+  * Fixed LM save/load device mismatch; auto-CUDA trainer/generation enabled.
+  * Next: execute GPU block (AMP parity, throughput, checkpointing) on pod.
 
 > **Codex:**
 >
@@ -303,6 +303,8 @@ train:
 ---
 
 ## Session History (latest at top)
+
+* [2025-11-04 19:42 UTC] Full suite green (162 passed, 1 skipped); fixed LM save/load device; CUDA auto-select in trainer/generation; prepped to run GPU block on pod.
 
 * [2025-11-04 16:45 UTC] WRN cached conv state+test; tokenizer/data checked; residual gating + sine ranges; counts updated.
 
