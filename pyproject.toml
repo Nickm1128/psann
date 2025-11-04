@@ -95,6 +95,10 @@ viz = [
 sklearn = [
   "scikit-learn>=1.2,<1.5",
 ]
+lm = [
+  "sentencepiece>=0.1.99",
+  "tokenizers>=0.13",
+]
 compat = [
   "numpy==1.26.4",
   "scipy==1.11.4",

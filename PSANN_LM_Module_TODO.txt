@@ -1,0 +1,364 @@
+# PSANN-LM Module Plan & Working TODO
+
+> Goal: Add a production-ready language modeling module to PSANN with a clean, minimal API:
+>
+> ```python
+> texts = ["test1", "test2"]
+> model = psannLM(base="waveresnet")
+> train_data = psannLMDataPrep(texts)
+> model.fit(train_data)
+> ```
+>
+> Internals should leverage ResPSANN/WaveResNet with trainable sine amplitude, frequency, and damping; scale cleanly to multi-GPU; and be easy to extend.
+
+---
+
+## Progress Tracker (Codex MUST keep updated)
+
+* **Tasks complete:** `0 / 0` — **0.0%**
+* **Last edit (UTC):** `YYYY-MM-DD HH:MM`
+* **Editor:** `Codex / Nick`
+* **Session Notes Summary (1–3 bullet points MAX):**
+
+  * *TBD*
+
+> **Codex:**
+>
+> * On every save, recompute the completed/total counts from all checkboxes in this file and update the percentage.
+> * Update the timestamp and append 1–3 bullets to Session Notes Summary.
+> * Do not remove historical notes; keep only the latest summary here and move older summaries to the “Session History” section.
+
+---
+
+## Success Criteria
+
+* Clean, minimal **public API** (`psannLM`, `psannLMDataPrep`) with parity across bases (`respsann`, `waveresnet`).
+* **Trainable sine parameters** (amplitude, frequency, damping) wired into transformer blocks when base supports it.
+* **Tokenizer-agnostic** via plugin (defaults to WordPiece/BPE with sentencepiece or tokenizers).
+* **Streaming data loader** for large corpora; supports memory-mapped shards and fast collation.
+* **Scaling**: AMP (bf16/fp16), gradient accumulation, gradient checkpointing, DDP, optional DeepSpeed/FSDP.
+* **Metrics**: loss, perplexity, tokens/sec, wall-clock, memory; checkpointing and resumable training.
+* **Inference**: `generate()` with sampling/top-k/top-p, repetition penalty.
+* **Docs & tests**: unit, smoke, and GPU integration tests; examples and README.
+
+---
+
+## Architecture Overview
+
+* **Module path:** `psann/lm/`
+
+  * `psann/lm/models/` — transformer stacks on ResPSANN/WaveResNet
+  * `psann/lm/data/` — tokenization, dataset, collation, streaming
+  * `psann/lm/train/` — trainer, loops, scaling utils
+  * `psann/lm/infer/` — generation utilities
+  * `psann/lm/api.py` — `psannLM`, `psannLMDataPrep`
+  * `psann/lm/config.py` — typed configs for model/data/train
+  * `psann/lm/tests/` — unit & integration tests
+  * `examples/lm/` — notebooks and scripts
+* **Key idea:** A PSANN-style transformer block with sine-activated MLPs (trainable amplitude/frequency/damping) and optional WaveResNet residual pathways; registry pattern to select base.
+
+---
+
+## Public API Spec (first-class UX)
+
+```python
+from psann.lm import psannLM, psannLMDataPrep
+
+texts = ["hello world", "goodnight moon"]
+train_data = psannLMDataPrep(texts, tokenizer="auto", max_length=1024, pack_sequences=True)
+
+model = psannLM(
+    base="waveresnet",       # or "respsann"
+    d_model=768,
+    n_layers=12,
+    n_heads=12,
+    vocab_size=train_data.vocab_size,
+    sine_params=dict(amp_init=1.0, freq_init=1.0, damp_init=0.01, trainable=True),
+    rope=True,               # rotary embeddings
+)
+
+model.fit(
+    train_data,
+    val_data=None,           # or psannLMDataPrep([...])
+    epochs=3,
+    batch_tokens=131072,
+    lr=2e-4,
+    amp="bf16",
+    ddp="auto",
+)
+
+out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
+```
+
+---
+
+## Implementation Plan (High-Level)
+
+1. **Scaffold module** (paths, registries, configs, stubs).
+2. **Sine activation core**: shared layer exposing amplitude/frequency/damping.
+3. **Transformer blocks** for **ResPSANN** and **WaveResNet** bases.
+4. **Tokenizer plugins** (sentencepiece/tokenizers), vocab build/load.
+5. **DataPrep** object: chunking, packing, streaming, shard IO, collation.
+6. **Trainer**: AMP, grad accumulation, grad clip, LR schedule, checkpointing, logging.
+7. **DDP/FSDP/DeepSpeed** hooks; config-driven.
+8. **Inference**: fast generation utils.
+9. **Tests**, **docs**, **examples**.
+10. **Benchmark script** for tokens/s, loss curve on a tiny dataset.
+
+---
+
+## GPU-REQUIRED WORK BLOCK
+
+> **All tasks in this block must be run in one focused window:** allocate GPU(s), verify AMP, test DDP, profile memory, adjust batch_tokens, record throughput. Do not interleave with CPU-only tasks.
+
+* [ ] **GPU-01:** Set up environment (CUDA/cuDNN, PyTorch versions) and verify with a 1-step forward/backward on a tiny model.
+* [ ] **GPU-02:** AMP sanity check (bf16/fp16) on tiny model; compare loss parity with fp32 on a dummy batch.
+* [ ] **GPU-03:** Throughput benchmark on synthetic data for both bases (`respsann`, `waveresnet`); log tokens/s vs batch_tokens.
+* [ ] **GPU-04:** Activate gradient checkpointing; measure memory and wall-clock deltas.
+* [ ] **GPU-05:** DDP smoke test (2 GPUs or simulated); verify loss parity and deterministic seeds.
+* [ ] **GPU-06:** Train on a small real text shard (e.g., ~50MB) to <1 epoch; record loss curve, perplexity, and speed.
+* [ ] **GPU-07:** Generation smoke test with top-k/top-p sampling; verify no NaNs and reasonable outputs.
+* [ ] **GPU-08:** Save/load checkpoints; verify resume produces loss continuity within tolerance.
+* [ ] **GPU-09:** Optional FSDP/DeepSpeed config and 1-epoch subset run; confirm correctness and performance.
+
+---
+
+## Detailed TODO (Codex executes top-down unless stated)
+
+### 0) Project Hygiene
+
+* [ ] **PH-01:** Create `psann/lm/` scaffolding and `__init__.py` exports for public API.
+* [ ] **PH-02:** Add `pyproject.toml`/`setup.cfg` updates for new extras: `psann[lm]` installs tokenizer deps.
+* [ ] **PH-03:** Add `docs/lm.md` page with getting started, config, and examples.
+* [ ] **PH-04:** Add `examples/lm/minimal_train.py` and `examples/lm/generate.py`.
+
+### 1) Config, Registry, and API Stubs (CPU)
+
+* [ ] **CFG-01:** Implement `psann/lm/config.py`:
+
+  * [ ] `ModelConfig`, `DataConfig`, `TrainConfig` dataclasses with validation.
+* [ ] **REG-01:** Implement base registry in `psann/lm/models/registry.py`:
+
+  * [ ] Register `"respsann"` and `"waveresnet"`.
+* [ ] **API-01:** Implement `psannLM` high-level wrapper in `psann/lm/api.py`:
+
+  * [ ] `__init__` takes `base`, model kwargs, auto-bridges `vocab_size`, `max_length`.
+  * [ ] `fit(train_data, val_data=None, **train_kwargs)`.
+  * [ ] `generate(prompt, **gen_kwargs)`.
+  * [ ] `save(path)`, `load(path)`.
+* [ ] **API-02:** Implement `psannLMDataPrep` in `psann/lm/api.py`:
+
+  * [ ] Accepts `List[str]` or path(s); builds tokenizer if needed.
+  * [ ] Exposes `.dataset`, `.vocab_size`, `.tokenizer`, `.pad_id`.
+  * [ ] Supports streaming and packed sequences.
+
+### 2) Sine Activation Core (CPU)
+
+* [ ] **SINE-01:** Create `psann/lm/models/sine.py`:
+
+  * [ ] Parametric sine with amplitude/frequency/damping parameters:
+    `y = A * sin(ω * x) * exp(-d * |x|)` (stable variant), all trainable if enabled.
+  * [ ] Optional residual scaling; configurable init ranges.
+  * [ ] Unit tests for forward/backward, shape, dtype, grad flow.
+* [ ] **SINE-02:** Export a factory for use inside MLP/ResNets.
+
+### 3) Transformer Stacks on PSANN Bases (CPU)
+
+* [ ] **TBLK-01:** Implement shared components:
+
+  * [ ] Embedding, rotary/absolute positional encodings, attention (MHA), norm (RMSNorm/LayerNorm).
+  * [ ] MLP with PSANN sine activation; toggles for GELU comparison.
+* [ ] **TBLK-02:** Implement **ResPSANNTransformer**:
+
+  * [ ] Residual structure using PSANN residual sine MLPs.
+  * [ ] Config: `n_layers`, `d_model`, `n_heads`, `d_mlp`, `dropout`, sine params.
+* [ ] **TBLK-03:** Implement **WaveResNetTransformer**:
+
+  * [ ] WaveResNet blocks adapted for sequence modeling (temporal conv/residual mix) around attention.
+  * [ ] Config parity with ResPSANN variant; option to interleave or replace MLP with wave blocks.
+* [ ] **TBLK-04:** Weight init strategy; tests for parameter counts and forward pass.
+
+### 4) Tokenization & Data (CPU)
+
+* [ ] **TOK-01:** Tokenizer plugin interface `psann/lm/data/tokenizer.py`:
+
+  * [ ] Adapters for `sentencepiece` and `tokenizers` (BPE/Unigram).
+  * [ ] `auto` mode picks installed backend; can train from corpus or load prebuilt.
+* [ ] **TOK-02:** Vocab building utilities with min-freq, special tokens, `unk`, `pad`, `bos`, `eos`.
+* [ ] **DATA-01:** Dataset and collation in `psann/lm/data/dataset.py`:
+
+  * [ ] Sequence packing (contiguous stream, `pack_sequences=True`).
+  * [ ] Streaming from files (mmap/shards), deterministic shuffling.
+  * [ ] `batch_tokens` sampler for efficient token-based batching.
+* [ ] **DATA-02:** Validation dataset splitter; supports fixed seed and stratified split by length.
+
+### 5) Training Loop (CPU baseline; GPU features toggled later)
+
+* [ ] **TRN-01:** Implement trainer in `psann/lm/train/trainer.py`:
+
+  * [ ] Cross-entropy LM loss (shifted), label smoothing optional.
+  * [ ] Optimizers: AdamW default; schedulers: cosine w/ warmup.
+  * [ ] Gradient clipping, accumulation.
+  * [ ] Checkpoint save/load, best-val tracking.
+  * [ ] Logging hooks: throughput, loss, perplexity, lr, grad-norm.
+* [ ] **TRN-02:** CLI helpers `psann/lm/train/cli.py` to run from YAML config.
+
+### 6) Inference & Sampling (CPU ok)
+
+* [ ] **INF-01:** `generate()` with greedy, top-k, top-p, temperature, repetition penalty, max_new_tokens, eos stop.
+* [ ] **INF-02:** Batched generation w/ KV-cache; ensure CPU fallback.
+
+### 7) Tests (CPU and GPU separation)
+
+* [ ] **TEST-01 (CPU):** Unit tests for tokenizer build/load, dataset packing, sine layer math, transformer forward, loss shape.
+* [ ] **TEST-02 (CPU):** Save/load roundtrip; deterministic seed tests.
+* [ ] **TEST-03 (GPU):** (Place in GPU block) AMP parity, DDP parity, generation sanity, throughput assertions.
+
+### 8) Documentation & Examples
+
+* [ ] **DOC-01:** `docs/lm.md` usage, config table, scaling tips, caveats.
+* [ ] **DOC-02:** `examples/lm/minimal_train.py` trains on toy corpus.
+* [ ] **DOC-03:** `examples/lm/generate.py` shows prompt to text.
+
+### 9) Benchmark & Validation (GPU)
+
+* [ ] **BMRK-01:** Tiny corpus (e.g., ~50MB) baseline: loss curve, perplexity target.
+* [ ] **BMRK-02:** Throughput table: tokens/s for base configs and batch_tokens variants.
+* [ ] **BMRK-03:** Memory profile snapshot under AMP + checkpointing.
+
+---
+
+## File/Code Stubs (to create)
+
+* [ ] `psann/lm/__init__.py` (export `psannLM`, `psannLMDataPrep`)
+* [ ] `psann/lm/api.py`
+* [ ] `psann/lm/config.py`
+* [ ] `psann/lm/models/registry.py`
+* [ ] `psann/lm/models/sine.py`
+* [ ] `psann/lm/models/transformer_respsann.py`
+* [ ] `psann/lm/models/transformer_waveresnet.py`
+* [ ] `psann/lm/data/tokenizer.py`
+* [ ] `psann/lm/data/dataset.py`
+* [ ] `psann/lm/train/trainer.py`
+* [ ] `psann/lm/train/cli.py`
+* [ ] `psann/lm/infer/generate.py`
+* [ ] `psann/lm/tests/test_sine.py`
+* [ ] `psann/lm/tests/test_data.py`
+* [ ] `psann/lm/tests/test_models_cpu.py`
+* [ ] `psann/lm/tests/test_gpu_integration.py`
+* [ ] `examples/lm/minimal_train.py`
+* [ ] `examples/lm/generate.py`
+* [ ] `docs/lm.md`
+
+---
+
+## Design Notes
+
+* **Parametric Sine:** prefer a numerically stable damping like `exp(-d*|x|)` to avoid exploding outputs; clamp or softplus `d`.
+* **Positional Encodings:** default to **RoPE** (rotary) for attention; allow absolute sinusoidal fallback.
+* **Sequence Packing:** for efficiency on LM, implement packed contiguous token streams with attention masks per sample.
+* **Batching by tokens:** prioritize `batch_tokens` over `batch_size` for stable throughput across sequence lengths.
+* **Scaling:** recommend bf16; enable grad checkpointing by default on large models; document tradeoffs.
+* **Registry:** keep base selection orthogonal to model dimensions; both bases must satisfy a shared interface.
+
+---
+
+## Example Minimal YAML (for CLI)
+
+```yaml
+# examples/lm/configs/waveresnet_small.yaml
+model:
+  base: waveresnet
+  d_model: 512
+  n_layers: 8
+  n_heads: 8
+  d_mlp: 2048
+  vocab_size: 32000
+  rope: true
+  sine_params:
+    amp_init: 1.0
+    freq_init: 1.0
+    damp_init: 0.01
+    trainable: true
+
+data:
+  sources:
+    - path: data/sample_texts.txt
+  tokenizer: auto
+  max_length: 1024
+  pack_sequences: true
+  val_split: 0.01
+  seed: 1337
+
+train:
+  epochs: 1
+  batch_tokens: 131072
+  lr: 0.0002
+  warmup_steps: 2000
+  weight_decay: 0.01
+  amp: bf16
+  grad_clip: 1.0
+  grad_accum_steps: 1
+  ddp: auto
+  checkpoint_dir: runs/lm/wrn_small
+  log_interval_steps: 50
+  save_interval_steps: 500
+```
+
+---
+
+## Codex Operating Instructions (Very Important)
+
+1. **Before starting a session:**
+
+   * Read this file top to bottom.
+   * Update **Progress Tracker** timestamp.
+   * Write 1–3 bullets in **Session Notes Summary** about intent.
+
+2. **During the session:**
+
+   * Work top-down by sections unless a dependency forces reordering.
+   * For any new files, create them with clear headers and docstrings.
+   * Keep commits small and scoped to one subsection when possible.
+
+3. **When encountering GPU-required items:**
+
+   * Pause coding.
+   * Add a note in **Session Notes Summary** specifying the exact GPU step and prerequisites.
+   * Wait for Nick to acknowledge/prepare GPU environment before proceeding to the next GPU item.
+   * Once GPU work is green, proceed with the rest of the GPU block continuously.
+
+4. **On every save/commit:**
+
+   * Recompute checklist completion counts and update the **Progress Tracker**.
+   * Keep **Session Notes Summary** to 1–3 bullets; move older bullets to **Session History**.
+
+5. **When blocking on ambiguity or missing dependencies:**
+
+   * Add a short “Open Questions” bullet list at the end of this file.
+   * Propose defaults and proceed with the safest assumption; mark with `// ASSUMPTION`.
+
+---
+
+## Session History (latest at top)
+
+* *None yet*
+
+---
+
+## Open Questions
+
+* [ ] Prefer `sentencepiece` vs `tokenizers` as default backend?
+* [ ] Default positional encodings: RoPE everywhere, or allow ALiBi toggle?
+* [ ] Do we need a fast C++/CUDA KV-cache path now, or defer to later?
+
+---
+
+## Acceptance Checklist (final sign-off)
+
+* [ ] Public API works as spec and is covered in docs.
+* [ ] Trainable sine params visibly affect training (ablations logged).
+* [ ] End-to-end example trains on a sample corpus and generates text.
+* [ ] GPU block completed with throughput and memory numbers recorded.
+* [ ] Tests (CPU+GPU) passing in CI or local matrix.
+* [ ] README/docs updated with installation and quickstart.

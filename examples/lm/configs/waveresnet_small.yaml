@@ -1,0 +1,38 @@
+model:
+  base: waveresnet
+  d_model: 512
+  n_layers: 8
+  n_heads: 8
+  d_mlp: 2048
+  vocab_size: 32000
+  rope: true
+  sine_params:
+    amp_init: 1.0
+    freq_init: 1.0
+    damp_init: 0.01
+    trainable: true
+
+data:
+  sources:
+    - path: data/sample_texts.txt
+  tokenizer: auto  # change to "sentencepiece" if psann[lm] installed
+  # tokenizer_model_path: path/to/prebuilt_tokenizer.model  # optional (SentencePiece .model or HF .json)
+  max_length: 1024
+  pack_sequences: true
+  val_split: 0.01
+  seed: 1337
+
+train:
+  epochs: 1
+  batch_tokens: 131072
+  lr: 0.0002
+  warmup_steps: 2000
+  weight_decay: 0.01
+  amp: bf16
+  grad_clip: 1.0
+  grad_accum_steps: 1
+  ddp: auto
+  checkpoint_dir: runs/lm/wrn_small
+  log_interval_steps: 50
+  save_interval_steps: 500
+
