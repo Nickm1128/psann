@@ -1,0 +1,77 @@
+{
+  "results": {
+    "GPU-01": {
+      "elapsed_s": 1.8543,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 24
+    },
+    "GPU-02": {
+      "amp_dtype": "torch.bfloat16",
+      "amp_loss": 3.626202,
+      "fp32_loss": 3.630714,
+      "rel_diff": 0.001243,
+      "status": "ok"
+    },
+    "GPU-03": {
+      "respsann": {
+        "elapsed_s": 0.0911,
+        "tokens": 20480,
+        "tokens_per_s": 224924.51
+      },
+      "status": "ok",
+      "waveresnet": {
+        "elapsed_s": 0.0937,
+        "tokens": 20480,
+        "tokens_per_s": 218635.15
+      }
+    },
+    "GPU-04": {
+      "reason": "gradient checkpointing not implemented in Trainer",
+      "status": "skipped"
+    },
+    "GPU-05": {
+      "reason": "requires >=2 CUDA devices",
+      "status": "skipped"
+    },
+    "GPU-06": {
+      "reason": "DeepSpeed/FSDP hooks not implemented",
+      "status": "skipped"
+    },
+    "GPU-07": {
+      "length": 17,
+      "sample": "xmaasdrdisnbywmnn",
+      "status": "ok"
+    },
+    "GPU-08": {
+      "ckpt_path": "/workspace/psann/reports/gpu/20251104_232550/checkpoints/lm.pt",
+      "gen_equal": true,
+      "params_equal": true,
+      "status": "ok"
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 1,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA L40S",
+        "total_memory_gb": 44.4
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.9.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251104_232550"
+}
