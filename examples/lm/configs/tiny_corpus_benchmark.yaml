@@ -1,10 +1,10 @@
 model:
   base: waveresnet
-  d_model: 512
-  n_layers: 8
-  n_heads: 8
-  d_mlp: 2048
-  vocab_size: null            # infer from data prep
+  d_model: 256      # was 512
+  n_layers: 4       # was 8
+  n_heads: 4        # was 8
+  d_mlp: 1024       # was 2048
+  vocab_size: null  # infer from data prep
   rope: true
   sine_params:
     amp_init: 1.0
@@ -17,21 +17,21 @@ data:
     - path: datasets/lm/tiny_books.txt    # create this ~50MB shard before running
   tokenizer: auto
   tokenizer_model_path: null
-  max_length: 1024
+  max_length: 512      # was 1024
   pack_sequences: true
   val_split: 0.02
   seed: 1337
 
 train:
-  epochs: 2
-  batch_tokens: 131072
+  epochs: 1            # was 2
+  batch_tokens: 32768  # was 131072
   lr: 0.0002
   warmup_steps: 2000
   weight_decay: 0.01
   amp: bf16
   grad_clip: 1.0
   grad_accum_steps: 1
-  ddp: auto
+  ddp: off             # force single GPU to reduce memory
   grad_checkpoint: true
   checkpoint_dir: runs/lm/bmrk_tiny
   log_interval_steps: 50
