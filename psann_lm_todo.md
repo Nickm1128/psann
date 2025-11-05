@@ -15,11 +15,14 @@
 
 ## Progress Tracker (Codex MUST keep updated)
 
-* **Tasks complete:** `64 / 80` - `80.00%`
-* **Last edit (UTC):** `2025-11-04 23:47`
+* **Tasks complete:** `65 / 80` - `81.25%`
+* **Last edit (UTC):** `2025-11-05 00:24`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
 
+  * CUDA test suite 20251105_001704: 170 tests, 3 failures, 1 skipped; root cause NameError: missing `json` import in GPU tests; fix committed.
+  * Pod env: torch 2.9.0+cu128, 1× L40S (bf16 supported); artifacts at `reports/tests/20251105_001704`.
+  * Next: pull fix and re-run `python scripts/run_cuda_tests.py --out reports/tests`; expect GPU tests green.
   * GPU smoke 20251104T234003Z: 5/5 tests passed (CUDA + AMP fp16/bf16); matmul parity OK.
   * Throughput ≈225k tok/s; AMP bf16 rel_diff≈0.00124; save/load deterministic.
   * Torch 2.9.0+cu128; 1 GPU visible; artifacts at `outputs/gpu_tests/20251104T234003Z`.
@@ -136,6 +139,13 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 ---
 
 ## Work Items
+
+### Immediate Next Steps
+
+- [ ] Pull latest and re-run full CUDA suite: `python scripts/run_cuda_tests.py --out reports/tests`; push the new `reports/tests/<timestamp>`.
+- [ ] Run GPU validation for GC metrics: `python scripts/run_gpu_validation.py --out reports/gpu`; inspect GPU-04 elapsed/memory and push `reports/gpu/<timestamp>`.
+- [ ] (Optional) Install `pytest-json-report` in the pod to produce `pytest_report.json` alongside `junit.xml`.
+- [ ] Begin DDP baseline (GPU-05): initialize process group/torchrun, DistributedSampler, grad sync, per-rank seeding; add skip-if-<2 GPUs in tests/runner.
 
 ### 0) Project Scaffolding & Docs
 
@@ -317,6 +327,8 @@ train:
 
 ## Session History (latest at top)
 
+* [2025-11-05 00:24 UTC] CUDA test suite 20251105_001704: 170 tests, 3 failures (json import), 1 skipped; L40S; torch 2.9.0+cu128; artifacts at `reports/tests/20251105_001704`.
+
 * [2025-11-04 23:47 UTC] GPU smoke 20251104T234003Z: 5/5 passed; torch 2.9.0+cu128; 1 GPU; AMP fp16/bf16 OK; artifacts at `outputs/gpu_tests/20251104T234003Z`.
 
 * [2025-11-04 23:27 UTC] GPU report 20251104_232550: GPU-01/02/03/07/08 OK; 04/05/06 skipped; throughput ≈225k tok/s; AMP bf16 rel_diff≈0.00124; TODO and counts updated.
@@ -352,6 +364,3 @@ train:
 * [ ] GPU block completed with throughput and memory numbers recorded.
 * [ ] Tests (CPU+GPU) passing in CI or local matrix.
 * [ ] README/docs updated with installation and quickstart.
-
-
-
