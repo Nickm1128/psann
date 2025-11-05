@@ -563,6 +563,13 @@ def gpu_08_save_load(outdir: Path) -> Dict[str, Any]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=str, default="reports/gpu", help="Base directory for reports")
+    ap.add_argument(
+        "--only",
+        nargs="+",
+        default=None,
+        metavar="STEP",
+        help="Restrict execution to specific GPU steps (e.g. --only GPU-03 GPU-04)",
+    )
     args = ap.parse_args()
 
     base = Path(args.out).resolve()
@@ -586,17 +593,30 @@ def main() -> None:
 
     summary: Dict[str, Any] = {"timestamp_utc": tag, "system": sysinfo, "results": {}}
 
-    steps = [
-        ("GPU-01", gpu_01_forward_backward),
-        ("GPU-02", gpu_02_amp_parity),
-        ("GPU-03", gpu_03_throughput),
-        ("GPU-04", gpu_04_checkpointing),
-        ("GPU-05", gpu_05_ddp),
-        ("GPU-06", gpu_06_zerofsdp),
-        ("GPU-07", gpu_07_generation_smoke),
-    ]
+    step_fns = {
+        "GPU-01": gpu_01_forward_backward,
+        "GPU-02": gpu_02_amp_parity,
+        "GPU-03": gpu_03_throughput,
+        "GPU-04": gpu_04_checkpointing,
+        "GPU-05": gpu_05_ddp,
+        "GPU-06": gpu_06_zerofsdp,
+        "GPU-07": gpu_07_generation_smoke,
+        "GPU-08": lambda: gpu_08_save_load(outdir),
+    }
+    selected = list(step_fns.keys())
+    if args.only:
+        filtered = []
+        for name in args.only:
+            name = name.upper()
+            if name not in step_fns:
+                raise SystemExit(f"Unknown step '{name}'. Valid options: {', '.join(step_fns.keys())}")
+            filtered.append(name)
+        selected = filtered
 
-    for name, fn in steps:
+    for name in selected:
+        if name == "GPU-08":
+            continue  # run after loop to preserve checkpoint output usage
+        fn = step_fns[name]
         _log(f"[RUN] {name}")
         try:
             res = fn()
@@ -607,16 +627,16 @@ def main() -> None:
             _log(f"[ERR] {name}: {e}")
         _write_json(outdir / "summary.json", summary)
 
-    # GPU-08 depends on output dir
-    _log("[RUN] GPU-08")
-    try:
-        res8 = gpu_08_save_load(outdir)
-        summary["results"]["GPU-08"] = res8
-        _log(f"[OK ] GPU-08: {res8}")
-    except Exception as e:  # pragma: no cover
-        summary["results"]["GPU-08"] = {"status": "error", "error": str(e)}
-        _log(f"[ERR] GPU-08: {e}")
-    _write_json(outdir / "summary.json", summary)
+    if "GPU-08" in selected:
+        _log("[RUN] GPU-08")
+        try:
+            res8 = step_fns["GPU-08"]()
+            summary["results"]["GPU-08"] = res8
+            _log(f"[OK ] GPU-08: {res8}")
+        except Exception as e:  # pragma: no cover
+            summary["results"]["GPU-08"] = {"status": "error", "error": str(e)}
+            _log(f"[ERR] GPU-08: {e}")
+        _write_json(outdir / "summary.json", summary)
 
     _log("[DONE] GPU validation complete.")
     log_fp.close()

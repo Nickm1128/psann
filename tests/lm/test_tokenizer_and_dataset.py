@@ -26,6 +26,31 @@ def test_lm_dataset_packing_and_shapes():
     assert tuple(sample["labels"].shape) == (4,)
 
 
+def test_lm_dataset_without_packing_preserves_doc_boundaries():
+    texts = [
+        "abcdefghij klmnop",
+        "qrstuvwx yzabcdef",
+    ]
+    tok = Tokenizer(TokenizerConfig(backend="simple"))
+    tok.fit(texts)
+    packed = LMDataset(texts, tok, PackingConfig(max_length=4, pack_sequences=True))
+    unpacked = LMDataset(texts, tok, PackingConfig(max_length=4, pack_sequences=False))
+    assert len(packed) > 0 and len(unpacked) > 0
+
+    def has_mid_sequence_bos(ds):
+        for sample in ds:
+            # reconstruct the original (T+1) chunk
+            chunk = sample["input_ids"].tolist()
+            chunk.append(int(sample["labels"][-1]))
+            if tok.bos_id in chunk[1:]:
+                return True
+        return False
+
+    # Packing joins docs so BOS tokens can appear mid-chunk; non-packing should not.
+    assert has_mid_sequence_bos(packed) is True
+    assert has_mid_sequence_bos(unpacked) is False
+
+
 def test_streaming_lm_dataset(tmp_path: tempfile.TemporaryDirectory):
     p = os.path.join(tmp_path, "text.txt")
     with open(p, "w", encoding="utf-8") as fh:
@@ -51,4 +76,3 @@ def test_hf_tokenizers_backend_import():
     tok.fit(texts)
     ids = tok.encode("hello", add_specials=True)
     assert isinstance(ids, list) and len(ids) > 0
-

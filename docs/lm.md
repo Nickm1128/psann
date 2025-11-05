@@ -1,80 +1,100 @@
-PSANN‑LM
+﻿PSANN-LM
 ========
 
-Production‑ready language modeling for PSANN with a clean public API and pluggable bases (ResPSANN, WaveResNet).
+PSANN-LM packages a production-ready language-modeling stack on top of PSANN bases (ResPSANN
+and WaveResNet). The public API keeps a minimal surface while still exposing tokenizer,
+data, training, and inference utilities.
 
 Quickstart
 ----------
 
-```
+```python
 from psann.lm import psannLM, psannLMDataPrep
 
 texts = ["hello world", "goodnight moon"]
 dp = psannLMDataPrep(
     texts,
-    tokenizer="auto",              # or "sentencepiece" / "tokenizers" / "simple"
-    tokenizer_model_path=None,      # optional: load a prebuilt tokenizer model
+    tokenizer="auto",             # sentencepiece -> tokenizers -> char fallback
+    tokenizer_model_path=None,
     max_length=256,
     pack_sequences=True,
 )
 
-model = psannLM(base="waveresnet", d_model=512, n_layers=8, n_heads=8,
-                vocab_size=dp.vocab_size, rope=True,
-                sine_params=dict(amp_init=1.0, freq_init=1.0, damp_init=0.01, trainable=True))
+model = psannLM(
+    base="waveresnet",
+    d_model=512,
+    n_layers=8,
+    n_heads=8,
+    vocab_size=dp.vocab_size,
+    rope=True,
+    sine_params=dict(amp_init=1.0, freq_init=1.0, damp_init=0.01, trainable=True),
+)
 
-model.fit(dp, epochs=1, batch_tokens=65536, lr=2e-4, amp="bf16")
+model.fit(dp, epochs=1, batch_tokens=65_536, lr=2e-4, amp="bf16")
 print(model.generate("Once upon a time", top_p=0.9, max_new_tokens=64))
-
-# Mixed-length batch generation (length bucketing, no masks required)
-outs = model.generate_batch(["hello", "goodnight"], max_new_tokens=32, top_p=0.9)
-print(outs)
+print(model.generate_batch(["hello", "goodnight"], max_new_tokens=32))
 ```
 
 Configuration
 -------------
 
-Model (``psann.lm.config.ModelConfig``)
-- base: ``waveresnet`` | ``respsann``
-- d_model: hidden size (int)
-- n_layers: transformer layers (int)
-- n_heads: attention heads (int)
-- d_mlp: MLP hidden size (default ``4*d_model``)
-- vocab_size: override (default inferred from data)
-- rope: use rotary embeddings (bool)
-- sine_*: trainable sine parameters (amplitude/frequency/damping/trainable)
+**Model (`psann.lm.config.ModelConfig`)**
+- `base`: `waveresnet` | `respsann`
+- `d_model`, `n_layers`, `n_heads`, `d_mlp`
+- `vocab_size`: override (defaults to data prep vocab)
+- `rope`: enable rotary embeddings
+- `sine_params`: amplitude/frequency/damping settings
 
-Data (``psann.lm.config.DataConfig``)
-- tokenizer: ``auto`` | ``simple`` | ``sentencepiece`` | ``tokenizers``
-- tokenizer_model_path: optional prebuilt tokenizer (SentencePiece ``.model`` or HF ``.json``)
-- max_length: sequence length for training chunks
-- pack_sequences: pack documents into a contiguous stream
-- val_split: optional validation fraction
-- seed: RNG seed for splits/shuffle
+**Data (`psann.lm.config.DataConfig`)**
+- `tokenizer`: `auto` | `simple` | `sentencepiece` | `tokenizers`
+- `tokenizer_model_path`: optional SentencePiece `.model` or Hugging Face `.json`
+- `max_length`: chunk length
+- `pack_sequences`: contiguous stream packing
+- `val_split`: float fraction for validation
+- `seed`: RNG for shuffling/splitting
 
-Train (``psann.lm.config.TrainConfig``)
-- epochs: number of epochs
-- batch_tokens: approximate tokens per micro‑batch
-- lr: base learning rate
-- warmup_steps: LR warmup steps (cosine schedule)
-- weight_decay: AdamW weight decay
-- label_smoothing: cross‑entropy label smoothing in [0,1)
-- grad_clip: max global grad‑norm (0 disables)
-- grad_accum_steps: gradient accumulation steps
-- amp: ``bf16`` | ``fp16`` | ``fp32`` | ``none`` (placeholder)
-- ddp: ``auto`` | ``on`` | ``off`` (placeholder)
-- checkpoint_dir: save directory
-- log_interval_steps: logging cadence (optimizer steps)
-- save_interval_steps: checkpoint cadence (optimizer steps)
+**Train (`psann.lm.config.TrainConfig`)**
+- `epochs`, `batch_tokens`, `lr`, `warmup_steps`
+- `weight_decay`, `label_smoothing`, `grad_clip`, `grad_accum_steps`
+- `amp`: `bf16` | `fp16` | `fp32`
+- `ddp`: `auto` | `on` | `off` (wraps torch.distributed)
+- `checkpoint_dir`, `log_interval_steps`, `save_interval_steps`
 
 Scaling Tips
 ------------
-- Prefer ``bf16`` for stability and speed; keep ``fp32`` for debugging.
-- Set ``batch_tokens`` so that ``batch_tokens * grad_accum_steps`` fits memory.
-- Use ``pack_sequences=True`` for better throughput on small corpora.
-- Enable validation (``val_split>0``) to track best checkpoint automatically.
+- Prefer `bf16` for stability and speed; fall back to `fp32` for debugging.
+- Size `batch_tokens * grad_accum_steps` to fit GPU memory; gradient checkpointing is
+  available through the trainer.
+- Enable `pack_sequences=True` for throughput on smaller corpora.
+- When running multi-GPU, launch via `torchrun` so the trainer can auto-initialize DDP/FSDP.
+
+Benchmarks & Reporting
+----------------------
+- Benchmark targets live in `benchmarks/lm_plan.md` and mirror the TODO list items:
+  - **BMRK-01** (tiny corpus baseline): ~50 MB text shard, track loss + perplexity curves,
+    and log results under `reports/benchmarks/<timestamp>/loss_curve.png`.
+  - **BMRK-02** (throughput table): measure tokens/sec for `{base} x {batch_tokens}` grids
+    using `scripts/run_gpu_validation.py --only GPU-03`.
+  - **BMRK-03** (memory snapshot): run with `grad_checkpoint=True`, capture
+    `torch.cuda.max_memory_allocated()` + wall time, and store in
+    `reports/benchmarks/<timestamp>/memory.json`.
+- `scripts/next_gpu_batch.sh` queues the full validation suite, throughput-only, checkpoint-only,
+  and tiny-corpus benchmark runs in one go once GPUs are available.
+- Tiny corpus YAML config lives at `examples/lm/configs/tiny_corpus_benchmark.yaml`.
+- `scripts/run_gpu_validation.py --out reports/gpu` produces standardized GPU reports
+  (loss parity, throughput, checkpoint checks) for regression tracking.
+
+Test Artifacts
+--------------
+- Install dev extras (`pip install .[dev]`) to pull in `pytest-json-report`.
+- `scripts/run_cuda_tests.py` and `scripts/run_gpu_tests.py` automatically emit
+  `pytest_report.json` alongside `junit.xml` whenever the plugin is available.
+- Artifacts land under `reports/tests/<timestamp>/` with `system.json`, `summary.json`,
+  `stdout.log`, and GPU test outputs (if applicable).
 
 Caveats
 -------
-- Current trainer is CPU‑only; AMP/DDP hooks are placeholders.
-- Tokenizer ``auto`` requires ``sentencepiece`` installed, else falls back to a simple char tokenizer.
-- KV‑cache and batched generation are planned; greedy/top‑k/top‑p are available.
+- The provided examples run on CPU by default; GPU performance requires CUDA-capable hardware.
+- SentencePiece or Hugging Face tokenizers are auto-detected; falling back to the built-in
+  char tokenizer may reduce quality on large corpora.
+- DeepSpeed shims exist in the trainer but are optional; torch DDP/FSDP paths are the focus.

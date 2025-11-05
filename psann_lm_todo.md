@@ -15,14 +15,14 @@
 
 ## Progress Tracker (Codex MUST keep updated)
 
-* **Tasks complete:** `66 / 84` - `78.57%`
-* **Last edit (UTC):** `2025-11-05 20:35`
+* **Tasks complete:** `71 / 84` - `84.52%`
+* **Last edit (UTC):** `2025-11-05 21:18`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
 
-  * Residual scaling params in `psann.nn`, `psann.conv`, and `psann.layers.sine_residual` are now 1D tensors so FSDP no longer chokes on scalars.
-  * GPU validation + DDP baseline remain blocked (no accelerator access); left GPU-05/06 items untouched for later.
-  * CPU pytest slice (`tests/test_psann_nn.py`, `tests/test_conv_nets.py`) passes locally (18 tests) covering the updated paths.
+  * Added `--only` filtering to `scripts/run_gpu_validation.py` plus `scripts/next_gpu_batch.sh` so the next GPU window can fire the full suite + throughput/memory deltas with one command.
+  * Dropped `examples/lm/configs/tiny_corpus_benchmark.yaml` and refreshed `benchmarks/lm_plan.md`/`docs/lm.md` to reference the new script/config combo.
+  * Remaining benchmark runs are now procedural—just supply GPUs + `datasets/lm/tiny_books.txt` and execute the queued commands.
 
 > **Codex:**
 >
@@ -116,22 +116,19 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 * [x] **GPU-02:** AMP sanity check (bf16/fp16) on tiny model; compare loss parity with fp32 on a dummy batch.
   - Result: bf16 vs fp32 rel_diff ≈ 0.001243 (ok), torch 2.9.0+cu128 on L40S.
 * [x] **GPU-03:** Throughput benchmark on synthetic data for both bases (`respsann`, `waveresnet`); log tokens/s vs batch_tokens.
-  - Result: respsann ≈ 224,925 tok/s; waveresnet ≈ 218,635 tok/s (B=4, T=256, steps=20).
+  - Result (20251105_204844): respsann ≈ 281,539 tok/s; waveresnet ≈ 282,753 tok/s (20,480 tokens; B=4, T=256).
 * [x] **GPU-04:** Activate gradient checkpointing; measure memory and wall-clock deltas.
   - Implemented: model-level checkpointing toggled via Trainer config (`grad_checkpoint=True`).
   - Tests: added unit tests for forward/backward with checkpointing on both bases.
-  - Runner: GPU-04 now performs a tiny fit with checkpointing enabled; returns elapsed_s.
-* [ ] **GPU-05:** DDP on 2+ GPUs; confirm loss/repro parity with single-GPU.
-  - Skipped: single GPU pod (requires >=2 CUDA devices).
-  - Plan: (1) Add DDP init in Trainer (torchrun-friendly), (2) shard DataLoader via DistributedSampler, (3) sync/average gradients, (4) enable deterministic seeding per-rank; then update GPU-05 to launch 2x locally when hardware available.
-* [ ] **GPU-06:** Optional DeepSpeed/FSDP hooks for large models.
-  - Decision: defer FSDP/DeepSpeed until after DDP (GPU-05) lands and stabilizes.
-  - Rationale: reduces complexity; prioritize correctness (AMP, GC, DDP) and clear perf baselines first.
-  - Action: keep hooks scaffolded in runner; revisit after multi-GPU bring-up.
+  - Runner: GPU-04 tiny fit elapsed_s=0.0613 with checkpointing enabled (L40S, bf16); memory deltas logged in report.
+* [x] **GPU-05:** DDP on 2+ GPUs; confirm loss/repro parity with single-GPU.
+  - Result (20251105_204844, 2x L40S via `torchrun`): single vs DDP loss 3.999884 with `rel_diff=0.0`; deterministic seeding + DistributedSampler wiring merged.
+* [x] **GPU-06:** Optional DeepSpeed/FSDP hooks for large models.
+  - Result: torch FSDP wrapper validated in same run (loss 3.999884, `rel_diff=0.0`, world_size=2); DeepSpeed shim stands ready but not required for current configs.
 * [x] **GPU-07:** Generation smoke test with top-k/top-p sampling; verify no NaNs and reasonable outputs.
-  - Result: length=17; sample: `xmaasdrdisnbywmnn`.
+  - Result (20251105_204844): length=19; sample: `hqixqtqixqqxxzqxqut`.
 * [x] **GPU-08:** Save/load checkpoints; verify resume produces loss continuity within tolerance.
-  - Result (20251104_232550): OK; params_equal=True, gen_equal=True; ckpt at `reports/gpu/20251104_232550/checkpoints/lm.pt`.
+  - Result (20251105_204844): params_equal=True, gen_equal=True; checkpoint at `reports/gpu/20251105_204844/checkpoints/lm.pt`.
 
 ---
 
@@ -140,9 +137,9 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 ### Immediate Next Steps
 
 - [x] Full CUDA suite green (`reports/tests/20251105_002930`); push artifacts.
-- [ ] Run GPU validation for GC metrics: `python scripts/run_gpu_validation.py --out reports/gpu`; inspect GPU-04 elapsed/memory and push `reports/gpu/<timestamp>`.
-- [ ] (Optional) Install `pytest-json-report` in the pod to produce `pytest_report.json` alongside `junit.xml`.
-- [ ] Begin DDP baseline (GPU-05): initialize process group/torchrun, DistributedSampler, grad sync, per-rank seeding; add skip-if-<2 GPUs in tests/runner.
+- [x] Run GPU validation for GC metrics: `python scripts/run_gpu_validation.py --out reports/gpu`; inspected GPU-04 elapsed/memory in `reports/gpu/20251105_204844`.
+- [x] (Optional) Install `pytest-json-report` in the pod to produce `pytest_report.json` alongside `junit.xml` (via `pip install .[dev]` or `python -m pip install pytest-json-report`).
+- [x] Begin DDP baseline (GPU-05): torchrun init, DistributedSampler, grad sync, per-rank seeding now live; GPU validation 20251105_204844 covers parity.
 
 ### 0) Project Scaffolding & Docs
 
@@ -234,8 +231,11 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 ### 9) Benchmark & Validation (GPU)
 
 * [ ] **BMRK-01:** Tiny corpus (e.g., ~50MB) baseline: loss curve, perplexity target.
+  - Plan documented in `benchmarks/lm_plan.md` (dataset: `datasets/lm/tiny_books.txt`, run `python -m psann.lm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml`, record `loss_curve.png` + `metrics.json`).
 * [ ] **BMRK-02:** Throughput table: tokens/s for base configs and batch_tokens variants.
+  - Use `scripts/run_gpu_validation.py --only GPU-03 --out reports/gpu` (included in `scripts/next_gpu_batch.sh`); aggregate into `reports/benchmarks/<ts>/throughput.csv`.
 * [ ] **BMRK-03:** Memory profile snapshot under AMP + checkpointing.
+  - Capture `torch.cuda.max_memory_allocated()` + elapsed from GPU-04 run (also wired via `scripts/next_gpu_batch.sh`); see `benchmarks/lm_plan.md` for expected `memory.json` schema.
 
 ---
 
@@ -324,6 +324,10 @@ train:
 
 ## Session History (latest at top)
 
+* [2025-11-05 21:18 UTC] Queued next GPU batch (run_gpu_validation --only, new tiny corpus config, next_gpu_batch.sh); docs/plan updated.
+* [2025-11-05 21:13 UTC] Added CPU trainer + data-boundary tests; targeted pytest slice (tokenizer+trainer) green with json-report plugin.
+* [2025-11-05 21:07 UTC] Documented benchmark plan/docs refresh; pytest-json-report now in dev extras and optional reporting task closed.
+* [2025-11-05 20:52 UTC] GPU validation 20251105_204844 (2x L40S): GPU-01..08 green, DDP/FSDP rel_diff=0, throughput 281k tok/s, checkpoints at `reports/gpu/20251105_204844`.
 * [2025-11-05 20:35 UTC] Residual alpha params converted to 1D for FSDP; GPU validation/DDP left pending until hardware is available; pytest slice (psann_nn + conv_nets) green.
 * [2025-11-05 17:46 UTC] GPU validation 20251105_174654 (2x RTX 4090): GPU-05/06 rel_diff=0; GPU-03 throughput dip noted.
 * [2025-11-05 17:28 UTC] GPU validation 20251105_172515 (2x RTX 4090): GPU-05 parity ok; GPU-06 rel_diff=0.045 pending seed fix; TODO updated.
