@@ -1,0 +1,92 @@
+{
+  "results": {
+    "GPU-01": {
+      "elapsed_s": 1.936,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 24
+    },
+    "GPU-02": {
+      "amp_dtype": "torch.bfloat16",
+      "amp_loss": 4.319712,
+      "fp32_loss": 4.31753,
+      "rel_diff": 0.000505,
+      "status": "ok"
+    },
+    "GPU-03": {
+      "respsann": {
+        "elapsed_s": 0.1007,
+        "tokens": 20480,
+        "tokens_per_s": 203457.97
+      },
+      "status": "ok",
+      "waveresnet": {
+        "elapsed_s": 0.0959,
+        "tokens": 20480,
+        "tokens_per_s": 213460.13
+      }
+    },
+    "GPU-04": {
+      "elapsed_s": 0.0901,
+      "grad_checkpoint": true,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 31
+    },
+    "GPU-05": {
+      "error": "process 1 terminated with signal SIGABRT",
+      "status": "error"
+    },
+    "GPU-06": {
+      "reason": "FSDP/deepspeed unavailable: process 1 terminated with signal SIGABRT",
+      "status": "skipped"
+    },
+    "GPU-07": {
+      "length": 6,
+      "sample": "hki?h ",
+      "status": "ok"
+    },
+    "GPU-08": {
+      "ckpt_path": "/workspace/psann/reports/gpu/20251105_155927/checkpoints/lm.pt",
+      "gen_equal": true,
+      "params_equal": true,
+      "status": "ok"
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 2,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA L4",
+        "total_memory_gb": 22.04
+      },
+      {
+        "index": 1,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA L4",
+        "total_memory_gb": 22.04
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251105_155927"
+}
