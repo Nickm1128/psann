@@ -451,6 +451,9 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
 
         # Compute single-GPU baseline
         device0 = torch.device("cuda", 0)
+        torch.manual_seed(123)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(123)
         lm = psannLM(**model_cfg)
         model = lm._ensure_model(vocab).to(device0).eval()
         with torch.no_grad():
