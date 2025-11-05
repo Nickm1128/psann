@@ -180,7 +180,40 @@ def gpu_03_throughput() -> Dict[str, Any]:
 
 
 def gpu_04_checkpointing() -> Dict[str, Any]:
-    return {"status": "skipped", "reason": "gradient checkpointing not implemented in Trainer"}
+    """Smoke-test training with gradient checkpointing enabled.
+
+    Runs a tiny single-epoch fit with grad checkpointing=True to ensure
+    the path is wired end-to-end. Returns basic timing metadata.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type != "cuda":
+        return {"status": "skipped", "reason": "cuda not available"}
+
+    texts = [
+        "hello world",
+        "goodnight moon",
+        "abc def ghi",
+        "lorem ipsum",
+        "pack my box with five dozen liquor jugs",
+    ]
+    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0)
+    lm = psannLM(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    t0 = time.time()
+    # Enable gradient checkpointing via Trainer config
+    lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4, grad_checkpoint=True)
+    dt = time.time() - t0
+    return {
+        "status": "ok",
+        "grad_checkpoint": True,
+        "elapsed_s": round(dt, 4),
+        "vocab_size": dp.vocab_size,
+        "model": {
+            "base": lm.base,
+            "d_model": lm.d_model,
+            "n_layers": lm.n_layers,
+            "n_heads": lm.n_heads,
+        },
+    }
 
 
 def gpu_05_ddp() -> Dict[str, Any]:

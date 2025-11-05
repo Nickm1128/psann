@@ -262,7 +262,14 @@ class psannLM:
             lr=float(lr or 2e-4),
             amp=str(amp or "bf16"),
             ddp=str(ddp or "auto"),
+            grad_checkpoint=bool(kwargs.get("grad_checkpoint", False)),
         ))
+        # Update existing trainer config if present and overrides provided
+        if self._trainer is not None and ("grad_checkpoint" in kwargs):
+            try:
+                self._trainer.cfg.grad_checkpoint = bool(kwargs.get("grad_checkpoint"))  # type: ignore[attr-defined]
+            except Exception:
+                pass
         max_length = int(train_data.max_length)
         self._tokenizer = train_data.tokenizer
         val_ds = None

@@ -1,0 +1,9 @@
+{
+  "bf16_supported": false,
+  "cuda_available": false,
+  "device_count": 0,
+  "platform": "win32",
+  "python": "3.11.9",
+  "torch": "2.7.1+cu118",
+  "torch_cuda_version": "11.8"
+}

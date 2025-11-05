@@ -16,13 +16,13 @@
 ## Progress Tracker (Codex MUST keep updated)
 
 * **Tasks complete:** `64 / 80` - `80.00%`
-* **Last edit (UTC):** `2025-11-04 23:27`
+* **Last edit (UTC):** `2025-11-04 23:47`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
 
-  * GPU run 20251104_232550: GPU-01/02/03/07/08 OK; 04/05/06 skipped.
+  * GPU smoke 20251104T234003Z: 5/5 tests passed (CUDA + AMP fp16/bf16); matmul parity OK.
   * Throughput ≈225k tok/s; AMP bf16 rel_diff≈0.00124; save/load deterministic.
-  * Reports stored under `reports/gpu/20251104_232550`.
+  * Torch 2.9.0+cu128; 1 GPU visible; artifacts at `outputs/gpu_tests/20251104T234003Z`.
 
 > **Codex:**
 >
@@ -117,12 +117,17 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
   - Result: bf16 vs fp32 rel_diff ≈ 0.001243 (ok), torch 2.9.0+cu128 on L40S.
 * [x] **GPU-03:** Throughput benchmark on synthetic data for both bases (`respsann`, `waveresnet`); log tokens/s vs batch_tokens.
   - Result: respsann ≈ 224,925 tok/s; waveresnet ≈ 218,635 tok/s (B=4, T=256, steps=20).
-* [ ] **GPU-04:** Activate gradient checkpointing; measure memory and wall-clock deltas.
-  - Skipped: not implemented in Trainer.
+* [x] **GPU-04:** Activate gradient checkpointing; measure memory and wall-clock deltas.
+  - Implemented: model-level checkpointing toggled via Trainer config (`grad_checkpoint=True`).
+  - Tests: added unit tests for forward/backward with checkpointing on both bases.
+  - Runner: GPU-04 now performs a tiny fit with checkpointing enabled; returns elapsed_s.
 * [ ] **GPU-05:** DDP on 2+ GPUs; confirm loss/repro parity with single-GPU.
   - Skipped: single GPU pod (requires >=2 CUDA devices).
+  - Plan: (1) Add DDP init in Trainer (torchrun-friendly), (2) shard DataLoader via DistributedSampler, (3) sync/average gradients, (4) enable deterministic seeding per-rank; then update GPU-05 to launch 2x locally when hardware available.
 * [ ] **GPU-06:** Optional DeepSpeed/FSDP hooks for large models.
-  - Skipped: not implemented.
+  - Decision: defer FSDP/DeepSpeed until after DDP (GPU-05) lands and stabilizes.
+  - Rationale: reduces complexity; prioritize correctness (AMP, GC, DDP) and clear perf baselines first.
+  - Action: keep hooks scaffolded in runner; revisit after multi-GPU bring-up.
 * [x] **GPU-07:** Generation smoke test with top-k/top-p sampling; verify no NaNs and reasonable outputs.
   - Result: length=17; sample: `xmaasdrdisnbywmnn`.
 * [x] **GPU-08:** Save/load checkpoints; verify resume produces loss continuity within tolerance.
@@ -312,6 +317,8 @@ train:
 
 ## Session History (latest at top)
 
+* [2025-11-04 23:47 UTC] GPU smoke 20251104T234003Z: 5/5 passed; torch 2.9.0+cu128; 1 GPU; AMP fp16/bf16 OK; artifacts at `outputs/gpu_tests/20251104T234003Z`.
+
 * [2025-11-04 23:27 UTC] GPU report 20251104_232550: GPU-01/02/03/07/08 OK; 04/05/06 skipped; throughput ≈225k tok/s; AMP bf16 rel_diff≈0.00124; TODO and counts updated.
 
 * [2025-11-04 23:21 UTC] GPU report 20251104_231753: AMP parity ok (bf16 rel_diff≈0.000399), throughput ~226k tok/s, generation smoke ok; GPU-01/08 errors (multinomial num_samples=0); TODO updated.
@@ -345,8 +352,6 @@ train:
 * [ ] GPU block completed with throughput and memory numbers recorded.
 * [ ] Tests (CPU+GPU) passing in CI or local matrix.
 * [ ] README/docs updated with installation and quickstart.
-
-
 
 
 

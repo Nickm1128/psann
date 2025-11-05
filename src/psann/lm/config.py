@@ -67,6 +67,8 @@ class TrainConfig:
     checkpoint_dir: str = "runs/lm/exp"
     log_interval_steps: int = 50
     save_interval_steps: int = 500
+    # Memory/perf knobs
+    grad_checkpoint: bool = False
 
     def __post_init__(self) -> None:
         if self.epochs <= 0:

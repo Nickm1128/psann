@@ -46,6 +46,7 @@ class WaveResNetTransformer(nn.Module):
     def __init__(self, cfg: WaveResNetTransformerConfig) -> None:
         super().__init__()
         self.cfg = cfg
+        self.gradient_checkpointing: bool = False
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
         sinecfg = cfg.sine if cfg.sine is not None else SineConfig()
         # Build blocks; optionally interleave a temporal wave block per layer
@@ -88,6 +89,9 @@ class WaveResNetTransformer(nn.Module):
 
         self.apply(_init_weights)
 
+    def enable_gradient_checkpointing(self, enabled: bool = True) -> None:
+        self.gradient_checkpointing = bool(enabled)
+
     def forward(
         self,
         input_ids: torch.Tensor,
@@ -112,8 +116,13 @@ class WaveResNetTransformer(nn.Module):
             logits = self.lm_head(x)
             return logits, presents
         else:
-            for blk in self.blocks:
-                x = blk(x)
+            if self.gradient_checkpointing and self.training:
+                from torch.utils.checkpoint import checkpoint as _cp
+                for blk in self.blocks:
+                    x = _cp(blk, x, use_reentrant=False)
+            else:
+                for blk in self.blocks:
+                    x = blk(x)
             x = self.ln_f(x)
             return self.lm_head(x)
 

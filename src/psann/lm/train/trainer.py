@@ -94,6 +94,19 @@ class Trainer:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model.to(device)
 
+        # Enable model-level gradient checkpointing if requested and supported
+        try:
+            if bool(getattr(self.cfg, "grad_checkpoint", False)):
+                if hasattr(model, "enable_gradient_checkpointing"):
+                    model.enable_gradient_checkpointing(True)  # type: ignore[attr-defined]
+                    print("[trainer] Gradient checkpointing: enabled via model.enable_gradient_checkpointing()")
+                elif hasattr(model, "gradient_checkpointing"):
+                    setattr(model, "gradient_checkpointing", True)
+                    print("[trainer] Gradient checkpointing: enabled via model.gradient_checkpointing attr")
+        except Exception:
+            # non-fatal; proceed without checkpointing
+            pass
+
         batch_size = self._compute_batch_size(max_length)
         dl = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_batch)
 

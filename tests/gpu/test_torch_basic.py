@@ -13,12 +13,13 @@ def test_cuda_available(torch_available, cuda_available, output_dir: Path):
         pytest.skip("torch not installed")
     import torch
 
+    import json
     summary = {
         "torch_version": torch.__version__,
         "cuda_available": bool(cuda_available),
         "device_count": int(torch.cuda.device_count() if cuda_available else 0),
     }
-    (output_dir / "test_cuda_available.json").write_text(str(summary))
+    (output_dir / "test_cuda_available.json").write_text(json.dumps(summary, sort_keys=True))
     if not cuda_available:
         pytest.skip("CUDA not available on this system")
 
@@ -49,7 +50,7 @@ def test_cuda_matmul_matches_cpu(cuda_available, output_dir: Path):
     assert mean_abs < 1e-5
 
     stats = {"max_abs": max_abs, "mean_abs": mean_abs, "n": n}
-    (output_dir / "test_cuda_matmul_matches_cpu.json").write_text(str(stats))
+    (output_dir / "test_cuda_matmul_matches_cpu.json").write_text(json.dumps(stats, sort_keys=True))
 
 
 @pytest.mark.gpu
@@ -82,7 +83,7 @@ def test_amp_fp16_matmul(cuda_available, output_dir: Path):
     with torch.cuda.amp.autocast(dtype=torch.float16):
         z = x @ y
     assert z.is_cuda and z.shape == (1024, 1024)
-    (output_dir / "test_amp_fp16_matmul.shape").write_text(str(list(z.shape)))
+    (output_dir / "test_amp_fp16_matmul.shape").write_text(json.dumps(list(z.shape)))
 
 
 @pytest.mark.gpu
@@ -109,5 +110,4 @@ def test_amp_bf16_if_supported(cuda_available, output_dir: Path):
     with torch.cuda.amp.autocast(dtype=torch.bfloat16):
         z = x @ y
     assert z.is_cuda and z.shape == (256, 256)
-    (output_dir / "test_amp_bf16_if_supported.shape").write_text(str(list(z.shape)))
-
+    (output_dir / "test_amp_bf16_if_supported.shape").write_text(json.dumps(list(z.shape)))
