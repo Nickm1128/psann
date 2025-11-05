@@ -80,6 +80,24 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
 
 # -------------------------- DDP worker helper --------------------------
 
+def _setup_dist_env(rank: int, world_size: int, port: int) -> None:
+    import os as _os
+
+    # env for torch.distributed default init
+    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    _os.environ.setdefault("MASTER_PORT", str(int(port)))
+    _os.environ["WORLD_SIZE"] = str(int(world_size))
+    _os.environ["RANK"] = str(int(rank))
+    _os.environ["LOCAL_RANK"] = str(int(rank))
+    # RunPod L4 stability: disable IB/P2P transports that tend to SIGABRT on multi-tenant pods
+    _os.environ.setdefault("NCCL_ASYNC_ERROR_HANDLING", "1")
+    _os.environ.setdefault("TORCH_NCCL_ASYNC_ERROR_HANDLING", "1")
+    _os.environ.setdefault("NCCL_IB_DISABLE", "1")
+    _os.environ.setdefault("NCCL_P2P_DISABLE", "1")
+    _os.environ.setdefault("NCCL_SHM_DISABLE", "1")
+    _os.environ.setdefault("NCCL_DEBUG", "WARN")
+
+
 def _ddp_loss_worker(
     rank: int,
     world_size: int,
@@ -89,17 +107,11 @@ def _ddp_loss_worker(
     model_cfg: Dict[str, Any],
     shared,
 ) -> None:
-    import os as _os
     import torch as _torch
     import torch.distributed as _dist
     from torch.nn.parallel import DistributedDataParallel as _DDP
 
-    # env for torch.distributed default init
-    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-    _os.environ.setdefault("MASTER_PORT", str(int(port)))
-    _os.environ["WORLD_SIZE"] = str(int(world_size))
-    _os.environ["RANK"] = str(int(rank))
-    _os.environ["LOCAL_RANK"] = str(int(rank))
+    _setup_dist_env(rank, world_size, port)
 
     device = _torch.device("cuda", int(rank))
     try:
@@ -112,11 +124,14 @@ def _ddp_loss_worker(
     try:
         # Deterministic-ish seed
         _torch.manual_seed(123)
+        if _torch.cuda.is_available():
+            _torch.cuda.manual_seed_all(123)
 
         # Build model consistent with single-GPU baseline
         lm = psannLM(**model_cfg)
         model = lm._ensure_model(int(vocab_size)).to(device).eval()
         model = _DDP(model, device_ids=[int(rank)], output_device=int(rank), find_unused_parameters=False)
+        model.eval()
 
         # Build batch tensor on this device
         import torch.nn.functional as _F
@@ -158,17 +173,11 @@ def _fsdp_loss_worker(
     model_cfg: Dict[str, Any],
     shared,
 ) -> None:
-    import os as _os
     import torch as _torch
     import torch.distributed as _dist
     from torch.distributed.fsdp import FullyShardedDataParallel as _FSDP
 
-    # env for torch.distributed default init
-    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
-    _os.environ.setdefault("MASTER_PORT", str(int(port)))
-    _os.environ["WORLD_SIZE"] = str(int(world_size))
-    _os.environ["RANK"] = str(int(rank))
-    _os.environ["LOCAL_RANK"] = str(int(rank))
+    _setup_dist_env(rank, world_size, port)
 
     device = _torch.device("cuda", int(rank))
     try:
@@ -180,6 +189,8 @@ def _fsdp_loss_worker(
 
     try:
         _torch.manual_seed(123)
+        if _torch.cuda.is_available():
+            _torch.cuda.manual_seed_all(123)
 
         lm = psannLM(**model_cfg)
         base_model = lm._ensure_model(int(vocab_size)).to(device)
@@ -396,12 +407,15 @@ def gpu_05_ddp() -> Dict[str, Any]:
     manager = mp.Manager()
     shared = manager.dict()
     nprocs = 2
-    mp.spawn(
-        _ddp_loss_worker,
-        args=(nprocs, port, batch_ids, vocab, model_cfg, shared),
-        nprocs=nprocs,
-        join=True,
-    )
+    try:
+        mp.spawn(
+            _ddp_loss_worker,
+            args=(nprocs, port, batch_ids, vocab, model_cfg, shared),
+            nprocs=nprocs,
+            join=True,
+        )
+    except Exception as exc:
+        return {"status": "error", "reason": f"DDP spawn failed: {exc}"}
     if "error" in shared:
         return {"status": "error", "reason": str(shared["error"])}
     ddp_loss = shared.get("ddp_avg_loss")
@@ -454,12 +468,15 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
         manager = mp.Manager()
         shared = manager.dict()
         nprocs = 2
-        mp.spawn(
-            _fsdp_loss_worker,
-            args=(nprocs, port, batch_ids, vocab, model_cfg, shared),
-            nprocs=nprocs,
-            join=True,
-        )
+        try:
+            mp.spawn(
+                _fsdp_loss_worker,
+                args=(nprocs, port, batch_ids, vocab, model_cfg, shared),
+                nprocs=nprocs,
+                join=True,
+            )
+        except Exception as exc:
+            return {"status": "error", "reason": f"FSDP spawn failed: {exc}"}
         if "error" in shared:
             return {"status": "error", "reason": str(shared["error"])}
         fsdp_loss = shared.get("fsdp_avg_loss")

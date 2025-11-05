@@ -16,13 +16,13 @@
 ## Progress Tracker (Codex MUST keep updated)
 
 * **Tasks complete:** `66 / 84` - `78.57%`
-* **Last edit (UTC):** `2025-11-05 13:08`
+* **Last edit (UTC):** `2025-11-05 16:41`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
 
-  * GPU validation `20251105_130530` (2x L40S, torch 2.8.0+cu128) green end-to-end; GPU-05/06 DDP+FSDP losses 3.999884 with rel_diff~=0.045 vs. single GPU.
-  * Pod env: Python 3.12.3, bf16 supported; checkpoint at `reports/gpu/20251105_130530/checkpoints/lm.pt`.
-  * Next: dig into FSDP loss delta tolerance vs. config tweaks, then proceed to DDP training baseline + perf doc.
+  * RunPod GPU validation `20251105_155927` (2x L4, torch 2.8.0+cu128) green on GPU-01..04/07..08 but GPU-05/06 aborted with SIGABRT; checkpoint at `reports/gpu/20251105_155927`.
+  * Hardened `scripts/run_gpu_validation.py`: deterministic CUDA seeds + eval paths plus NCCL env fallbacks (disable IB/P2P/SHM, enable async error handling) and spawn error guards to avoid silent aborts on RunPod.
+  * Next: rerun GPU suite on RunPod once patch lands; expect GPU-05/06 to finish or at least emit actionable NCCL errors instead of bare SIGABRT.
 > **Codex:**
 >
 > * On every save, recompute the completed/total counts from all checkboxes in this file and update the percentage.
@@ -323,6 +323,7 @@ train:
 
 ## Session History (latest at top)
 
+* [2025-11-05 16:41 UTC] RunPod GPU validation 20251105_155927 (2x L4): GPU-05/06 SIGABRT; patched `scripts/run_gpu_validation.py` with NCCL env fallbacks, deterministic seeding, and mp.spawn error guards.
 * [2025-11-05 13:08 UTC] GPU validation 20251105_130530 (2x L40S, torch 2.8.0+cu128): GPU-01..08 ok; GPU-05/06 DDP+FSDP losses 3.999884, checkpoint at `reports/gpu/20251105_130530`.
 * [2025-11-05 00:33 UTC] CUDA suite 20251105_002930: 170 passed, 1 skipped; green. L40S; torch 2.9.0+cu128; artifacts at `reports/tests/20251105_002930`.
 * [2025-11-05 00:24 UTC] CUDA test suite 20251105_001704: 170 tests, 3 failures (json import), 1 skipped; L40S; torch 2.9.0+cu128; artifacts at `reports/tests/20251105_001704`.
