@@ -349,7 +349,8 @@ class ResidualPSANNConvBlock2d(nn.Module):
         _init_siren_conv_(self.conv1, is_first=False, w0=w0_hidden)
         _init_siren_conv_(self.conv2, is_first=False, w0=w0_hidden)
         self.drop_path = _DropPath(drop_path)
-        self.alpha = nn.Parameter(torch.zeros(()) + float(residual_alpha_init))
+        # Keep residual scale as 1D tensor for FSDP compatibility
+        self.alpha = nn.Parameter(torch.full((1,), float(residual_alpha_init)))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h = self.norm(x)

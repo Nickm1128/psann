@@ -16,13 +16,14 @@
 ## Progress Tracker (Codex MUST keep updated)
 
 * **Tasks complete:** `66 / 84` - `78.57%`
-* **Last edit (UTC):** `2025-11-05 17:28`
+* **Last edit (UTC):** `2025-11-05 20:35`
 * **Editor:** `Codex`
-* **Session Notes Summary (1-3 bullet points MAX):**
-
-  * GPU validation `20251105_172515` (2x RTX 4090, torch 2.8.0+cu128) green on GPU-01..08; GPU-05 parity ok, GPU-06 rel_diff=0.045 pending seed fix; report at `reports/gpu/20251105_172515`.
-  * Added manual seeding to GPU-06 single-GPU baseline so it matches FSDP worker init; expect loss parity on next run.
-  * Next: rerun GPU validation on the same pod to confirm GPU-06 rel_diff trends to ~0 and capture any residual NCCL logs.
+* **Session Notes Summary (1-3 bullet points MAX):**
+
+  * Residual scaling params in `psann.nn`, `psann.conv`, and `psann.layers.sine_residual` are now 1D tensors so FSDP no longer chokes on scalars.
+  * GPU validation + DDP baseline remain blocked (no accelerator access); left GPU-05/06 items untouched for later.
+  * CPU pytest slice (`tests/test_psann_nn.py`, `tests/test_conv_nets.py`) passes locally (18 tests) covering the updated paths.
+
 > **Codex:**
 >
 > * On every save, recompute the completed/total counts from all checkboxes in this file and update the percentage.
@@ -323,6 +324,8 @@ train:
 
 ## Session History (latest at top)
 
+* [2025-11-05 20:35 UTC] Residual alpha params converted to 1D for FSDP; GPU validation/DDP left pending until hardware is available; pytest slice (psann_nn + conv_nets) green.
+* [2025-11-05 17:46 UTC] GPU validation 20251105_174654 (2x RTX 4090): GPU-05/06 rel_diff=0; GPU-03 throughput dip noted.
 * [2025-11-05 17:28 UTC] GPU validation 20251105_172515 (2x RTX 4090): GPU-05 parity ok; GPU-06 rel_diff=0.045 pending seed fix; TODO updated.
 * [2025-11-05 16:41 UTC] RunPod GPU validation 20251105_155927 (2x L4): GPU-05/06 SIGABRT; patched `scripts/run_gpu_validation.py` with NCCL env fallbacks, deterministic seeding, and mp.spawn error guards.
 * [2025-11-05 13:08 UTC] GPU validation 20251105_130530 (2x L40S, torch 2.8.0+cu128): GPU-01..08 ok; GPU-05/06 DDP+FSDP losses 3.999884, checkpoint at `reports/gpu/20251105_130530`.

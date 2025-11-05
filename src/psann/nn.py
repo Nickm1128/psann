@@ -82,7 +82,8 @@ class ResidualPSANNBlock(nn.Module):
         init_siren_linear_(self.fc1, is_first=False, w0=w0_hidden)
         init_siren_linear_(self.fc2, is_first=False, w0=w0_hidden)
         self.drop_path = DropPath(drop_path)
-        self.alpha = nn.Parameter(torch.zeros(()) + float(residual_alpha_init))
+        # FSDP requires parameters to have at least 1 dimension; keep numel=1
+        self.alpha = nn.Parameter(torch.full((1,), float(residual_alpha_init)))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         h = self.norm(x)

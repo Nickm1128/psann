@@ -90,7 +90,8 @@ class SineResidualBlock(nn.Module):
         else:
             self.skip = None
 
-        self.residual_alpha = nn.Parameter(torch.zeros(()) + float(residual_alpha_init))
+        # Store as 1D tensor (numel=1) so sharding/FSDP can handle parameter
+        self.residual_alpha = nn.Parameter(torch.full((1,), float(residual_alpha_init)))
 
     def forward(self, x: torch.Tensor, c: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Forward pass.
