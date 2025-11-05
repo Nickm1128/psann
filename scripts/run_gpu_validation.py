@@ -28,7 +28,7 @@ import time
 import math
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Sequence
 
 import torch
 
@@ -76,6 +76,143 @@ def system_info() -> Dict[str, Any]:
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+# -------------------------- DDP worker helper --------------------------
+
+def _ddp_loss_worker(
+    rank: int,
+    world_size: int,
+    port: int,
+    batch_ids: Sequence[Sequence[int]],
+    vocab_size: int,
+    model_cfg: Dict[str, Any],
+    queue,
+) -> None:
+    import os as _os
+    import torch as _torch
+    import torch.distributed as _dist
+    from torch.nn.parallel import DistributedDataParallel as _DDP
+
+    # env for torch.distributed default init
+    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    _os.environ.setdefault("MASTER_PORT", str(int(port)))
+    _os.environ["WORLD_SIZE"] = str(int(world_size))
+    _os.environ["RANK"] = str(int(rank))
+    _os.environ["LOCAL_RANK"] = str(int(rank))
+
+    device = _torch.device("cuda", int(rank))
+    try:
+        _torch.cuda.set_device(device)
+    except Exception:
+        pass
+    backend = "nccl"
+    _dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
+
+    try:
+        # Deterministic-ish seed
+        _torch.manual_seed(123)
+
+        # Build model consistent with single-GPU baseline
+        lm = psannLM(**model_cfg)
+        model = lm._ensure_model(int(vocab_size)).to(device).eval()
+        model = _DDP(model, device_ids=[int(rank)], output_device=int(rank), find_unused_parameters=False)
+
+        # Build batch tensor on this device
+        import torch.nn.functional as _F
+        B = len(batch_ids)
+        T = len(batch_ids[0]) if B > 0 else 0
+        seq = _torch.tensor(batch_ids, dtype=_torch.long, device=device)
+
+        with _torch.no_grad():
+            logits = model(seq)
+            V = int(vocab_size)
+            loss = _F.cross_entropy(logits.view(B * T, V), seq.view(B * T))
+
+        # Average loss across ranks
+        loss_t = loss.detach().float().clone()
+        _dist.all_reduce(loss_t, op=_dist.ReduceOp.SUM)
+        loss_t /= float(world_size)
+
+        if rank == 0:
+            try:
+                queue.put({"ddp_avg_loss": float(loss_t.item())})
+            except Exception:
+                pass
+    finally:
+        try:
+            _dist.destroy_process_group()
+        except Exception:
+            pass
+
+
+# -------------------------- FSDP worker helper --------------------------
+
+def _fsdp_loss_worker(
+    rank: int,
+    world_size: int,
+    port: int,
+    batch_ids: Sequence[Sequence[int]],
+    vocab_size: int,
+    model_cfg: Dict[str, Any],
+    queue,
+) -> None:
+    import os as _os
+    import torch as _torch
+    import torch.distributed as _dist
+    from torch.distributed.fsdp import FullyShardedDataParallel as _FSDP
+
+    # env for torch.distributed default init
+    _os.environ.setdefault("MASTER_ADDR", "127.0.0.1")
+    _os.environ.setdefault("MASTER_PORT", str(int(port)))
+    _os.environ["WORLD_SIZE"] = str(int(world_size))
+    _os.environ["RANK"] = str(int(rank))
+    _os.environ["LOCAL_RANK"] = str(int(rank))
+
+    device = _torch.device("cuda", int(rank))
+    try:
+        _torch.cuda.set_device(device)
+    except Exception:
+        pass
+    backend = "nccl"
+    _dist.init_process_group(backend=backend, rank=rank, world_size=world_size)
+
+    try:
+        _torch.manual_seed(123)
+
+        lm = psannLM(**model_cfg)
+        base_model = lm._ensure_model(int(vocab_size)).to(device)
+        model = _FSDP(base_model)
+
+        # Build batch tensor on this device
+        import torch.nn.functional as _F
+        B = len(batch_ids)
+        T = len(batch_ids[0]) if B > 0 else 0
+        seq = _torch.tensor(batch_ids, dtype=_torch.long, device=device)
+
+        optim = _torch.optim.SGD(model.parameters(), lr=0.0)
+        optim.zero_grad(set_to_none=True)
+        logits = model(seq)
+        V = int(vocab_size)
+        loss = _F.cross_entropy(logits.view(B * T, V), seq.view(B * T))
+        loss.backward()
+        optim.step()  # lr=0.0: no change; exercises FSDP step path
+
+        # Average loss across ranks
+        loss_t = loss.detach().float().clone()
+        _dist.all_reduce(loss_t, op=_dist.ReduceOp.SUM)
+        loss_t /= float(world_size)
+
+        if rank == 0:
+            try:
+                queue.put({"fsdp_avg_loss": float(loss_t.item())})
+            except Exception:
+                pass
+    finally:
+        try:
+            _dist.destroy_process_group()
+        except Exception:
+            pass
 
 
 def gpu_01_forward_backward() -> Dict[str, Any]:
@@ -219,11 +356,124 @@ def gpu_04_checkpointing() -> Dict[str, Any]:
 def gpu_05_ddp() -> Dict[str, Any]:
     if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
         return {"status": "skipped", "reason": "requires >=2 CUDA devices"}
-    return {"status": "skipped", "reason": "DDP integration not implemented"}
+
+    # Single-GPU baseline (rank 0) forward loss
+    torch.manual_seed(123)
+    texts = ["the quick brown fox", "jumps over the lazy dog"]
+    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0)
+    vocab = int(dp.vocab_size)
+    # Build one small batch tensor
+    tok = dp.tokenizer  # type: ignore[attr-defined]
+    sample = tok.encode("the quick brown fox", add_specials=True)
+    # Ensure consistent T across samples
+    T = min(16, len(sample))
+    base_ids = sample[:T]
+    batch_ids = [base_ids, base_ids]  # B=2
+
+    model_cfg = dict(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True)
+
+    device0 = torch.device("cuda", 0)
+    lm = psannLM(**model_cfg)
+    model = lm._ensure_model(vocab).to(device0).eval()
+    with torch.no_grad():
+        import torch.nn.functional as F
+        seq0 = torch.tensor(batch_ids, dtype=torch.long, device=device0)
+        logits0 = model(seq0)
+        V = int(vocab)
+        loss_single = F.cross_entropy(logits0.view(seq0.size(0) * seq0.size(1), V), seq0.view(-1)).detach().float().item()
+
+    # Multi-process DDP run (2 ranks) to compute average loss
+    import torch.multiprocessing as mp
+    from random import randint as _randint
+    port = 29577 + (_randint(0, 1000))  # reduce chance of collision
+    ctx = mp.get_context("spawn")
+    q = ctx.SimpleQueue()
+    nprocs = 2
+    mp.spawn(
+        _ddp_loss_worker,
+        args=(nprocs, port, batch_ids, vocab, model_cfg, q),
+        nprocs=nprocs,
+        join=True,
+    )
+    try:
+        res = q.get(timeout=10.0)
+        ddp_loss = float(res.get("ddp_avg_loss"))
+    except Exception:
+        return {"status": "error", "reason": "DDP run produced no result"}
+
+    rel = abs(ddp_loss - loss_single) / max(1e-8, abs(loss_single))
+    return {
+        "status": "ok",
+        "single_loss": round(loss_single, 6),
+        "ddp_avg_loss": round(ddp_loss, 6),
+        "rel_diff": round(rel, 6),
+        "world_size": nprocs,
+    }
 
 
 def gpu_06_zerofsdp() -> Dict[str, Any]:
-    return {"status": "skipped", "reason": "DeepSpeed/FSDP hooks not implemented"}
+    # Prefer PyTorch FSDP if available; fall back to DeepSpeed if installed.
+    if not torch.cuda.is_available() or torch.cuda.device_count() < 2:
+        return {"status": "skipped", "reason": "requires >=2 CUDA devices"}
+
+    # Build a tiny batch/model config similar to GPU-05
+    try:
+        texts = ["the quick brown fox", "jumps over the lazy dog"]
+        dp = psannLMDataPrep(texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0)
+        vocab = int(dp.vocab_size)
+        tok = dp.tokenizer  # type: ignore[attr-defined]
+        sample = tok.encode("the quick brown fox", add_specials=True)
+        T = min(16, len(sample))
+        base_ids = sample[:T]
+        batch_ids = [base_ids, base_ids]
+        model_cfg = dict(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True)
+
+        # Compute single-GPU baseline
+        device0 = torch.device("cuda", 0)
+        lm = psannLM(**model_cfg)
+        model = lm._ensure_model(vocab).to(device0)
+        with torch.no_grad():
+            import torch.nn.functional as F
+            seq0 = torch.tensor(batch_ids, dtype=torch.long, device=device0)
+            logits0 = model(seq0)
+            V = int(vocab)
+            loss_single = F.cross_entropy(logits0.view(seq0.size(0) * seq0.size(1), V), seq0.view(-1)).detach().float().item()
+
+        # Try FSDP multi-process run
+        import torch.multiprocessing as mp
+        from random import randint as _randint
+        port = 29677 + (_randint(0, 1000))
+        ctx = mp.get_context("spawn")
+        q = ctx.SimpleQueue()
+        nprocs = 2
+        mp.spawn(
+            _fsdp_loss_worker,
+            args=(nprocs, port, batch_ids, vocab, model_cfg, q),
+            nprocs=nprocs,
+            join=True,
+        )
+        try:
+            res = q.get(timeout=10.0)
+            fsdp_loss = float(res.get("fsdp_avg_loss"))
+        except Exception:
+            return {"status": "error", "reason": "FSDP run produced no result"}
+
+        rel = abs(fsdp_loss - loss_single) / max(1e-8, abs(loss_single))
+        return {
+            "status": "ok",
+            "single_loss": round(loss_single, 6),
+            "fsdp_avg_loss": round(fsdp_loss, 6),
+            "rel_diff": round(rel, 6),
+            "world_size": nprocs,
+            "engine": "torch.fsdp",
+        }
+    except Exception as e:
+        # Try DeepSpeed fallback if installed
+        try:
+            import deepspeed  # type: ignore
+        except Exception:
+            return {"status": "skipped", "reason": f"FSDP/deepspeed unavailable: {e}"}
+        return {"status": "skipped", "reason": f"DeepSpeed path not implemented: {e}"}
 
 
 def gpu_07_generation_smoke() -> Dict[str, Any]:

@@ -15,11 +15,18 @@
 
 ## Progress Tracker (Codex MUST keep updated)
 
-* **Tasks complete:** `65 / 80` - `81.25%`
-* **Last edit (UTC):** `2025-11-05 00:24`
+* **Tasks complete:** `66 / 84` - `78.57%`
+* **Last edit (UTC):** `2025-11-05 12:37`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
 
+  * Implemented AMP (bf16/fp16) and DDP in Trainer with no_sync + DistributedSampler; rank-aware logging/checkpointing.
+  * Wired GPU-05 DDP and GPU-06 FSDP checks into `scripts/run_gpu_validation.py`; ready to run both on pod.
+  * Next: run `python scripts/run_gpu_validation.py --out reports/gpu` and review GPU-05/06 results (expect ok/skipped if <2 GPUs).
+
+  * CUDA test suite 20251105_002930: 170 tests, 0 failures, 1 skipped; green.
+  * Pod env: torch 2.9.0+cu128, 1× L40S (bf16 supported); artifacts at `reports/tests/20251105_002930`.
+  * GPU tests passing; proceed to GPU validation (GPU-04 metrics) and DDP bring-up.
   * CUDA test suite 20251105_001704: 170 tests, 3 failures, 1 skipped; root cause NameError: missing `json` import in GPU tests; fix committed.
   * Pod env: torch 2.9.0+cu128, 1× L40S (bf16 supported); artifacts at `reports/tests/20251105_001704`.
   * Next: pull fix and re-run `python scripts/run_cuda_tests.py --out reports/tests`; expect GPU tests green.
@@ -142,7 +149,7 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### Immediate Next Steps
 
-- [ ] Pull latest and re-run full CUDA suite: `python scripts/run_cuda_tests.py --out reports/tests`; push the new `reports/tests/<timestamp>`.
+- [x] Full CUDA suite green (`reports/tests/20251105_002930`); push artifacts.
 - [ ] Run GPU validation for GC metrics: `python scripts/run_gpu_validation.py --out reports/gpu`; inspect GPU-04 elapsed/memory and push `reports/gpu/<timestamp>`.
 - [ ] (Optional) Install `pytest-json-report` in the pod to produce `pytest_report.json` alongside `junit.xml`.
 - [ ] Begin DDP baseline (GPU-05): initialize process group/torchrun, DistributedSampler, grad sync, per-rank seeding; add skip-if-<2 GPUs in tests/runner.
@@ -327,6 +334,7 @@ train:
 
 ## Session History (latest at top)
 
+* [2025-11-05 00:33 UTC] CUDA suite 20251105_002930: 170 passed, 1 skipped; green. L40S; torch 2.9.0+cu128; artifacts at `reports/tests/20251105_002930`.
 * [2025-11-05 00:24 UTC] CUDA test suite 20251105_001704: 170 tests, 3 failures (json import), 1 skipped; L40S; torch 2.9.0+cu128; artifacts at `reports/tests/20251105_001704`.
 
 * [2025-11-04 23:47 UTC] GPU smoke 20251104T234003Z: 5/5 passed; torch 2.9.0+cu128; 1 GPU; AMP fp16/bf16 OK; artifacts at `outputs/gpu_tests/20251104T234003Z`.
