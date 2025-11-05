@@ -183,7 +183,11 @@ def _fsdp_loss_worker(
 
         lm = psannLM(**model_cfg)
         base_model = lm._ensure_model(int(vocab_size)).to(device)
+        # Match evaluation mode with single-GPU baseline to avoid dropout-induced deltas
+        base_model.eval()
         model = _FSDP(base_model)
+        # Ensure wrapper reflects eval state
+        model.eval()
 
         # Build batch tensor on this device
         import torch.nn.functional as _F
@@ -434,7 +438,7 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
         # Compute single-GPU baseline
         device0 = torch.device("cuda", 0)
         lm = psannLM(**model_cfg)
-        model = lm._ensure_model(vocab).to(device0)
+        model = lm._ensure_model(vocab).to(device0).eval()
         with torch.no_grad():
             import torch.nn.functional as F
             seq0 = torch.tensor(batch_ids, dtype=torch.long, device=device0)

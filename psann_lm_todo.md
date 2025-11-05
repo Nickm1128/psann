@@ -16,24 +16,13 @@
 ## Progress Tracker (Codex MUST keep updated)
 
 * **Tasks complete:** `66 / 84` - `78.57%`
-* **Last edit (UTC):** `2025-11-05 12:56`
+* **Last edit (UTC):** `2025-11-05 13:08`
 * **Editor:** `Codex`
-* **Session Notes Summary (1-3 bullet points MAX):**
-
-  * ResPSANN/WaveResNet residual scalars now 1D tensors so FSDP can shard without errors.
-  * GPU-05/06 runners now share results via Manager dicts and propagate worker errors for easier debugging.
-  * Next on pod: pull latest, re-run `python scripts/run_gpu_validation.py --out reports/gpu` on 2 GPUs; expect GPU-05/06 OK.
-
-  * CUDA test suite 20251105_002930: 170 tests, 0 failures, 1 skipped; green.
-  * Pod env: torch 2.9.0+cu128, 1× L40S (bf16 supported); artifacts at `reports/tests/20251105_002930`.
-  * GPU tests passing; proceed to GPU validation (GPU-04 metrics) and DDP bring-up.
-  * CUDA test suite 20251105_001704: 170 tests, 3 failures, 1 skipped; root cause NameError: missing `json` import in GPU tests; fix committed.
-  * Pod env: torch 2.9.0+cu128, 1× L40S (bf16 supported); artifacts at `reports/tests/20251105_001704`.
-  * Next: pull fix and re-run `python scripts/run_cuda_tests.py --out reports/tests`; expect GPU tests green.
-  * GPU smoke 20251104T234003Z: 5/5 tests passed (CUDA + AMP fp16/bf16); matmul parity OK.
-  * Throughput ≈225k tok/s; AMP bf16 rel_diff≈0.00124; save/load deterministic.
-  * Torch 2.9.0+cu128; 1 GPU visible; artifacts at `outputs/gpu_tests/20251104T234003Z`.
-
+* **Session Notes Summary (1-3 bullet points MAX):**
+
+  * GPU validation `20251105_130530` (2x L40S, torch 2.8.0+cu128) green end-to-end; GPU-05/06 DDP+FSDP losses 3.999884 with rel_diff~=0.045 vs. single GPU.
+  * Pod env: Python 3.12.3, bf16 supported; checkpoint at `reports/gpu/20251105_130530/checkpoints/lm.pt`.
+  * Next: dig into FSDP loss delta tolerance vs. config tweaks, then proceed to DDP training baseline + perf doc.
 > **Codex:**
 >
 > * On every save, recompute the completed/total counts from all checkboxes in this file and update the percentage.
@@ -334,6 +323,7 @@ train:
 
 ## Session History (latest at top)
 
+* [2025-11-05 13:08 UTC] GPU validation 20251105_130530 (2x L40S, torch 2.8.0+cu128): GPU-01..08 ok; GPU-05/06 DDP+FSDP losses 3.999884, checkpoint at `reports/gpu/20251105_130530`.
 * [2025-11-05 00:33 UTC] CUDA suite 20251105_002930: 170 passed, 1 skipped; green. L40S; torch 2.9.0+cu128; artifacts at `reports/tests/20251105_002930`.
 * [2025-11-05 00:24 UTC] CUDA test suite 20251105_001704: 170 tests, 3 failures (json import), 1 skipped; L40S; torch 2.9.0+cu128; artifacts at `reports/tests/20251105_001704`.
 
