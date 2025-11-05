@@ -1,0 +1,43 @@
+{
+  "results": {
+    "GPU-03": {
+      "respsann": {
+        "elapsed_s": 0.0698,
+        "tokens": 20480,
+        "tokens_per_s": 293354.05
+      },
+      "status": "ok",
+      "waveresnet": {
+        "elapsed_s": 0.0702,
+        "tokens": 20480,
+        "tokens_per_s": 291800.47
+      }
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 2,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA L40S",
+        "total_memory_gb": 44.52
+      },
+      {
+        "index": 1,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA L40S",
+        "total_memory_gb": 44.52
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251105_221652"
+}
