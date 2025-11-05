@@ -1,0 +1,85 @@
+{
+  "results": {
+    "GPU-01": {
+      "elapsed_s": 1.8618,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 24
+    },
+    "GPU-02": {
+      "amp_dtype": "torch.bfloat16",
+      "amp_loss": 4.288462,
+      "fp32_loss": 4.283069,
+      "rel_diff": 0.001259,
+      "status": "ok"
+    },
+    "GPU-03": {
+      "respsann": {
+        "elapsed_s": 0.0908,
+        "tokens": 20480,
+        "tokens_per_s": 225590.82
+      },
+      "status": "ok",
+      "waveresnet": {
+        "elapsed_s": 0.0919,
+        "tokens": 20480,
+        "tokens_per_s": 222812.51
+      }
+    },
+    "GPU-04": {
+      "elapsed_s": 0.2455,
+      "grad_checkpoint": true,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 31
+    },
+    "GPU-05": {
+      "reason": "requires >=2 CUDA devices",
+      "status": "skipped"
+    },
+    "GPU-06": {
+      "reason": "requires >=2 CUDA devices",
+      "status": "skipped"
+    },
+    "GPU-07": {
+      "length": 17,
+      "sample": "cnxng?cx?ujnt?afl",
+      "status": "ok"
+    },
+    "GPU-08": {
+      "ckpt_path": "/workspace/psann/reports/gpu/20251105_124316/checkpoints/lm.pt",
+      "gen_equal": true,
+      "params_equal": true,
+      "status": "ok"
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 1,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA L40S",
+        "total_memory_gb": 44.4
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251105_124316"
+}
