@@ -1,4 +1,4 @@
-"""Command-line interface for PSANN-LM training.
+﻿"""Command-line interface for PSANN-LM training.
 
 Loads a YAML config and runs training with periodic checkpointing.
 """
@@ -50,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI wiring
             elif isinstance(ent, str):
                 sources.append(ent)
     texts = _load_texts(sources)
+    if not texts:
+        raise SystemExit(
+            "No training texts were loaded. Ensure data.sources paths exist and contain text.\n"
+            "For the tiny-corpus benchmark, create datasets/lm/tiny_books.txt (~50MB, one paragraph per line)."
+        )
     dp = psannLMDataPrep(
         texts,
         tokenizer=str(data_cfg.get("tokenizer", "auto")),
@@ -62,13 +67,15 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI wiring
 
     # Build model
     sp = model_cfg.get("sine_params", {}) or {}
+    _vocab = model_cfg.get("vocab_size", None)
+    vocab_size = dp.vocab_size if _vocab is None else int(_vocab)
     model = psannLM(
         base=str(model_cfg.get("base", "waveresnet")),
         d_model=int(model_cfg.get("d_model", 512)),
         n_layers=int(model_cfg.get("n_layers", 8)),
         n_heads=int(model_cfg.get("n_heads", 8)),
         d_mlp=int(model_cfg.get("d_mlp", 2048)),
-        vocab_size=int(model_cfg.get("vocab_size", dp.vocab_size)),
+        vocab_size=vocab_size,
         sine_params=dict(
             amp_init=float(sp.get("amp_init", 1.0)),
             freq_init=float(sp.get("freq_init", 1.0)),

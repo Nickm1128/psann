@@ -1,8 +1,8 @@
-"""Tokenizer plugin interface for PSANN-LM.
+﻿"""Tokenizer plugin interface for PSANN-LM.
 
 Provides a small, dependency-free "simple" backend (char-level) as a
 default when `backend="auto"`. Later, adapters for `sentencepiece` and
-`tokenizers` can be added while keeping the same façade.
+`tokenizers` can be added while keeping the same faÃ§ade.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ class SimpleCharTokenizer:
 
 
 class Tokenizer:
-    """Tokenizer façade with pluggable backends.
+    """Tokenizer faÃ§ade with pluggable backends.
 
     Backends:
       - "simple" (default for "auto"): small char-level tokenizer
@@ -221,7 +221,7 @@ def _make_sentencepiece_tokenizer(cfg: TokenizerConfig):
             mp.close()
 
             try:
-                spm.SentencePieceTrainer.Train(
+                sp_args = dict(
                     input=corpus_path,
                     model_prefix=model_prefix,
                     vocab_size=int(self.cfg.vocab_size),
@@ -232,9 +232,12 @@ def _make_sentencepiece_tokenizer(cfg: TokenizerConfig):
                     unk_id=self.UNK,
                     pad_id=self.PAD,
                     hard_vocab_limit=False,
-                    input_sentence_size=int(self.cfg.sp_input_sentence_size) if int(self.cfg.sp_input_sentence_size) > 0 else None,
                     shuffle_input_sentence=bool(self.cfg.sp_shuffle_input_sentence),
                 )
+                iss = int(self.cfg.sp_input_sentence_size)
+                if iss > 0:
+                    sp_args["input_sentence_size"] = iss
+                spm.SentencePieceTrainer.Train(**sp_args)
                 model_path = model_prefix + ".model"
                 sp = spm.SentencePieceProcessor()
                 sp.load(model_path)
@@ -407,3 +410,5 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
             return tk.decode(out_ids)
 
     return HFTokenizersWrapper(cfg)
+
+
