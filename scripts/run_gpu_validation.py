@@ -87,7 +87,7 @@ def _ddp_loss_worker(
     batch_ids: Sequence[Sequence[int]],
     vocab_size: int,
     model_cfg: Dict[str, Any],
-    queue,
+    shared,
 ) -> None:
     import os as _os
     import torch as _torch
@@ -135,10 +135,11 @@ def _ddp_loss_worker(
         loss_t /= float(world_size)
 
         if rank == 0:
-            try:
-                queue.put({"ddp_avg_loss": float(loss_t.item())})
-            except Exception:
-                pass
+            shared["ddp_avg_loss"] = float(loss_t.item())
+    except Exception as exc:
+        if rank == 0:
+            shared["error"] = f"DDP worker error: {exc}"
+        raise
     finally:
         try:
             _dist.destroy_process_group()
@@ -155,7 +156,7 @@ def _fsdp_loss_worker(
     batch_ids: Sequence[Sequence[int]],
     vocab_size: int,
     model_cfg: Dict[str, Any],
-    queue,
+    shared,
 ) -> None:
     import os as _os
     import torch as _torch
@@ -204,10 +205,11 @@ def _fsdp_loss_worker(
         loss_t /= float(world_size)
 
         if rank == 0:
-            try:
-                queue.put({"fsdp_avg_loss": float(loss_t.item())})
-            except Exception:
-                pass
+            shared["fsdp_avg_loss"] = float(loss_t.item())
+    except Exception as exc:
+        if rank == 0:
+            shared["error"] = f"FSDP worker error: {exc}"
+        raise
     finally:
         try:
             _dist.destroy_process_group()
@@ -387,18 +389,19 @@ def gpu_05_ddp() -> Dict[str, Any]:
     from random import randint as _randint
     port = 29577 + (_randint(0, 1000))  # reduce chance of collision
     ctx = mp.get_context("spawn")
-    q = ctx.SimpleQueue()
+    manager = mp.Manager()
+    shared = manager.dict()
     nprocs = 2
     mp.spawn(
         _ddp_loss_worker,
-        args=(nprocs, port, batch_ids, vocab, model_cfg, q),
+        args=(nprocs, port, batch_ids, vocab, model_cfg, shared),
         nprocs=nprocs,
         join=True,
     )
-    try:
-        res = q.get(timeout=10.0)
-        ddp_loss = float(res.get("ddp_avg_loss"))
-    except Exception:
+    if "error" in shared:
+        return {"status": "error", "reason": str(shared["error"])}
+    ddp_loss = shared.get("ddp_avg_loss")
+    if ddp_loss is None:
         return {"status": "error", "reason": "DDP run produced no result"}
 
     rel = abs(ddp_loss - loss_single) / max(1e-8, abs(loss_single))
@@ -444,18 +447,19 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
         from random import randint as _randint
         port = 29677 + (_randint(0, 1000))
         ctx = mp.get_context("spawn")
-        q = ctx.SimpleQueue()
+        manager = mp.Manager()
+        shared = manager.dict()
         nprocs = 2
         mp.spawn(
             _fsdp_loss_worker,
-            args=(nprocs, port, batch_ids, vocab, model_cfg, q),
+            args=(nprocs, port, batch_ids, vocab, model_cfg, shared),
             nprocs=nprocs,
             join=True,
         )
-        try:
-            res = q.get(timeout=10.0)
-            fsdp_loss = float(res.get("fsdp_avg_loss"))
-        except Exception:
+        if "error" in shared:
+            return {"status": "error", "reason": str(shared["error"])}
+        fsdp_loss = shared.get("fsdp_avg_loss")
+        if fsdp_loss is None:
             return {"status": "error", "reason": "FSDP run produced no result"}
 
         rel = abs(fsdp_loss - loss_single) / max(1e-8, abs(loss_single))

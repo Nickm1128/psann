@@ -188,8 +188,8 @@ class TransformerBlock(nn.Module):
         self.attn = SelfAttention(d_model, n_heads, dropout=dropout, rope=rope)
         self.mlp = PSANNMLP(d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout)
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
-        # Optional residual scaling (learnable), default 1.0 to preserve behavior
-        self.alpha = nn.Parameter(torch.tensor(1.0))
+        # Optional residual scaling (learnable), default 1.0 (shape 1 for FSDP)
+        self.alpha = nn.Parameter(torch.ones(1))
         if norm == "rms":
             self.norm1 = RMSNorm(d_model)
             self.norm2 = RMSNorm(d_model)
