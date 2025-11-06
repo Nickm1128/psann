@@ -277,9 +277,9 @@ def gpu_02_amp_parity() -> Dict[str, Any]:
 
     # AMP (prefer bf16 if supported)
     amp_dtype = torch.bfloat16 if getattr(torch.cuda, "is_bf16_supported", lambda: False)() else torch.float16
-    scaler = torch.cuda.amp.GradScaler(enabled=True)
+    scaler = torch.amp.GradScaler("cuda", enabled=True)
     model.zero_grad(set_to_none=True)
-    with torch.cuda.amp.autocast(dtype=amp_dtype):
+    with torch.amp.autocast("cuda", dtype=amp_dtype):
         logits_amp = model(seq)
         loss_amp = criterion(logits_amp.view(B * T, V), seq.view(B * T))
     scaler.scale(loss_amp).backward()
@@ -302,12 +302,36 @@ def gpu_03_throughput() -> Dict[str, Any]:
     if device.type != "cuda":
         return {"status": "skipped", "reason": "cuda not available"}
 
+    def _choose_dims(target_tokens: int) -> tuple[int, int]:
+        max_t = max(64, int(os.environ.get("PSANN_GPU03_MAX_T", "4096")))
+        max_b = max(1, int(os.environ.get("PSANN_GPU03_MAX_B", "64")))
+        # start with as many tokens per sequence as allowed, then scale batch size
+        T = min(max_t, max(64, target_tokens))
+        B = max(1, math.ceil(target_tokens / T))
+        if B > max_b:
+            B = max_b
+            T = max(64, math.ceil(target_tokens / B))
+            if T > max_t:
+                T = max_t
+                B = max(1, math.ceil(target_tokens / T))
+        return B, T
+
     def bench(base: str) -> Dict[str, Any]:
         # Allow simple environment overrides for sweeps
         vocab = int(os.environ.get("PSANN_GPU03_VOCAB", "32000"))
-        T = int(os.environ.get("PSANN_GPU03_T", "256"))
-        B = int(os.environ.get("PSANN_GPU03_B", "4"))
         steps = int(os.environ.get("PSANN_GPU03_STEPS", "20"))
+        target_tokens_env = os.environ.get("PSANN_GPU03_BATCH_TOKENS")
+        if target_tokens_env:
+            target_tokens = max(1, int(target_tokens_env))
+            if "PSANN_GPU03_B" in os.environ or "PSANN_GPU03_T" in os.environ:
+                B = max(1, int(os.environ.get("PSANN_GPU03_B", "4")))
+                T = max(1, int(os.environ.get("PSANN_GPU03_T", str(max(1, target_tokens // B)))))
+            else:
+                B, T = _choose_dims(target_tokens)
+        else:
+            T = max(1, int(os.environ.get("PSANN_GPU03_T", "256")))
+            B = max(1, int(os.environ.get("PSANN_GPU03_B", "4")))
+            target_tokens = B * T
         lm = psannLM(base=base, d_model=256, n_layers=4, n_heads=4, vocab_size=vocab, rope=True)
         model = lm._ensure_model(vocab).to(device).eval()
         torch.cuda.synchronize()
@@ -327,6 +351,7 @@ def gpu_03_throughput() -> Dict[str, Any]:
         return {
             "B": B,
             "T": T,
+            "batch_tokens": B * T,
             "steps": steps,
             "tokens": tokens,
             "elapsed_s": round(dt, 4),

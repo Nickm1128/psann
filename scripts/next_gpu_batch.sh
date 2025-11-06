@@ -23,11 +23,10 @@ python scripts/run_gpu_validation.py --out "${OUT_DIR}"
 echo "[2/4] Throughput sweep only (GPU-03)"
 # Run GPU-03 three times with different effective batch_tokens (B*T)
 for BTOK in 65536 131072 262144; do
-  export PSANN_GPU03_B=4
-  export PSANN_GPU03_T=$(( BTOK / PSANN_GPU03_B ))
-  echo "  - GPU-03 with batch_tokens=${BTOK} (B=${PSANN_GPU03_B}, T=${PSANN_GPU03_T})"
-  python scripts/run_gpu_validation.py --out "${OUT_DIR}" --only GPU-03
+  echo "  - GPU-03 with target batch_tokens=${BTOK}"
+  PSANN_GPU03_BATCH_TOKENS=${BTOK} python scripts/run_gpu_validation.py --out "${OUT_DIR}" --only GPU-03
 done
+unset PSANN_GPU03_BATCH_TOKENS PSANN_GPU03_B PSANN_GPU03_T
 
 echo "[3/4] Checkpointing/memory step (GPU-04)"
 python scripts/run_gpu_validation.py --out "${OUT_DIR}" --only GPU-04

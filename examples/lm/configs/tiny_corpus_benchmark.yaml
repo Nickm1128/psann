@@ -31,7 +31,7 @@ train:
   amp: bf16
   grad_clip: 1.0
   grad_accum_steps: 1
-  ddp: off             # force single GPU to reduce memory
+  ddp: "off"           # force single GPU to reduce memory
   grad_checkpoint: true
   checkpoint_dir: runs/lm/bmrk_tiny
   log_interval_steps: 50

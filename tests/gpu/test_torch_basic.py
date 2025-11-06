@@ -81,7 +81,7 @@ def test_amp_fp16_matmul(cuda_available, output_dir: Path):
 
     x = torch.randn((1024, 1024), device="cuda", dtype=torch.float32)
     y = torch.randn((1024, 1024), device="cuda", dtype=torch.float32)
-    with torch.cuda.amp.autocast(dtype=torch.float16):
+    with torch.amp.autocast("cuda", dtype=torch.float16):
         z = x @ y
     assert z.is_cuda and z.shape == (1024, 1024)
     (output_dir / "test_amp_fp16_matmul.shape").write_text(json.dumps(list(z.shape)))
@@ -108,7 +108,7 @@ def test_amp_bf16_if_supported(cuda_available, output_dir: Path):
 
     x = torch.randn((256, 256), device="cuda", dtype=torch.float32)
     y = torch.randn((256, 256), device="cuda", dtype=torch.float32)
-    with torch.cuda.amp.autocast(dtype=torch.bfloat16):
+    with torch.amp.autocast("cuda", dtype=torch.bfloat16):
         z = x @ y
     assert z.is_cuda and z.shape == (256, 256)
     (output_dir / "test_amp_bf16_if_supported.shape").write_text(json.dumps(list(z.shape)))

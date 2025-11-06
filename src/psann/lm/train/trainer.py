@@ -183,7 +183,7 @@ class Trainer:
         use_cuda_amp = device.type == "cuda" and amp_mode in {"bf16", "fp16"}
         amp_dtype = torch.bfloat16 if amp_mode == "bf16" else torch.float16
         autocast_ctx = (
-            torch.cuda.amp.autocast(dtype=amp_dtype) if use_cuda_amp else nullcontext()
+            torch.amp.autocast("cuda", dtype=amp_dtype) if use_cuda_amp else nullcontext()
         )
         scaler = torch.amp.GradScaler(
             "cuda", enabled=(device.type == "cuda" and amp_mode == "fp16")
