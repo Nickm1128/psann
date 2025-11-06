@@ -1,0 +1,25 @@
+{
+  "bf16_supported": true,
+  "cuda_available": true,
+  "device_count": 2,
+  "gpus": [
+    {
+      "index": 0,
+      "major": 8,
+      "minor": 9,
+      "name": "NVIDIA GeForce RTX 4090",
+      "total_memory_gb": 23.53
+    },
+    {
+      "index": 1,
+      "major": 8,
+      "minor": 9,
+      "name": "NVIDIA GeForce RTX 4090",
+      "total_memory_gb": 23.53
+    }
+  ],
+  "platform": "linux",
+  "python": "3.12.3",
+  "torch": "2.8.0+cu128",
+  "torch_cuda_version": "12.8"
+}
