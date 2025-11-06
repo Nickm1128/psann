@@ -106,7 +106,8 @@ def _evaluate_validation(cfg: Dict[str, Any], bench_dir: Path, dp) -> Dict[str, 
     from torch.nn import functional as F
     from torch.utils.data import DataLoader
 
-    dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=lambda b: collate_batch(b, pad_id=dp.pad_id))
+    # Fixed-length examples; simple stack collation
+    dl = DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate_batch)
     total_loss = 0.0
     total_tokens = 0
     with torch.no_grad():
@@ -197,4 +198,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
