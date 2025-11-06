@@ -46,10 +46,15 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
   artifacts in `reports/benchmarks/<timestamp>/`.
 - `aggregate_benchmarks.py` - aggregates GPU validation outputs into
   `throughput.csv` and `memory.json` under a benchmark directory.
+- `finalize_bmrk01.py` - builds `metrics.json` for the tiny-corpus benchmark by
+  parsing training metrics and computing validation loss/perplexity.
 - `parse_trainer_log.py` - parses trainer stdout to `metrics.csv` and, if
   `matplotlib` is available, `loss_curve.png`.
 - `make_tiny_corpus.py` - synthesizes a ~50MB `datasets/lm/tiny_books.txt` if a
   real corpus is not available in the pod.
+- `run_bmrk01.sh` - one-shot runner for the BMRK-01 tiny-corpus benchmark. Emits
+  `metrics.csv`, `metrics.json`, and optionally `loss_curve.png` into
+  `reports/benchmarks/<timestamp>/`.
 
 ## Current Limitations
 

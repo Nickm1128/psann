@@ -62,7 +62,8 @@ This will:
 - Run throughput sweeps (GPU-03) at 65k/131k/262k tokens.
 - Run gradient-checkpointing/memory (GPU-04) and record memory stats.
 - Create a synthetic `datasets/lm/tiny_books.txt` (~50MB) if missing and run the tiny-corpus benchmark.
-- Aggregate into `reports/benchmarks/<ts>/` with `throughput.csv`, `memory.json`, and parsed `metrics.csv` (+ optional `loss_curve.png`).
+- Aggregate into `reports/benchmarks/<ts>/` with `throughput.csv`, `memory.json`, parsed `metrics.csv` and `metrics.json`.
+- If `matplotlib` is installed (e.g., `pip install .[viz]`), a `loss_curve.png` will also be emitted.
 
 Configuration
 -------------

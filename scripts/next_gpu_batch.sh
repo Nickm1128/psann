@@ -58,4 +58,10 @@ python scripts/aggregate_benchmarks.py --gpu-reports "${OUT_DIR}" --out "${BENCH
 # Parse training log to metrics (CSV + optional plot if matplotlib available)
 python scripts/parse_trainer_log.py --log "${BENCH_DIR}/tiny_benchmark.log" --out "${BENCH_DIR}" --plot || true
 
+# Finalize BMRK-01 metrics.json (includes validation loss/perplexity)
+python scripts/finalize_bmrk01.py \
+  --config "${TINY_CONFIG}" \
+  --bench-dir "${BENCH_DIR}" \
+  --log "${BENCH_DIR}/tiny_benchmark.log" || true
+
 echo "[DONE] Commands queued; review reports under '${OUT_DIR}' and benchmark outputs under '${BENCH_OUT}'."

@@ -15,13 +15,13 @@
 
 ## Progress Tracker (Codex MUST keep updated)
 
-* **Tasks complete:** `71 / 84` - `84.52%`
-* **Last edit (UTC):** `2025-11-06 12:42`
+* **Tasks complete:** `72 / 84` - `85.71%`
+* **Last edit (UTC):** `2025-11-06 13:15`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
-  * Fixed tiny benchmark YAML so `ddp: "off"` survives YAML parsing; CLI tiny run no longer errors.
-  * Throughput sweep now auto-derives safe B/T combos per target tokens and records `batch_tokens` without OOMs.
-  * Replaced deprecated `torch.cuda.amp` calls (trainer/tests/scripts) with `torch.amp` to silence RunPod warnings.
+  * Closed BMRK-03: memory snapshot recorded at `reports/benchmarks/20251106_124936/memory.json` (GPU-04 20251106_124933).
+  * Prepped BMRK-01: synthetic 50MB corpus created; metrics.csv captured; next emit loss_curve.png + metrics.json.
+  * Throughput 65k row recorded; 131k/262k sweeps pending if we want the full grid.
 
 > **Codex:**
 >
@@ -231,10 +231,12 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 * [ ] **BMRK-01:** Tiny corpus (e.g., ~50MB) baseline: loss curve, perplexity target.
   - Plan documented in `benchmarks/lm_plan.md` (dataset: `datasets/lm/tiny_books.txt`, run `python -m psann.lm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml`, record `loss_curve.png` + `metrics.json`).
+  - Status: synthetic corpus ready at `datasets/lm/tiny_books.txt`; metrics captured at `reports/benchmarks/20251106_124936/metrics.csv`; next: emit `loss_curve.png` and `metrics.json`.
 * [ ] **BMRK-02:** Throughput table: tokens/s for base configs and batch_tokens variants.
   - Use `scripts/run_gpu_validation.py --only GPU-03 --out reports/gpu` (included in `scripts/next_gpu_batch.sh`); aggregate into `reports/benchmarks/<ts>/throughput.csv`.
-* [ ] **BMRK-03:** Memory profile snapshot under AMP + checkpointing.
+* [x] **BMRK-03:** Memory profile snapshot under AMP + checkpointing.
   - Capture `torch.cuda.max_memory_allocated()` + elapsed from GPU-04 run (also wired via `scripts/next_gpu_batch.sh`); see `benchmarks/lm_plan.md` for expected `memory.json` schema.
+  - Result: memory.json at `reports/benchmarks/20251106_124936/memory.json` (max_alloc=24.01MB, max_reserved=28.0MB).
 
 ---
 
@@ -321,6 +323,8 @@ train:
 
 ---
 
+* [2025-11-06 13:15 UTC] Closed BMRK-03; prepped BMRK-01 (tiny corpus synthesized, metrics.csv present; plot/metrics.json next).
+* [2025-11-06 13:08 UTC] GPU-04 memory (20251106_130503) OK; 65k throughput (20251106_124912) ~273.4k tok/s; full suite (20251106_124858) green.
 * [2025-11-06 12:13 UTC] CPU LM tests passed (18/18), ran minimal_train on CPU, and added CPU YAML + sample texts for local CLI run before GPU.
 
 * [2025-11-06 12:42 UTC] RunPod prep: throughput sweeps clamp B/T, AMP warnings resolved, tiny benchmark YAML fixed.
