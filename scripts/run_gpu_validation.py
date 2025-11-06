@@ -303,7 +303,11 @@ def gpu_03_throughput() -> Dict[str, Any]:
         return {"status": "skipped", "reason": "cuda not available"}
 
     def bench(base: str) -> Dict[str, Any]:
-        vocab, T, B, steps = 32000, 256, 4, 20
+        # Allow simple environment overrides for sweeps
+        vocab = int(os.environ.get("PSANN_GPU03_VOCAB", "32000"))
+        T = int(os.environ.get("PSANN_GPU03_T", "256"))
+        B = int(os.environ.get("PSANN_GPU03_B", "4"))
+        steps = int(os.environ.get("PSANN_GPU03_STEPS", "20"))
         lm = psannLM(base=base, d_model=256, n_layers=4, n_heads=4, vocab_size=vocab, rope=True)
         model = lm._ensure_model(vocab).to(device).eval()
         torch.cuda.synchronize()
@@ -321,6 +325,9 @@ def gpu_03_throughput() -> Dict[str, Any]:
         dt = time.time() - t0
         tokens = B * T * steps
         return {
+            "B": B,
+            "T": T,
+            "steps": steps,
             "tokens": tokens,
             "elapsed_s": round(dt, 4),
             "tokens_per_s": round(tokens / dt, 2),
@@ -352,14 +359,30 @@ def gpu_04_checkpointing() -> Dict[str, Any]:
     ]
     dp = psannLMDataPrep(texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0)
     lm = psannLM(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    # Reset and record CUDA memory stats for a clean measurement window
+    try:
+        torch.cuda.reset_peak_memory_stats()
+    except Exception:
+        pass
+    torch.cuda.synchronize()
     t0 = time.time()
     # Enable gradient checkpointing via Trainer config
     lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4, grad_checkpoint=True)
+    torch.cuda.synchronize()
     dt = time.time() - t0
+    # Memory snapshot
+    try:
+        max_mem_alloc = int(torch.cuda.max_memory_allocated())
+        max_mem_res = int(torch.cuda.max_memory_reserved())
+    except Exception:
+        max_mem_alloc = -1
+        max_mem_res = -1
     return {
         "status": "ok",
         "grad_checkpoint": True,
         "elapsed_s": round(dt, 4),
+        "max_memory_allocated_mb": None if max_mem_alloc < 0 else round(max_mem_alloc / (1024**2), 2),
+        "max_memory_reserved_mb": None if max_mem_res < 0 else round(max_mem_res / (1024**2), 2),
         "vocab_size": dp.vocab_size,
         "model": {
             "base": lm.base,

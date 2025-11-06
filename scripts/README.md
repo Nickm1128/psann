@@ -38,11 +38,26 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
   other ticker/date range) and writes a `date,open,close` CSV for HISSO runs.
 - `run_light_probes.py` - executes the lightweight Colab probes locally. Use
   `--results-dir` to redirect metric dumps away from the repository if desired.
+- `run_gpu_validation.py` - unified GPU validation (GPU-01..08). Writes
+  timestamped reports under `reports/gpu/`. Accepts `--only GPU-03` etc.
+- `next_gpu_batch.sh` - one-sweep batch runner for RunPod/local GPUs. Runs the
+  full validation, throughput sweeps at three batch token sizes, gradient
+  checkpoint/memory step, and a tiny-corpus training. Produces benchmark
+  artifacts in `reports/benchmarks/<timestamp>/`.
+- `aggregate_benchmarks.py` - aggregates GPU validation outputs into
+  `throughput.csv` and `memory.json` under a benchmark directory.
+- `parse_trainer_log.py` - parses trainer stdout to `metrics.csv` and, if
+  `matplotlib` is available, `loss_curve.png`.
+- `make_tiny_corpus.py` - synthesizes a ~50MB `datasets/lm/tiny_books.txt` if a
+  real corpus is not available in the pod.
 
 ## Current Limitations
 
 - GPU runs depend on local PyTorch CUDA support; the benchmarking script
   auto-skips unavailable devices.
+- The tiny-corpus benchmark uses a synthetic corpus by default if
+  `datasets/lm/tiny_books.txt` is missing. Replace with a public-domain shard
+  for meaningful perplexity numbers.
 - The portfolio dataset ships a trimmed AAPL open/close series at
   `benchmarks/hisso_portfolio_prices.csv`; point `--dataset-path` at a custom CSV
   (columns: `open,close,...`) to benchmark other assets.

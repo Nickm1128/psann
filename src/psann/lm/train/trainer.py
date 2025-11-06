@@ -185,7 +185,9 @@ class Trainer:
         autocast_ctx = (
             torch.cuda.amp.autocast(dtype=amp_dtype) if use_cuda_amp else nullcontext()
         )
-        scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda" and amp_mode == "fp16"))
+        scaler = torch.amp.GradScaler(
+            "cuda", enabled=(device.type == "cuda" and amp_mode == "fp16")
+        )
 
         micro = 0
         global_step = 0  # optimizer steps

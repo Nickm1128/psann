@@ -35,6 +35,35 @@ print(model.generate("Once upon a time", top_p=0.9, max_new_tokens=64))
 print(model.generate_batch(["hello", "goodnight"], max_new_tokens=32))
 ```
 
+Quickstart (CLI, CPU)
+---------------------
+
+Run a minimal end-to-end training on CPU with a tiny sample corpus:
+
+```
+python -m psann.lm.train.cli --config examples/lm/configs/waveresnet_cpu.yaml
+```
+
+This uses `examples/lm/sample_texts.txt` and disables AMP/DDP for a fast local sanity check.
+
+RunPod One-Sweep
+----------------
+
+After cloning on a GPU pod with CUDA-ready PyTorch installed:
+
+```
+pip install -e .[dev,lm]
+chmod +x scripts/next_gpu_batch.sh
+./scripts/next_gpu_batch.sh
+```
+
+This will:
+- Run the full GPU validation suite into `reports/gpu/<ts>/`.
+- Run throughput sweeps (GPU-03) at 65k/131k/262k tokens.
+- Run gradient-checkpointing/memory (GPU-04) and record memory stats.
+- Create a synthetic `datasets/lm/tiny_books.txt` (~50MB) if missing and run the tiny-corpus benchmark.
+- Aggregate into `reports/benchmarks/<ts>/` with `throughput.csv`, `memory.json`, and parsed `metrics.csv` (+ optional `loss_curve.png`).
+
 Configuration
 -------------
 

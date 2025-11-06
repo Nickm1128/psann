@@ -1,0 +1,10 @@
+Once upon a time there was a tiny model.
+It learned to predict the next token quite well.
+The quick brown fox jumps over the lazy dog.
+Hello world from PSANN-LM minimal example.
+Goodnight moon and hello stars shining bright.
+Transformers with sine activations can sing.
+WaveResNet paths whisper through residual lines.
+Packing sequences boosts throughput on long texts.
+Greedy sampling and top-p control generation style.
+End of sample corpus for local CPU run.

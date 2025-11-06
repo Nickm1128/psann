@@ -1,0 +1,36 @@
+model:
+  base: waveresnet
+  d_model: 256
+  n_layers: 4
+  n_heads: 4
+  d_mlp: 1024
+  vocab_size: null   # auto from DataPrep
+  rope: true
+  sine_params:
+    amp_init: 1.0
+    freq_init: 1.0
+    damp_init: 0.01
+    trainable: true
+
+data:
+  sources:
+    - path: examples/lm/sample_texts.txt
+  tokenizer: auto
+  max_length: 64
+  pack_sequences: true
+  val_split: 0.0
+  seed: 1337
+
+train:
+  epochs: 1
+  batch_tokens: 8192
+  lr: 0.001
+  warmup_steps: 0
+  weight_decay: 0.0
+  amp: null         # CPU-friendly
+  grad_clip: 1.0
+  grad_accum_steps: 1
+  ddp: "off"
+  checkpoint_dir: runs/lm/wrn_cpu_local
+  log_interval_steps: 10
+  save_interval_steps: 0

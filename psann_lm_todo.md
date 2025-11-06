@@ -1,4 +1,4 @@
-# PSANN-LM Module Plan & Working TODO
+﻿# PSANN-LM Module Plan & Working TODO
 
 > Goal: Add a production-ready language modeling module to PSANN with a clean, minimal API:
 >
@@ -16,19 +16,18 @@
 ## Progress Tracker (Codex MUST keep updated)
 
 * **Tasks complete:** `71 / 84` - `84.52%`
-* **Last edit (UTC):** `2025-11-05 21:18`
+* **Last edit (UTC):** `2025-11-06 12:13`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
-
-  * Added `--only` filtering to `scripts/run_gpu_validation.py` plus `scripts/next_gpu_batch.sh` so the next GPU window can fire the full suite + throughput/memory deltas with one command.
-  * Dropped `examples/lm/configs/tiny_corpus_benchmark.yaml` and refreshed `benchmarks/lm_plan.md`/`docs/lm.md` to reference the new script/config combo.
-  * Remaining benchmark runs are now procedural—just supply GPUs + `datasets/lm/tiny_books.txt` and execute the queued commands.
+  * Multiple GPU reports green: full runs at `reports/gpu/20251105_213736`, `_221637`, `_222307` show GPU-01..08 ok; DDP/FSDP parity (GPU-05/06) rel_diff=0 with checkpoints saved.
+  * Throughput (GPU-03) across targeted runs: ≈278–293k tok/s (best ~293k), see `20251105_213752`, `_221652`, `_222442`.
+  * Grad checkpoint (GPU-04) elapsed: ~0.057–0.067s in full runs; ~1.57–1.62s in isolated benches (`20251105_213755`, `_221656`, `_222454`).
 
 > **Codex:**
 >
 > * On every save, recompute the completed/total counts from all checkboxes in this file and update the percentage.
-> * Update the timestamp and append 1–3 bullets to Session Notes Summary.
-> * Do not remove historical notes; keep only the latest summary here and move older summaries to the “Session History” section.
+> * Update the timestamp and append 1â€“3 bullets to Session Notes Summary.
+> * Do not remove historical notes; keep only the latest summary here and move older summaries to the â€œSession Historyâ€ section.
 
 ---
 
@@ -49,14 +48,14 @@
 
 * **Module path:** `psann/lm/`
 
-  * `psann/lm/models/` – transformer stacks on ResPSANN/WaveResNet
-  * `psann/lm/data/` – tokenization, dataset, collation, streaming
-  * `psann/lm/train/` – trainer, loops, scaling utils
-  * `psann/lm/infer/` – generation utilities
-  * `psann/lm/api.py` – `psannLM`, `psannLMDataPrep`
-  * `psann/lm/config.py` – typed configs for model/data/train
-  * `psann/lm/tests/` – unit & integration tests
-  * `examples/lm/` – notebooks and scripts
+  * `psann/lm/models/` â€“ transformer stacks on ResPSANN/WaveResNet
+  * `psann/lm/data/` â€“ tokenization, dataset, collation, streaming
+  * `psann/lm/train/` â€“ trainer, loops, scaling utils
+  * `psann/lm/infer/` â€“ generation utilities
+  * `psann/lm/api.py` â€“ `psannLM`, `psannLMDataPrep`
+  * `psann/lm/config.py` â€“ typed configs for model/data/train
+  * `psann/lm/tests/` â€“ unit & integration tests
+  * `examples/lm/` â€“ notebooks and scripts
 * **Key idea:** A PSANN-style transformer block with sine-activated MLPs (trainable amplitude/frequency/damping) and optional WaveResNet residual pathways; registry pattern to select base.
 
 ---
@@ -112,15 +111,15 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 ## GPU-REQUIRED WORK BLOCK
 
 * [x] **GPU-01:** Set up environment (CUDA/cuDNN, PyTorch versions) and verify with a 1-step forward/backward on a tiny model.
-  - Result (20251104_232550): OK, elapsed ≈1.85s on L40S.
+  - Result (20251104_232550): OK, elapsed â‰ˆ1.85s on L40S.
 * [x] **GPU-02:** AMP sanity check (bf16/fp16) on tiny model; compare loss parity with fp32 on a dummy batch.
-  - Result: bf16 vs fp32 rel_diff ≈ 0.001243 (ok), torch 2.9.0+cu128 on L40S.
+  - Result: bf16 vs fp32 rel_diff â‰ˆ 0.001243 (ok), torch 2.9.0+cu128 on L40S.
 * [x] **GPU-03:** Throughput benchmark on synthetic data for both bases (`respsann`, `waveresnet`); log tokens/s vs batch_tokens.
-  - Result (20251105_204844): respsann ≈ 281,539 tok/s; waveresnet ≈ 282,753 tok/s (20,480 tokens; B=4, T=256).
+  - Result (multi-runs 20251105_21xx): respsann ≈ 279–293k tok/s; waveresnet ≈ 278–293k tok/s (20,480 tokens; B=4, T=256).
 * [x] **GPU-04:** Activate gradient checkpointing; measure memory and wall-clock deltas.
   - Implemented: model-level checkpointing toggled via Trainer config (`grad_checkpoint=True`).
   - Tests: added unit tests for forward/backward with checkpointing on both bases.
-  - Runner: GPU-04 tiny fit elapsed_s=0.0613 with checkpointing enabled (L40S, bf16); memory deltas logged in report.
+  - Runner: GPU-04 tiny fit elapsed_s ≈ 0.057–0.067 in full runs; isolated benches reported ≈ 1.57–1.62s (different batch), see reports/gpu/20251105_213755,_221656,_222454.
 * [x] **GPU-05:** DDP on 2+ GPUs; confirm loss/repro parity with single-GPU.
   - Result (20251105_204844, 2x L40S via `torchrun`): single vs DDP loss 3.999884 with `rel_diff=0.0`; deterministic seeding + DistributedSampler wiring merged.
 * [x] **GPU-06:** Optional DeepSpeed/FSDP hooks for large models.
@@ -299,7 +298,7 @@ train:
 1. **Before starting a session:**
    * Read this file top to bottom.
    * Update **Progress Tracker** timestamp.
-   * Write 1–3 bullets in **Session Notes Summary** about intent.
+   * Write 1â€“3 bullets in **Session Notes Summary** about intent.
 
 2. **During the session:**
    * Work top-down by sections unless a dependency forces reordering.
@@ -314,15 +313,17 @@ train:
 
 4. **On every save/commit:**
    * Recompute checklist completion counts and update the **Progress Tracker**.
-   * Keep **Session Notes Summary** to 1–3 bullets; move older bullets to **Session History**.
+   * Keep **Session Notes Summary** to 1â€“3 bullets; move older bullets to **Session History**.
 
 5. **When blocking on ambiguity or missing dependencies:**
-   * Add a short “Open Questions” bullet list at the end of this file.
+   * Add a short â€œOpen Questionsâ€ bullet list at the end of this file.
    * Propose defaults and proceed with the safest assumption; mark with `// ASSUMPTION`.
 
 ---
 
-## Session History (latest at top)
+* [2025-11-06 12:13 UTC] CPU LM tests passed (18/18), ran minimal_train on CPU, and added CPU YAML + sample texts for local CLI run before GPU.
+
+* [2025-11-05 22:28 UTC] GPU runs 20251105_213736/_221637/_222307 full green; throughput-only and checkpoint-only runs captured (GPU-03 ~278-293k tok/s; GPU-04 ~0.057-0.067s full, ~1.57-1.62s isolated).
 
 * [2025-11-05 21:18 UTC] Queued next GPU batch (run_gpu_validation --only, new tiny corpus config, next_gpu_batch.sh); docs/plan updated.
 * [2025-11-05 21:13 UTC] Added CPU trainer + data-boundary tests; targeted pytest slice (tokenizer+trainer) green with json-report plugin.
@@ -338,9 +339,9 @@ train:
 
 * [2025-11-04 23:47 UTC] GPU smoke 20251104T234003Z: 5/5 passed; torch 2.9.0+cu128; 1 GPU; AMP fp16/bf16 OK; artifacts at `outputs/gpu_tests/20251104T234003Z`.
 
-* [2025-11-04 23:27 UTC] GPU report 20251104_232550: GPU-01/02/03/07/08 OK; 04/05/06 skipped; throughput ≈225k tok/s; AMP bf16 rel_diff≈0.00124; TODO and counts updated.
+* [2025-11-04 23:27 UTC] GPU report 20251104_232550: GPU-01/02/03/07/08 OK; 04/05/06 skipped; throughput â‰ˆ225k tok/s; AMP bf16 rel_diffâ‰ˆ0.00124; TODO and counts updated.
 
-* [2025-11-04 23:21 UTC] GPU report 20251104_231753: AMP parity ok (bf16 rel_diff≈0.000399), throughput ~226k tok/s, generation smoke ok; GPU-01/08 errors (multinomial num_samples=0); TODO updated.
+* [2025-11-04 23:21 UTC] GPU report 20251104_231753: AMP parity ok (bf16 rel_diffâ‰ˆ0.000399), throughput ~226k tok/s, generation smoke ok; GPU-01/08 errors (multinomial num_samples=0); TODO updated.
 
 * [2025-11-04 19:42 UTC] Full suite green (162 passed, 1 skipped); fixed LM save/load device; CUDA auto-select in trainer/generation; prepped to run GPU block on pod.
 
@@ -361,6 +362,11 @@ train:
 * [ ] Default positional encodings: RoPE everywhere, or allow ALiBi toggle?
 * [ ] Do we need a fast C++/CUDA KV-cache path now, or defer to later?
 
+// ASSUMPTION — Proposed defaults for local work:
+- Default tokenizer backend: `sentencepiece` when available; fall back to `tokenizers`.
+- Positional encodings: RoPE by default; ALiBi toggle can be added later if needed.
+- KV-cache path: keep PyTorch-only for now; defer C++/CUDA fast-path until after GPU benchmarks.
+
 ---
 
 ## Acceptance Checklist (final sign-off)
@@ -371,3 +377,6 @@ train:
 * [ ] GPU block completed with throughput and memory numbers recorded.
 * [ ] Tests (CPU+GPU) passing in CI or local matrix.
 * [ ] README/docs updated with installation and quickstart.
+
+
+
