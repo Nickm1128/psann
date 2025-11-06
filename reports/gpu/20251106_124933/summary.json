@@ -1,0 +1,44 @@
+{
+  "results": {
+    "GPU-04": {
+      "elapsed_s": 1.2322,
+      "grad_checkpoint": true,
+      "max_memory_allocated_mb": 24.01,
+      "max_memory_reserved_mb": 28.0,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 31
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 2,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA GeForce RTX 4090",
+        "total_memory_gb": 23.53
+      },
+      {
+        "index": 1,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA GeForce RTX 4090",
+        "total_memory_gb": 23.53
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251106_124933"
+}

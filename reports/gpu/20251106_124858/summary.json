@@ -1,0 +1,109 @@
+{
+  "results": {
+    "GPU-01": {
+      "elapsed_s": 1.5087,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 24
+    },
+    "GPU-02": {
+      "amp_dtype": "torch.bfloat16",
+      "amp_loss": 3.737981,
+      "fp32_loss": 3.739669,
+      "rel_diff": 0.000452,
+      "status": "ok"
+    },
+    "GPU-03": {
+      "respsann": {
+        "B": 4,
+        "T": 256,
+        "batch_tokens": 1024,
+        "elapsed_s": 0.0734,
+        "steps": 20,
+        "tokens": 20480,
+        "tokens_per_s": 279144.12
+      },
+      "status": "ok",
+      "waveresnet": {
+        "B": 4,
+        "T": 256,
+        "batch_tokens": 1024,
+        "elapsed_s": 0.0752,
+        "steps": 20,
+        "tokens": 20480,
+        "tokens_per_s": 272180.49
+      }
+    },
+    "GPU-04": {
+      "elapsed_s": 0.2068,
+      "grad_checkpoint": true,
+      "max_memory_allocated_mb": 24.01,
+      "max_memory_reserved_mb": 256.0,
+      "model": {
+        "base": "waveresnet",
+        "d_model": 128,
+        "n_heads": 4,
+        "n_layers": 2
+      },
+      "status": "ok",
+      "vocab_size": 31
+    },
+    "GPU-05": {
+      "ddp_avg_loss": 3.999884,
+      "rel_diff": 0.0,
+      "single_loss": 3.999884,
+      "status": "ok",
+      "world_size": 2
+    },
+    "GPU-06": {
+      "engine": "torch.fsdp",
+      "fsdp_avg_loss": 3.999884,
+      "rel_diff": 0.0,
+      "single_loss": 3.999884,
+      "status": "ok",
+      "world_size": 2
+    },
+    "GPU-07": {
+      "length": 19,
+      "sample": "hqixqtqixqqxxzqxqut",
+      "status": "ok"
+    },
+    "GPU-08": {
+      "ckpt_path": "/workspace/psann/reports/gpu/20251106_124858/checkpoints/lm.pt",
+      "gen_equal": true,
+      "params_equal": true,
+      "status": "ok"
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 2,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA GeForce RTX 4090",
+        "total_memory_gb": 23.53
+      },
+      {
+        "index": 1,
+        "major": 8,
+        "minor": 9,
+        "name": "NVIDIA GeForce RTX 4090",
+        "total_memory_gb": 23.53
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251106_124858"
+}
