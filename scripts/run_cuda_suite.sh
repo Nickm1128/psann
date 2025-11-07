@@ -18,6 +18,7 @@ set -euo pipefail
 PYTHON_BIN="${PYTHON:-python}"
 OUT_BASE="${OUT_BASE:-reports/tests}"
 GPU_OUT="${GPU_OUT:-reports/tests/gpu_smoke}"
+GPU_VAL_OUT="${GPU_VAL_OUT:-reports/gpu}"
 
 echo "[cuda-suite] Using Python: ${PYTHON_BIN}"
 echo "[cuda-suite] Artifact roots: ${OUT_BASE} (full suite), ${GPU_OUT} (gpu markers)"
@@ -45,6 +46,10 @@ echo "[cuda-suite] Running full pytest suite via scripts/run_cuda_tests.py"
 echo "[cuda-suite] Running GPU-focused markers via scripts/run_gpu_tests.py"
 "${PYTHON_BIN}" scripts/run_gpu_tests.py --outdir "${GPU_OUT}"
 
+echo "[cuda-suite] Running full GPU validation block via scripts/run_gpu_validation.py"
+"${PYTHON_BIN}" scripts/run_gpu_validation.py --out "${GPU_VAL_OUT}"
+
 echo "[cuda-suite] Done. Artifacts stored under:"
 echo "  - ${OUT_BASE}"
 echo "  - ${GPU_OUT}"
+echo "  - ${GPU_VAL_OUT}"

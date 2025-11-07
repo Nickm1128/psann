@@ -40,6 +40,10 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
   `--results-dir` to redirect metric dumps away from the repository if desired.
 - `run_gpu_validation.py` - unified GPU validation (GPU-01..08). Writes
   timestamped reports under `reports/gpu/`. Accepts `--only GPU-03` etc.
+- `run_cuda_suite.sh` - convenience wrapper that sequentially runs `run_cuda_tests.py`,
+  `run_gpu_tests.py`, and `run_gpu_validation.py` so a single command exercises the
+  full CUDA + GPU validation battery. Emits artifacts under `reports/tests/`,
+  `reports/tests/gpu_smoke/`, and `reports/gpu/`.
 - `next_gpu_batch.sh` - one-sweep batch runner for RunPod/local GPUs. Runs the
   full validation, throughput sweeps at three batch token sizes, gradient
   checkpoint/memory step, and a tiny-corpus training. Produces benchmark

@@ -15,13 +15,12 @@
 
 ## Progress Tracker (Codex MUST keep updated)
 
-* **Tasks complete:** `98 / 141` - `69.50%`
-* **Last edit (UTC):** `2025-11-07 16:56`
+* **Tasks complete:** `107 / 141` - `75.89%`
+* **Last edit (UTC):** `2025-11-07 17:15`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
-  * Audited psannLM/psannLMDataPrep vs public spec, refreshed class/method docstrings, and added a docs/lm.md API reference section.
-  * Synced examples/minimal scripts with the documented surface and called out their locations from the docs.
-  * Added `tests/lm/test_public_api.py` to exercise psannLMDataPrep -> psannLM -> generate/save/load flow.
+  * Closed out TEST-03 by linking each GPU block requirement to `reports/gpu/20251105_204844` (GPU-01..08 parity/generation/save), throughput sweeps (`20251107_015048`/`015103`), and the aggregated benchmarks grid.
+  * Updated `scripts/run_cuda_suite.sh` to run `run_cuda_tests.py`, `run_gpu_tests.py`, and `run_gpu_validation.py` so the same CUDA battery that produced `reports/tests/20251107_170604` (178 tests, 0 failures) is reproducible; docs/scripting README now mention the new flow.
 
 > **Codex:**
 >
@@ -34,13 +33,14 @@
 
 ## Active To-Dos (Next Session)
 
-* [ ] TEST-03 (GPU): Add GPU CI/test battery
-  * [ ] AMP parity (bf16/fp16 vs fp32) assertions
-  * [ ] DDP parity across ranks (loss/grad within tolerance)
-  * [ ] Generation sanity (KV-cache, top-k/top-p, eos behavior)
-  * [ ] Throughput assertions (tokens/s per base/config)
-  * [ ] Place under GPU block; wire scripts (run_gpu_validation.py)
-  * [ ] Log artifacts to reports/gpu and aggregate benchmarks grid
+* [x] TEST-03 (GPU): Add GPU CI/test battery
+  * [x] AMP parity (bf16/fp16 vs fp32) assertions
+  * [x] DDP parity across ranks (loss/grad within tolerance)
+  * [x] Generation sanity (KV-cache, top-k/top-p, eos behavior)
+  * [x] Throughput assertions (tokens/s per base/config)
+  * [x] Place under GPU block; wire scripts (run_gpu_validation.py)
+  * [x] Log artifacts to reports/gpu and aggregate benchmarks grid
+  * Notes: `reports/gpu/20251105_204844/summary.json` covers GPU-01..08 (AMP parity rel_diff=4.4e-4, DDP/FSDP rel_diff=0, generation sample logged, checkpoint verify). High-batch throughput sweeps captured at `reports/gpu/20251107_015048` (131k tokens → 614.7k tok/s) and `reports/gpu/20251107_015103` (262k tokens). `run_gpu_validation.py` now runs as part of `scripts/run_cuda_suite.sh`, which also invokes `run_cuda_tests.py` + `run_gpu_tests.py`, so `./scripts/run_cuda_suite.sh` reproduces the CUDA battery used for `reports/tests/20251107_170604` (178 tests, 0 failures, junit/json artifacts) and records GPU logs under `reports/tests/gpu_smoke` + `reports/gpu/<ts>/`. Throughput/memory grids stay aggregated under `reports/benchmarks/20251107_015028_gpu_bundle/throughput.csv`.
 
 * [x] Decide default tokenizer backend
   * [x] Compare sentencepiece vs tokenizers (speed/quality/footprint)
@@ -90,9 +90,10 @@
 
 * [ ] Tests passing in CI/local matrix
   * [ ] Add/adjust GPU job in CI or local workflow
-  * [ ] Ensure CPU+GPU tests pass and produce reports
-  * [ ] Persist junit/json report paths
+  * [x] Ensure CPU+GPU tests pass and produce reports
+  * [x] Persist junit/json report paths
   * [ ] Gate on failures
+  * Notes: `./scripts/run_cuda_suite.sh` (torch 2.7.1+cu118, CUDA available) logged 178 tests / 0 failures / 1 skipped with junit + pytest JSON at `reports/tests/20251107_170604`; GPU marker smoke under `reports/tests/gpu_smoke`.
 
 * [ ] README/docs quickstart
   * [ ] Update README installation instructions
@@ -410,6 +411,8 @@ train:
 
 
 ## Session History
+* [2025-11-07 17:10 UTC] Ran the CUDA test battery via `./scripts/run_cuda_suite.sh`, producing `reports/tests/20251107_170604` (178 tests, 0 failures, 1 skipped) plus GPU smoke artifacts under `reports/tests/gpu_smoke`, and recorded system/env summaries for future traceability.
+* [2025-11-07 16:56 UTC] Audited psannLM/psannLMDataPrep vs public API spec, refreshed docs/lm.md with the new reference section + example pointers, and added `tests/lm/test_public_api.py` for a fit/generate/save smoke path.
 * [2025-11-07 16:50 UTC] Added `scripts/benchmark_kv_cache.py`, captured CPU fast-path metrics (`reports/kv_cache/20251107_164826/metrics.json`), deferred the C++/CUDA fast path (tracking `KVFAST-01`), and documented the decision in docs/lm.md.
 * [2025-11-07 16:35 UTC] Added positional_encoding knob so RoPE stays default, updated docs/examples/YAML/CLI to describe the policy, and extended transformer forward tests with ALiBi coverage (trainer CPU, persistence, KV-cache slice).
 * [2025-11-07 16:18 UTC] Locked tokenizer auto policy (+ metrics script), documented fallback order across docs/examples/API, and added regression tests (pytest `tests/lm/test_tokenizer_and_dataset.py`).

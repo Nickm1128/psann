@@ -202,7 +202,7 @@ Benchmarks & Reporting
 Test Artifacts
 --------------
 - Install dev extras (`pip install .[dev]`) to pull in `pytest-json-report`.
-- `scripts/run_cuda_suite.sh` wraps `run_cuda_tests.py` + `run_gpu_tests.py` so one command exercises the entire CUDA battery.
+- `scripts/run_cuda_suite.sh` wraps `run_cuda_tests.py`, `run_gpu_tests.py`, and `run_gpu_validation.py` so one command exercises the entire CUDA + GPU validation battery.
 - `scripts/run_cuda_tests.py` and `scripts/run_gpu_tests.py` automatically emit
   `pytest_report.json` alongside `junit.xml` whenever the plugin is available.
 - Artifacts land under `reports/tests/<timestamp>/` with `system.json`, `summary.json`,
