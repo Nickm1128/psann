@@ -1,0 +1,51 @@
+{
+  "results": {
+    "GPU-03": {
+      "respsann": {
+        "B": 32,
+        "T": 4096,
+        "batch_tokens": 131072,
+        "elapsed_s": 4.2642,
+        "steps": 20,
+        "tokens": 2621440,
+        "tokens_per_s": 614749.6
+      },
+      "status": "ok",
+      "waveresnet": {
+        "B": 32,
+        "T": 4096,
+        "batch_tokens": 131072,
+        "elapsed_s": 4.2789,
+        "steps": 20,
+        "tokens": 2621440,
+        "tokens_per_s": 612637.03
+      }
+    }
+  },
+  "system": {
+    "bf16_supported": true,
+    "cuda_available": true,
+    "device_count": 2,
+    "gpus": [
+      {
+        "index": 0,
+        "major": 9,
+        "minor": 0,
+        "name": "NVIDIA H200",
+        "total_memory_gb": 139.72
+      },
+      {
+        "index": 1,
+        "major": 9,
+        "minor": 0,
+        "name": "NVIDIA H200",
+        "total_memory_gb": 139.72
+      }
+    ],
+    "platform": "linux",
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "torch_cuda_version": "12.8"
+  },
+  "timestamp_utc": "20251107_015048"
+}
