@@ -65,6 +65,46 @@ def test_streaming_lm_dataset(tmp_path: tempfile.TemporaryDirectory):
     assert tuple(ex["labels"].shape) == (6,)
 
 
+def test_tokenizer_auto_prefers_sentencepiece_when_available():
+    texts = ["hello world", "goodnight moon"]
+    cfg = TokenizerConfig(
+        backend="auto",
+        vocab_size=64,
+        sp_character_coverage=1.0,
+        sp_input_sentence_size=0,
+    )
+    tok = Tokenizer(cfg)
+    tok.fit(texts)
+    assert tok.backend_name == "sentencepiece"
+    ids = tok.encode("hello", add_specials=True)
+    assert isinstance(ids, list) and len(ids) > 0
+
+
+def test_tokenizer_auto_falls_back_to_hf_when_sentencepiece_missing(monkeypatch):
+    def _boom(*_, **__):
+        raise ImportError("sentencepiece missing for test")
+
+    monkeypatch.setattr("psann.lm.data.tokenizer._make_sentencepiece_tokenizer", _boom)
+    texts = ["auto fallback is healthy"]
+    tok = Tokenizer(TokenizerConfig(backend="auto", vocab_size=128, min_frequency=1))
+    tok.fit(texts)
+    assert tok.backend_name == "tokenizers"
+
+
+def test_tokenizer_auto_falls_back_to_simple_when_no_external(monkeypatch):
+    def _boom(*_, **__):
+        raise ImportError("missing dependency")
+
+    monkeypatch.setattr("psann.lm.data.tokenizer._make_sentencepiece_tokenizer", _boom)
+    monkeypatch.setattr("psann.lm.data.tokenizer._make_hf_tokenizers", _boom)
+
+    tok = Tokenizer(TokenizerConfig(backend="auto"))
+    tok.fit(["chars only"])
+    assert tok.backend_name == "simple"
+    ids = tok.encode("chars only")
+    assert len(ids) > 0
+
+
 @pytest.mark.skipif(pytest.importorskip, reason="conditional import check placeholder")
 def test_hf_tokenizers_backend_import():
     try:

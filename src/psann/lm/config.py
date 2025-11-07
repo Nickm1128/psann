@@ -10,6 +10,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+POS_ENCODING_CHOICES = ("rope", "alibi", "sinusoidal")
+
+
+def normalize_positional_encoding(value: Optional[str]) -> str:
+    enc = "rope" if value is None else str(value).strip().lower()
+    if enc not in POS_ENCODING_CHOICES:
+        raise ValueError(
+            f"positional_encoding must be one of {POS_ENCODING_CHOICES}; received '{value}'."
+        )
+    return enc
+
 
 @dataclass
 class ModelConfig:
@@ -19,7 +30,7 @@ class ModelConfig:
     n_heads: int = 8
     d_mlp: Optional[int] = None
     vocab_size: Optional[int] = None
-    rope: bool = True
+    positional_encoding: str = "rope"
     # Sine params kept flat for YAML friendliness
     sine_amp_init: float = 1.0
     sine_freq_init: float = 1.0
@@ -35,6 +46,7 @@ class ModelConfig:
             raise ValueError("d_mlp must be positive when provided")
         if self.vocab_size is not None and self.vocab_size <= 0:
             raise ValueError("vocab_size must be positive when provided")
+        self.positional_encoding = normalize_positional_encoding(self.positional_encoding)
 
 
 @dataclass

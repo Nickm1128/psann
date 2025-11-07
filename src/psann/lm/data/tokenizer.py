@@ -1,14 +1,18 @@
 ﻿"""Tokenizer plugin interface for PSANN-LM.
 
 Provides a small, dependency-free "simple" backend (char-level) as a
-default when `backend="auto"`. Later, adapters for `sentencepiece` and
-`tokenizers` can be added while keeping the same faÃ§ade.
+fallback when `backend="auto"`. Adapters for `sentencepiece` and
+`tokenizers` are provided and auto-selected when the packages are available.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, Iterable, List, Sequence, Optional
+import logging
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Optional, Sequence
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -100,32 +104,53 @@ class SimpleCharTokenizer:
 
 
 class Tokenizer:
-    """Tokenizer faÃ§ade with pluggable backends.
+    """Tokenizer facade with pluggable backends.
 
     Backends:
-      - "simple" (default for "auto"): small char-level tokenizer
-      - "sentencepiece" / "tokenizers": to be implemented
+      - "simple" (default fallback for "auto"): small char-level tokenizer
+      - "sentencepiece" (preferred when installed)
+      - "tokenizers" (Hugging Face tokenizers)
     """
+
+    _AUTO_ORDER = ("sentencepiece", "tokenizers")
 
     def __init__(self, cfg: TokenizerConfig = TokenizerConfig()) -> None:
         self.cfg = cfg
         backend = (cfg.backend or "auto").lower()
-        if backend == "simple":
-            self._impl = SimpleCharTokenizer()
-        elif backend == "sentencepiece":
-            self._impl = _make_sentencepiece_tokenizer(cfg)
-        elif backend == "tokenizers":
-            self._impl = _make_hf_tokenizers(cfg)
-        elif backend == "auto":
-            try:
-                self._impl = _make_sentencepiece_tokenizer(cfg)
-            except Exception:
-                try:
-                    self._impl = _make_hf_tokenizers(cfg)
-                except Exception:
-                    self._impl = SimpleCharTokenizer()
+        if backend == "auto":
+            impl, resolved = self._select_auto_backend(cfg)
         else:
-            raise NotImplementedError(f"Tokenizer backend '{backend}' is not available yet")
+            impl = self._instantiate_backend(backend, cfg)
+            resolved = backend
+        self._impl = impl
+        self._selected_backend = resolved
+
+    def _instantiate_backend(self, backend: str, cfg: TokenizerConfig):
+        if backend == "simple":
+            return SimpleCharTokenizer()
+        if backend == "sentencepiece":
+            return _make_sentencepiece_tokenizer(cfg)
+        if backend == "tokenizers":
+            return _make_hf_tokenizers(cfg)
+        raise NotImplementedError(f"Tokenizer backend '{backend}' is not available yet")
+
+    def _select_auto_backend(self, cfg: TokenizerConfig):
+        errors: Dict[str, str] = {}
+        for candidate in self._AUTO_ORDER:
+            try:
+                impl = self._instantiate_backend(candidate, cfg)
+                logger.info("Tokenizer(auto): selected '%s' backend", candidate)
+                return impl, candidate
+            except ImportError as exc:
+                errors[candidate] = str(exc)
+        if errors:
+            details = "; ".join(f"{name}: {msg}" for name, msg in errors.items())
+            logger.warning(
+                "Tokenizer(auto): sentencepiece/tokenizers unavailable (%s); "
+                "falling back to simple char-level tokenizer",
+                details,
+            )
+        return SimpleCharTokenizer(), "simple"
 
     @property
     def vocab_size(self) -> int:
@@ -146,6 +171,11 @@ class Tokenizer:
     @property
     def unk_id(self) -> int:
         return self._impl.unk_id
+
+    @property
+    def backend_name(self) -> str:
+        """Resolved backend name (auto selection included)."""
+        return self._selected_backend
 
     def fit(self, texts: Iterable[str]) -> None:
         self._impl.fit(texts)

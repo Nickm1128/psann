@@ -19,6 +19,7 @@ import math
 from ...activations import SineParam
 from ...layers.sine_residual import RMSNorm
 from .sine import SineConfig, build_sine
+from ..config import normalize_positional_encoding
 
 
 def _sinusoidal_positions(seq_len: int, dim: int, device: torch.device) -> torch.Tensor:
@@ -102,24 +103,68 @@ def _build_rope_cache_offset(offset: int, seq_len: int, head_dim: int, device: t
     return cos, sin
 
 
+def _get_alibi_slopes(n_heads: int) -> torch.Tensor:
+    # Implementation adapted from HuggingFace BLOOM
+    closest_power_of_2 = 2 ** math.floor(math.log2(max(1, n_heads)))
+    base = 2 ** (-(2 ** -(math.log2(closest_power_of_2) - 3)))
+    powers = torch.arange(1, 1 + closest_power_of_2, dtype=torch.float32)
+    slopes = torch.pow(base, powers)
+    if closest_power_of_2 != n_heads:
+        extra_base = 2 ** (-(2 ** -(math.log2(2 * closest_power_of_2) - 3)))
+        num_remaining = min(closest_power_of_2, n_heads - closest_power_of_2)
+        extra_powers = torch.arange(1, 1 + 2 * num_remaining, 2, dtype=torch.float32)
+        slopes = torch.cat([slopes, torch.pow(extra_base, extra_powers)], dim=0)
+    return slopes[:n_heads]
+
+
+def _build_alibi_bias(
+    slopes: torch.Tensor,
+    past_len: int,
+    q_len: int,
+    k_len: int,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    q_pos = torch.arange(past_len, past_len + q_len, device=device, dtype=dtype)
+    k_pos = torch.arange(k_len, device=device, dtype=dtype)
+    rel = q_pos.unsqueeze(-1) - k_pos.unsqueeze(0)
+    rel = torch.clamp(rel, min=0)
+    bias = -rel.unsqueeze(0)  # (1, q_len, k_len)
+    slopes = slopes.to(device=device, dtype=dtype).view(-1, 1, 1)
+    return slopes * bias  # (H, q_len, k_len)
+
+
 class SelfAttention(nn.Module):
-    def __init__(self, d_model: int, n_heads: int, *, dropout: float = 0.0, rope: bool = True) -> None:
+    def __init__(
+        self,
+        d_model: int,
+        n_heads: int,
+        *,
+        dropout: float = 0.0,
+        positional_encoding: str = "rope",
+    ) -> None:
         super().__init__()
         if d_model % n_heads != 0:
             raise ValueError("d_model must be divisible by n_heads")
         self.d_model = d_model
         self.n_heads = n_heads
         self.head_dim = d_model // n_heads
-        if self.head_dim % 2 != 0 and rope:
-            # enforce even for RoPE
+        self.positional_encoding = normalize_positional_encoding(positional_encoding)
+        self._use_rope = self.positional_encoding == "rope"
+        self._use_alibi = self.positional_encoding == "alibi"
+        if self._use_rope and (self.head_dim % 2 != 0):
             raise ValueError("head_dim must be even when using RoPE")
-        self.rope = bool(rope)
         self.q_proj = nn.Linear(d_model, d_model, bias=False)
         self.k_proj = nn.Linear(d_model, d_model, bias=False)
         self.v_proj = nn.Linear(d_model, d_model, bias=False)
         self.o_proj = nn.Linear(d_model, d_model, bias=False)
         self.attn_drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         self.proj_drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        if self._use_alibi:
+            slopes = _get_alibi_slopes(n_heads)
+            self.register_buffer("_alibi_slopes", slopes, persistent=False)
+        else:
+            self.register_buffer("_alibi_slopes", torch.empty(0), persistent=False)
 
     def forward(
         self,
@@ -142,7 +187,7 @@ class SelfAttention(nn.Module):
         v = self.v_proj(x).view(B, T, self.n_heads, self.head_dim).transpose(1, 2)
 
         past_len = int(past_kv[0].size(-2)) if past_kv is not None else 0
-        if self.rope:
+        if self._use_rope:
             # Apply RoPE with positional offset equal to past length
             cos, sin = _build_rope_cache_offset(past_len, T, self.head_dim, device, q.dtype)
             q = (q * cos) + (_rope_rotate_half(q) * sin)
@@ -154,8 +199,18 @@ class SelfAttention(nn.Module):
             v = torch.cat([pv, v], dim=-2)
 
         att = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
-        # causal mask for (T, K): take last T rows from a (K,K) upper triangular
         Klen = k.size(-2)
+        if self._use_alibi:
+            alibi = _build_alibi_bias(
+                self._alibi_slopes,
+                past_len=past_len,
+                q_len=T,
+                k_len=Klen,
+                device=device,
+                dtype=att.dtype,
+            )
+            att = att + alibi.unsqueeze(0)
+        # causal mask for (T, K): take last T rows from a (K,K) upper triangular
         base = torch.full((Klen, Klen), float("-inf"), device=device, dtype=att.dtype)
         base = torch.triu(base, diagonal=1)
         mask = base[-T:, :]
@@ -182,10 +237,15 @@ class TransformerBlock(nn.Module):
         norm: str = "rms",
         sine: Optional[SineConfig] = None,
         mlp_activation: str = "sine",
-        rope: bool = True,
+        positional_encoding: str = "rope",
     ) -> None:
         super().__init__()
-        self.attn = SelfAttention(d_model, n_heads, dropout=dropout, rope=rope)
+        self.attn = SelfAttention(
+            d_model,
+            n_heads,
+            dropout=dropout,
+            positional_encoding=positional_encoding,
+        )
         self.mlp = PSANNMLP(d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout)
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         # Optional residual scaling (learnable), default 1.0 (shape 1 for FSDP)
@@ -227,9 +287,16 @@ class ResPSANNTransformerConfig:
     n_heads: int = 8
     d_mlp: int = 2048
     dropout: float = 0.0
-    rope: bool = True
+    positional_encoding: str = "rope"
+    rope: Optional[bool] = None
     mlp_activation: str = "sine"  # "sine" | "gelu"
     sine: Optional[SineConfig] = None
+
+    def __post_init__(self) -> None:
+        if self.rope is not None:
+            self.positional_encoding = "rope" if self.rope else "sinusoidal"
+        self.positional_encoding = normalize_positional_encoding(self.positional_encoding)
+        self.rope = self.positional_encoding == "rope"
 
 
 class ResPSANNTransformer(nn.Module):
@@ -249,7 +316,7 @@ class ResPSANNTransformer(nn.Module):
                     norm="rms",
                     sine=sinecfg,
                     mlp_activation=cfg.mlp_activation,
-                    rope=cfg.rope,
+                    positional_encoding=cfg.positional_encoding,
                 )
                 for _ in range(cfg.n_layers)
             ]
@@ -281,7 +348,7 @@ class ResPSANNTransformer(nn.Module):
         # input_ids: (B, T)
         B, T = input_ids.shape
         x = self.embed(input_ids)  # (B, T, D)
-        if not self.cfg.rope:
+        if self.cfg.positional_encoding == "sinusoidal":
             past_len = int(past_kvs[0][0].size(-2)) if (use_cache and past_kvs) else 0
             pe = _sinusoidal_positions(past_len + T, self.cfg.d_model, x.device).unsqueeze(0)
             x = x + pe[:, past_len: past_len + T, :]

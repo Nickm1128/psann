@@ -3,9 +3,17 @@ import torch
 from psann.lm.models.registry import get_base
 
 
-def _tiny_model(base: str, vocab_size: int = 64):
+def _tiny_model(base: str, vocab_size: int = 64, positional_encoding: str = "rope"):
     factory = get_base(base)
-    return factory(vocab_size=vocab_size, d_model=64, n_layers=2, n_heads=4, d_mlp=128, dropout=0.0, rope=True)
+    return factory(
+        vocab_size=vocab_size,
+        d_model=64,
+        n_layers=2,
+        n_heads=4,
+        d_mlp=128,
+        dropout=0.0,
+        positional_encoding=positional_encoding,
+    )
 
 
 def test_forward_shapes_respsann():
@@ -41,7 +49,7 @@ def test_waveresnet_wave_interleave_forward():
         n_layers=2,
         n_heads=4,
         d_mlp=128,
-        rope=True,
+        positional_encoding="rope",
         wave_interleave=True,
         wave_kernel_size=3,
         wave_dilation_growth=1,
@@ -60,7 +68,7 @@ def test_waveresnet_wave_replace_forward():
         n_layers=2,
         n_heads=4,
         d_mlp=128,
-        rope=True,
+        positional_encoding="rope",
         wave_replace=True,
         wave_kernel_size=3,
         wave_dilation_growth=1,
@@ -79,7 +87,7 @@ def test_kv_cache_step_waveresnet_with_wave():
         n_layers=2,
         n_heads=4,
         d_mlp=128,
-        rope=True,
+        positional_encoding="rope",
         wave_interleave=True,
         wave_kernel_size=3,
         wave_dilation_growth=1,
@@ -90,3 +98,17 @@ def test_kv_cache_step_waveresnet_with_wave():
     step_tok = torch.randint(0, 64, (2, 1), dtype=torch.long)
     logits2, past2 = model(step_tok, use_cache=True, past_kvs=past)
     assert logits2.shape == (2, 1, 64)
+
+
+def test_positional_encoding_alibi_respsann():
+    model = _tiny_model("respsann", 64, positional_encoding="alibi")
+    x = torch.randint(0, 64, (2, 5), dtype=torch.long)
+    y = model(x)
+    assert y.shape == (2, 5, 64)
+
+
+def test_positional_encoding_alibi_waveresnet():
+    model = _tiny_model("waveresnet", 64, positional_encoding="alibi")
+    x = torch.randint(0, 64, (2, 5), dtype=torch.long)
+    y = model(x)
+    assert y.shape == (2, 5, 64)

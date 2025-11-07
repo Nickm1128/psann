@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "corpus": "C:\\Users\\milin\\Documents\\psann\\examples\\lm\\sample_texts.txt",
+    "lines": 10,
+    "repeat": 256,
+    "vocab_size": 4096,
+    "timestamp_utc": "20251107_161551"
+  },
+  "results": {
+    "sentencepiece": {
+      "fit_seconds": 0.17229219991713762,
+      "encode_seconds": 0.06537109985947609,
+      "tokens_per_second": 1096509.010160235,
+      "tokens_per_char": 0.6194690265486725,
+      "chars_per_token": 1.6142857142857143,
+      "total_tokens": 71680,
+      "total_chars": 115712,
+      "vocab_size": 4096,
+      "model_bytes": 241850,
+      "status": "ok"
+    },
+    "tokenizers": {
+      "fit_seconds": 0.02884389995597303,
+      "encode_seconds": 0.07164450013078749,
+      "tokens_per_second": 385905.407247289,
+      "tokens_per_char": 0.23893805309734514,
+      "chars_per_token": 4.185185185185185,
+      "total_tokens": 27648,
+      "total_chars": 115712,
+      "vocab_size": 256,
+      "model_bytes": 5854,
+      "status": "ok"
+    }
+  }
+}

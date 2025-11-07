@@ -69,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI wiring
     sp = model_cfg.get("sine_params", {}) or {}
     _vocab = model_cfg.get("vocab_size", None)
     vocab_size = dp.vocab_size if _vocab is None else int(_vocab)
+    rope_flag = model_cfg.get("rope")
+    positional_encoding = model_cfg.get("positional_encoding")
     model = psannLM(
         base=str(model_cfg.get("base", "waveresnet")),
         d_model=int(model_cfg.get("d_model", 512)),
@@ -82,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI wiring
             damp_init=float(sp.get("damp_init", 0.01)),
             trainable=bool(sp.get("trainable", True)),
         ),
-        rope=bool(model_cfg.get("rope", True)),
+        rope=bool(True if rope_flag is None else rope_flag),
+        positional_encoding=positional_encoding,
     )
 
     # Train

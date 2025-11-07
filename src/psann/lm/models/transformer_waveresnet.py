@@ -20,6 +20,7 @@ from .transformer_respsann import (
     _sinusoidal_positions,
     SelfAttention,
 )
+from ..config import normalize_positional_encoding
 from .sine import build_sine
 
 
@@ -31,7 +32,8 @@ class WaveResNetTransformerConfig:
     n_heads: int = 8
     d_mlp: int = 2048
     dropout: float = 0.0
-    rope: bool = True
+    positional_encoding: str = "rope"
+    rope: Optional[bool] = None
     mlp_activation: str = "sine"  # "sine" | "gelu"
     sine: Optional[SineConfig] = None
     # WaveResNet-temporal options (scaffolding)
@@ -41,6 +43,11 @@ class WaveResNetTransformerConfig:
     wave_dilation_growth: int = 1  # 1 = no dilation growth across layers
     wave_dropout: float = 0.0
 
+    def __post_init__(self) -> None:
+        if self.rope is not None:
+            self.positional_encoding = "rope" if self.rope else "sinusoidal"
+        self.positional_encoding = normalize_positional_encoding(self.positional_encoding)
+        self.rope = self.positional_encoding == "rope"
 
 class WaveResNetTransformer(nn.Module):
     def __init__(self, cfg: WaveResNetTransformerConfig) -> None:
@@ -66,7 +73,7 @@ class WaveResNetTransformer(nn.Module):
                 norm="rms",
                 sine=sinecfg,
                 mlp_activation=cfg.mlp_activation,
-                rope=cfg.rope,
+                positional_encoding=cfg.positional_encoding,
                 wave_interleave=bool(cfg.wave_interleave),
                 wave_replace=bool(cfg.wave_replace),
                 wave_kernel_size=int(cfg.wave_kernel_size),
@@ -101,7 +108,7 @@ class WaveResNetTransformer(nn.Module):
     ) -> torch.Tensor | Tuple[torch.Tensor, List[Tuple[torch.Tensor, torch.Tensor]]]:
         B, T = input_ids.shape
         x = self.embed(input_ids)
-        if not self.cfg.rope:
+        if self.cfg.positional_encoding == "sinusoidal":
             past_len = int(past_kvs[0][0].size(-2)) if (use_cache and past_kvs) else 0
             pe = _sinusoidal_positions(past_len + T, self.cfg.d_model, x.device).unsqueeze(0)
             x = x + pe[:, past_len: past_len + T, :]
@@ -245,7 +252,7 @@ class TransformerBlockWRN(nn.Module):
         norm: str = "rms",
         sine: Optional[SineConfig] = None,
         mlp_activation: str = "sine",
-        rope: bool = True,
+        positional_encoding: str = "rope",
         wave_interleave: bool = False,
         wave_replace: bool = False,
         wave_kernel_size: int = 3,
@@ -253,7 +260,12 @@ class TransformerBlockWRN(nn.Module):
         wave_dropout: float = 0.0,
     ) -> None:
         super().__init__()
-        self.attn = SelfAttention(d_model, n_heads, dropout=dropout, rope=rope)
+        self.attn = SelfAttention(
+            d_model,
+            n_heads,
+            dropout=dropout,
+            positional_encoding=positional_encoding,
+        )
         # reuse PSANN MLP as in base
         from .transformer_respsann import PSANNMLP  # local import to avoid cycle in type checking
 

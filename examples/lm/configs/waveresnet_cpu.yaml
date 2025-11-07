@@ -5,7 +5,7 @@ model:
   n_heads: 4
   d_mlp: 1024
   vocab_size: null   # auto from DataPrep
-  rope: true
+  positional_encoding: rope
   sine_params:
     amp_init: 1.0
     freq_init: 1.0

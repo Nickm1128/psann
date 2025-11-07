@@ -5,7 +5,7 @@ model:
   n_heads: 8
   d_mlp: 2048
   vocab_size: 32000
-  rope: true
+  positional_encoding: rope
   sine_params:
     amp_init: 1.0
     freq_init: 1.0

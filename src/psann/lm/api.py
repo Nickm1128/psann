@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, Optional, Sequence
 import torch
 from torch import nn
 
-from .config import ModelConfig, DataConfig, TrainConfig
+from .config import ModelConfig, DataConfig, TrainConfig, normalize_positional_encoding
 from .models.registry import get_base
 from .data.tokenizer import Tokenizer, TokenizerConfig
 from .data.dataset import LMDataset
@@ -49,7 +49,7 @@ class psannLMDataPrep:
         Iterable of raw text strings to prepare for language modeling.
     tokenizer:
         Tokenizer backend identifier. Use "auto" to select the default
-        backend once implemented.
+        policy (sentencepiece -> tokenizers -> simple char fallback).
     max_length:
         Maximum sequence length for tokenized chunks.
     pack_sequences:
@@ -156,18 +156,29 @@ class psannLMDataPrep:
             self._val_dataset = LMDataset(self._val_texts, self._tokenizer, cfg)
         return self._val_dataset
 
+    @property
+    def tokenizer_backend(self) -> str:
+        """Resolved tokenizer backend after auto-detection."""
+        return self._tokenizer.backend_name
+
     def __len__(self) -> int:  # pragma: no cover - trivial
         return len(self._texts)
 
 
 class psannLM:
-    """PSANN language model wrapper (minimal stub).
+    """High-level language model wrapper for PSANN-LM.
 
-    This class provides a stable public surface. Internals will route to
-    selected base implementations (e.g., "waveresnet", "respsann").
+    Parameters map 1:1 with the public spec and are persisted for save/load:
 
-    Parameters are accepted and stored for now; training and inference
-    will be wired up in subsequent iterations.
+    - base: `"waveresnet"` (default) or `"respsann"`
+    - d_model / n_layers / n_heads / d_mlp: transformer dimensions
+    - vocab_size: optional override (defaults to psannLMDataPrep vocab)
+    - positional_encoding: `"rope"`, `"alibi"`, or `"sinusoidal"`
+    - sine_params: dict or :class:`SineParams` controlling the sine MLPs
+
+    Use :meth:`fit` to attach trainer/data state, :meth:`generate` /
+    :meth:`generate_batch` for inference, and :meth:`save` / :meth:`load`
+    for checkpointing.
     """
 
     def __init__(
@@ -181,6 +192,7 @@ class psannLM:
         vocab_size: Optional[int] = None,
         sine_params: Optional[Dict[str, float]] | SineParams = None,
         rope: bool = True,
+        positional_encoding: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         self.base = base
@@ -189,7 +201,11 @@ class psannLM:
         self.n_heads = n_heads
         self.d_mlp = d_mlp
         self.vocab_size = vocab_size
-        self.rope = rope
+        enc_value = positional_encoding
+        if enc_value is None:
+            enc_value = "rope" if rope else "sinusoidal"
+        self.positional_encoding = normalize_positional_encoding(enc_value)
+        self.rope = self.positional_encoding == "rope"  # backwards compatibility flag
         self.config_overrides = dict(kwargs)
 
         if isinstance(sine_params, dict) or sine_params is None:
@@ -227,7 +243,7 @@ class psannLM:
             n_heads=self.n_heads,
             d_mlp=d_mlp,
             dropout=float(self.config_overrides.get("dropout", 0.0)),
-            rope=bool(self.rope),
+            positional_encoding=self.positional_encoding,
             mlp_activation=str(self.config_overrides.get("mlp_activation", "sine")),
             sine=sine_cfg,
         )
@@ -246,10 +262,24 @@ class psannLM:
         ddp: Optional[str] = None,
         **kwargs: Any,
     ) -> "psannLM":
-        """Train the language model (stub).
+        """Train the language model on the prepared dataset.
 
-        This placeholder validates the surface and raises a helpful
-        error until the trainer is implemented.
+        Parameters
+        ----------
+        train_data:
+            psannLMDataPrep instance providing tokenizer + dataset.
+        val_data:
+            Optional psannLMDataPrep for validation splits (defaults to the
+            built-in val split on ``train_data`` when available).
+        epochs, batch_tokens, lr, amp, ddp:
+            Passed through to :class:`TrainConfig`.
+        **kwargs:
+            Trainer overrides such as ``grad_checkpoint``.
+
+        Returns
+        -------
+        self:
+            Enables chaining (`psannLM(...).fit(...).generate(...)`).
         """
 
         if not isinstance(train_data, psannLMDataPrep):
@@ -295,7 +325,7 @@ class psannLM:
         repetition_penalty: Optional[float] = None,
         **kwargs: Any,
     ) -> str:
-        """Generate text from a prompt using top-k/top-p sampling."""
+        """Generate text from one prompt using top-k/top-p sampling."""
 
         if self._model is None:
             _ = self._ensure_model(int(self.vocab_size or 32000))
@@ -354,11 +384,10 @@ class psannLM:
         temperature: float = 1.0,
         repetition_penalty: Optional[float] = None,
     ) -> list[str]:
-        """Batched text generation with KV-cache on CPU.
+        """Generate text for multiple prompts, reusing KV-cache state.
 
-        Note: For efficiency, this path assumes equal prompt lengths for
-        true batching. If prompts tokenize to different lengths, it falls
-        back to per-sample generation.
+        Prompts with identical lengths share a fast batched path; mixed
+        lengths are bucketed automatically to avoid attention masks.
         """
         if self._model is None:
             _ = self._ensure_model(int(self.vocab_size or 32000))
@@ -464,6 +493,7 @@ class psannLM:
 
     # ------------------------ Persistence API ----------------------
     def save(self, path: str) -> None:
+        """Serialize model config/state (including sine + positional encoding)."""
         model = self._model or self._ensure_model(int(self.vocab_size or 32000))
         # Record the device where the model currently resides, to help
         # loaders place the model consistently when CUDA is available.
@@ -480,6 +510,7 @@ class psannLM:
                 "d_mlp": self.d_mlp,
                 "vocab_size": self.vocab_size,
                 "rope": self.rope,
+                "positional_encoding": self.positional_encoding,
                 "sine": {
                     "amp_init": self.sine.amp_init,
                     "freq_init": self.sine.freq_init,
@@ -495,6 +526,7 @@ class psannLM:
 
     @classmethod
     def load(cls, path: str) -> "psannLM":
+        """Load a psannLM checkpoint produced by :meth:`save`."""
         payload = torch.load(path, map_location="cpu")
         cfg = payload.get("config", {})
         inst = cls(
@@ -506,6 +538,7 @@ class psannLM:
             vocab_size=cfg.get("vocab_size"),
             sine_params=cfg.get("sine"),
             rope=cfg.get("rope", True),
+            positional_encoding=cfg.get("positional_encoding"),
             **cfg.get("overrides", {}),
         )
         model = inst._ensure_model(int(inst.vocab_size or 32000))
