@@ -1,0 +1,21 @@
+[
+  {
+    "size_label": "15M",
+    "target_params": 15000000,
+    "landed_params": 54016136,
+    "tokens_per_step": 8192,
+    "avg_tokens_sec": 97838.98134896636,
+    "std_tokens_sec": 0.0,
+    "p50_ms": 81.6127397119999,
+    "p90_ms": 88.0721790716052,
+    "p99_ms": 1576.0930255055428,
+    "peak_mem_gb": 5.921348571777344,
+    "final_train_loss": 4.790842056274414,
+    "eval_ppl": 14453.481351094984,
+    "wall_clock_s": 5.801320405676961,
+    "seeds": [
+      1337
+    ],
+    "participation_ratio": 9.209543228149414
+  }
+]
