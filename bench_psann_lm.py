@@ -83,6 +83,11 @@ DATASET_ALIASES = {
 }
 
 
+def log_progress(message: str) -> None:
+    """Emit a flushed progress line for long-running RunPod jobs."""
+    print(f"[bench] {message}", flush=True)
+
+
 @dataclass
 class LandingConfig:
     label: str
@@ -127,6 +132,7 @@ class RunResult:
 def parse_size_targets(arg: str) -> List[Tuple[str, int]]:
     if not arg:
         raise ValueError("At least one size must be provided.")
+    log_progress(f"parse_size_targets -> raw='{arg}'")
     tokens = [tok.strip() for tok in arg.split(",") if tok.strip()]
     results: List[Tuple[str, int]] = []
     for tok in tokens:
@@ -147,10 +153,12 @@ def parse_size_targets(arg: str) -> List[Tuple[str, int]]:
         if params <= 0:
             raise ValueError(f"Size token '{tok}' resolved to non-positive params.")
         results.append((label, params))
+    log_progress(f"parse_size_targets -> landed={results}")
     return results
 
 
 def seed_everything(seed: int) -> None:
+    log_progress(f"Seeding RNGs with seed={seed}")
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
@@ -163,6 +171,9 @@ def seed_everything(seed: int) -> None:
 
 
 def resolve_dataset(dataset: str, explicit_hub_id: Optional[str], dataset_name: Optional[str]) -> Tuple[str, Optional[str]]:
+    log_progress(
+        f"resolve_dataset -> dataset={dataset} explicit_hub_id={explicit_hub_id} dataset_name={dataset_name}"
+    )
     if explicit_hub_id:
         return explicit_hub_id, dataset_name
     key = dataset.strip().lower()
@@ -187,12 +198,16 @@ def _detect_text_field(dataset) -> str:
         raise RuntimeError("Unable to inspect dataset schema for text field detection.")
     row = dict(sample)
     if "text" in row and isinstance(row["text"], str):
-        return "text"
+        field = "text"
+        log_progress(f"Detected default text field '{field}'.")
+        return field
     for key in ("content", "article", "document", "body"):
         if key in row and isinstance(row[key], str):
+            log_progress(f"Detected fallback text field '{key}'.")
             return key
     for key, value in row.items():
         if isinstance(value, str):
+            log_progress(f"Detected inferred text field '{key}'.")
             return key
     raise RuntimeError("Could not find any string field in dataset sample.")
 
@@ -228,6 +243,9 @@ class TextStream:
         self.seed = seed
         self.shuffle_buffer = max(1_000, int(shuffle_buffer)) if shuffle else 0
         self._epoch = 0
+        log_progress(
+            f"TextStream init -> streaming={self.streaming} shuffle={self.shuffle} buffer={self.shuffle_buffer}"
+        )
 
     def __iter__(self) -> Iterator[str]:
         while True:
@@ -265,6 +283,9 @@ class SequenceBatcher:
         self.micro_batch = max(1, int(micro_batch_size))
         self._buffer = deque()  # type: ignore[var-annotated]
         self._iter = iter(self.stream)
+        log_progress(
+            f"SequenceBatcher init -> seq_len={self.seq_len} micro_batch={self.micro_batch}"
+        )
 
     def reset(self) -> None:
         self._buffer.clear()
@@ -307,6 +328,7 @@ class SequenceBatcher:
 
 
 def prepare_tokenizer(name_or_path: str, seq_len: int):
+    log_progress(f"Preparing tokenizer '{name_or_path}' (seq_len={seq_len})")
     tokenizer = AutoTokenizer.from_pretrained(name_or_path)
     if tokenizer.pad_token is None:
         if tokenizer.eos_token is not None:
@@ -320,6 +342,9 @@ def prepare_tokenizer(name_or_path: str, seq_len: int):
     tokenizer.model_max_length = seq_len + 1
     tokenizer.truncation_side = "right"
     tokenizer.padding_side = "right"
+    log_progress(
+        f"Tokenizer ready -> vocab_size={tokenizer.vocab_size} pad={tokenizer.pad_token} eos={tokenizer.eos_token}"
+    )
     return tokenizer
 
 
@@ -329,6 +354,7 @@ def tie_embeddings(model: nn.Module) -> None:
         head = getattr(model, "lm_head")
         if isinstance(embed, nn.Embedding) and isinstance(head, nn.Linear):
             head.weight = embed.weight  # type: ignore[assignment]
+            log_progress("Tied input embedding weights to LM head.")
 
 
 def count_model_params(
@@ -358,6 +384,9 @@ def count_model_params(
         wave_kernel_size=wave_kernel_size,
         wave_dilation_growth=wave_dilation_growth,
     )
+    log_progress(
+        f"Counting params -> base={base} d_model={d_model} n_layers={n_layers} n_heads={n_heads}"
+    )
     model = factory(**cfg)
     total = sum(p.numel() for p in model.parameters())
     del model
@@ -368,7 +397,9 @@ def suggest_head_count(d_model: int, max_heads: int) -> int:
     target = max(4, min(max_heads, d_model // 64 or 1))
     while target > 1 and d_model % target != 0:
         target -= 1
-    return max(1, target)
+    heads = max(1, target)
+    log_progress(f"suggest_head_count -> d_model={d_model} heads={heads}")
+    return heads
 
 
 def land_configs(
@@ -392,6 +423,7 @@ def land_configs(
     cache: Dict[Tuple[int, int, int], int] = {}
     for label, target in targets:
         best: Optional[LandingConfig] = None
+        log_progress(f"Landing config for size {label} ({target/1e6:.2f}M params target)")
         for d_model in width_choices:
             n_heads = suggest_head_count(d_model, max_heads)
             if d_model % n_heads != 0:
@@ -443,12 +475,17 @@ def land_configs(
                 f"({max_error*100:.2f}%). Consider adjusting width/layer search.",
                 flush=True,
             )
+        log_progress(
+            f"Landed {label}: params={best.landed_params} "
+            f"error={best.error_pct*100:.2f}% d_model={best.d_model} layers={best.n_layers}"
+        )
         landings.append(best)
     return landings
 
 
 def build_scheduler(optimizer: AdamW, total_steps: int, warmup_steps: int) -> LambdaLR:
     warmup = max(0, int(warmup_steps))
+    log_progress(f"Building scheduler -> total_steps={total_steps} warmup={warmup}")
 
     def lr_lambda(step: int) -> float:
         s = step + 1
@@ -495,6 +532,7 @@ class GPUStats:
             self._pynvml = None
             self.max_gpu_util = 0.0
             self.max_mem_util = 0.0
+        log_progress(f"GPUStats init -> enabled={self.enabled}")
 
     def sample(self) -> None:
         if not self.enabled or self._handle is None:
@@ -537,6 +575,7 @@ def evaluate_model(
 ) -> Optional[Dict[str, float]]:
     if eval_batches <= 0:
         return None
+    log_progress(f"Starting eval pass -> batches={eval_batches}")
     model.eval()
     criterion = nn.CrossEntropyLoss(reduction="sum")
     total_loss = 0.0
@@ -554,6 +593,7 @@ def evaluate_model(
         return None
     avg_loss = total_loss / total_tokens
     ppl = math.exp(avg_loss)
+    log_progress(f"Eval finished -> loss={avg_loss:.4f} ppl={ppl:.2f}")
     return {"loss": avg_loss, "ppl": ppl}
 
 
@@ -566,6 +606,7 @@ def snapshot_participation_ratio(
 ) -> Optional[float]:
     if samples <= 0:
         return None
+    log_progress(f"Running participation ratio diagnostic -> samples={samples}")
     collected: List[torch.Tensor] = []
     handle = None
 
@@ -588,14 +629,19 @@ def snapshot_participation_ratio(
     feats = torch.cat([f.mean(dim=1) for f in collected], dim=0)
     if feats.ndim != 2:
         feats = feats.reshape(feats.size(0), -1)
-    return participation_ratio(feats)
+    pr = participation_ratio(feats)
+    log_progress(f"Participation ratio computed -> {pr:.4f}")
+    return pr
 
 
 def get_git_commit() -> Optional[str]:
     try:
         out = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(ROOT))
-        return out.decode().strip()
+        commit = out.decode().strip()
+        log_progress(f"Git commit detected -> {commit}")
+        return commit
     except Exception:
+        log_progress("Git commit unavailable.")
         return None
 
 
@@ -609,7 +655,9 @@ def train_one_size(
     device: torch.device,
     run_dir: Path,
 ) -> RunResult:
+    log_progress(f"train_one_size -> label={landing.label} seed={args.seed}")
     run_dir.mkdir(parents=True, exist_ok=True)
+    log_progress(f"Output directory: {run_dir}")
     step_log = StepLogger(run_dir / "step_metrics.jsonl")
     loss_curve_path = run_dir / "loss_curve.csv"
 
@@ -622,6 +670,9 @@ def train_one_size(
             f"(seq_len={args.seq_len}, grad_accum={args.grad_accum}, micro_batch={micro_batch}).",
             flush=True,
         )
+    log_progress(
+        f"Train setup -> micro_batch={micro_batch} tokens_per_step={tokens_per_step} grad_accum={args.grad_accum}"
+    )
 
     train_batcher = SequenceBatcher(
         train_stream,
@@ -639,6 +690,7 @@ def train_one_size(
         )
 
     factory = get_base(args.base)
+    log_progress(f"Instantiating model base='{args.base}' for {landing.label}")
     sine_cfg = SineConfig(
         amp_init=args.sine_amp,
         freq_init=args.sine_freq,
@@ -663,10 +715,13 @@ def train_one_size(
     tie_embeddings(model)
     if args.grad_checkpoint and hasattr(model, "enable_gradient_checkpointing"):
         model.enable_gradient_checkpointing(True)  # type: ignore[attr-defined]
+        log_progress("Gradient checkpointing enabled on model.")
     model.to(device)
+    log_progress(f"Model moved to device {device}.")
     if args.compile:
         try:
             model = torch.compile(model)  # type: ignore[attr-defined]
+            log_progress("torch.compile succeeded.")
         except Exception as exc:
             print(f"[warn] torch.compile failed ({exc}); continuing without compilation.")
     optimizer = AdamW(
@@ -682,6 +737,9 @@ def train_one_size(
     amp_enabled = args.amp_mode in {"bf16", "fp16"} and device.type == "cuda"
     amp_dtype = torch.bfloat16 if args.amp_mode == "bf16" else torch.float16
     criterion = nn.CrossEntropyLoss()
+    log_progress(
+        f"Optimization ready -> lr={args.lr} amp={args.amp_mode} grad_clip={args.grad_clip} tf32={args.tf32}"
+    )
 
     torch.backends.cuda.matmul.allow_tf32 = args.tf32
     torch.backends.cudnn.allow_tf32 = args.tf32
@@ -705,6 +763,7 @@ def train_one_size(
     loss_writer.writerow(["step", "loss"])
 
     try:
+        log_progress(f"Starting training loop for {landing.label} with {args.steps} steps.")
         for step in range(1, args.steps + 1):
             step_start = time.perf_counter()
             optimizer.zero_grad(set_to_none=True)
@@ -785,12 +844,15 @@ def train_one_size(
             oom_flag = True
             print("[error] CUDA OOM encountered; aborting run.", flush=True)
             torch.cuda.empty_cache()
+            log_progress("Encountered CUDA OOM; emptied cache.")
         else:
+            log_progress(f"Runtime error encountered: {exc}")
             raise
     finally:
         step_log.close()
         loss_curve_fh.close()
         gpu_stats.close()
+        log_progress("Training loop finished; files closed.")
 
     steps_completed = len(loss_history)
     wall_clock = time.perf_counter() - start_time
@@ -802,6 +864,7 @@ def train_one_size(
         peak_mem_gb = peak_mem / (1024 ** 3)
     eval_stats = None
     if eval_batcher is not None and steps_completed > 0:
+        log_progress("Running evaluation on validation stream.")
         eval_stats = evaluate_model(
             model,
             eval_batcher,
@@ -811,6 +874,7 @@ def train_one_size(
         )
     pr_value = None
     if args.pr_samples > 0 and val_stream is not None and steps_completed > 0:
+        log_progress("Running participation ratio diagnostic.")
         diag_batcher = SequenceBatcher(
             val_stream,
             tokenizer,
@@ -884,6 +948,7 @@ def train_one_size(
     }
     metrics_path = run_dir / "metrics.json"
     metrics_path.write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+    log_progress(f"Wrote metrics.json for {landing.label} at {metrics_path}")
 
     final_loss = loss_history[-1][1] if loss_history else float("nan")
     eval_ppl = eval_stats["ppl"] if eval_stats else None
@@ -912,6 +977,7 @@ def train_one_size(
 
 
 def aggregate_results(results: List[RunResult]) -> List[Dict[str, object]]:
+    log_progress("Aggregating run results.")
     by_label: Dict[str, List[RunResult]] = collections.defaultdict(list)
     for res in results:
         by_label[res.label].append(res)
@@ -930,6 +996,9 @@ def aggregate_results(results: List[RunResult]) -> List[Dict[str, object]]:
         )
         wall_clock = statistics.mean(r.wall_clock_s for r in runs)
         peak_mem = statistics.mean(r.peak_mem_gb for r in runs)
+        log_progress(
+            f"Aggregate {label}: avg_tokens_sec={avg_tokens_sec:.0f} wall_clock={wall_clock:.1f}s seeds={len(runs)}"
+        )
         rows.append(
             {
                 "size_label": label,
@@ -961,6 +1030,7 @@ def save_summary(rows: List[Dict[str, object]], out_dir: Path) -> None:
     json_path = out_dir / "summary.json"
     if not rows:
         return
+    log_progress(f"Saving summary artifacts to {out_dir}")
     fieldnames = list(rows[0].keys())
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
@@ -977,6 +1047,7 @@ def plot_scaling(rows: List[Dict[str, object]], results: List[RunResult], out_di
         return
     if not rows:
         return
+    log_progress("Generating scaling plots.")
     plot_dir = out_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
     sorted_rows = sorted(rows, key=lambda r: r["target_params"])
@@ -1094,6 +1165,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    log_progress(f"Arguments parsed: {args}")
     if args.bf16:
         args.amp_mode = "bf16"
     if args.fp16:
@@ -1101,9 +1173,12 @@ def main() -> None:
     if args.amp_mode == "none":
         args.amp_mode = "fp32"
     width_choices = [int(w.strip()) for w in args.width_choices.split(",") if w.strip()]
+    log_progress(f"Width choices: {width_choices}")
     targets = parse_size_targets(args.sizes)
     dataset_id, dataset_name = resolve_dataset(args.dataset, args.dataset_hub_id, args.dataset_name)
-    print(f"[info] Loading dataset {dataset_id} (name={dataset_name}) split={args.train_split}", flush=True)
+    log_progress(
+        f"Preparing to load dataset id={dataset_id} name={dataset_name} split={args.train_split}"
+    )
     train_ds = load_dataset(
         dataset_id,
         name=dataset_name,
@@ -1127,7 +1202,7 @@ def main() -> None:
     text_field = _detect_text_field(train_ds)
     tokenizer = prepare_tokenizer(args.tokenizer, args.seq_len)
     vocab_size = tokenizer.vocab_size
-    print(f"[info] Tokenizer vocab size: {vocab_size}", flush=True)
+    log_progress(f"Tokenizer vocab size: {vocab_size}")
 
     train_stream = TextStream(
         train_ds,
@@ -1174,14 +1249,14 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     params_path = out_dir / "params_landing.json"
     params_path.write_text(json.dumps([asdict(l) for l in landings], indent=2), encoding="utf-8")
-    print(f"[info] Saved parameter landing to {params_path}", flush=True)
+    log_progress(f"Saved parameter landing to {params_path}")
 
     if args.device == "auto":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device(args.device)
 
-    print(f"[info] Using device: {device}", flush=True)
+    log_progress(f"Using device: {device}")
     results: List[RunResult] = []
     multi_seed_targets = {label.strip().upper() for label in args.multi_seed_sizes.split(",") if label.strip()}
 
@@ -1191,6 +1266,7 @@ def main() -> None:
             seeds = [args.seed + idx for idx in range(args.multi_seed_repeats)]
         for run_seed in seeds:
             print(f"\n[info] === Running size {landing.label} (seed {run_seed}) ===", flush=True)
+            log_progress(f"Dispatching run for {landing.label} seed={run_seed}")
             seed_everything(run_seed)
             run_dir = out_dir / f"{landing.label}_seed{run_seed}"
             run_result = train_one_size(
@@ -1209,6 +1285,7 @@ def main() -> None:
     if not args.no_plots:
         plot_scaling(summary_rows, results, out_dir)
 
+    log_progress("Benchmark runs complete. Emitting summary to stdout.")
     print("\n[done] Benchmark complete. Summary rows:")
     for row in summary_rows:
         print(
