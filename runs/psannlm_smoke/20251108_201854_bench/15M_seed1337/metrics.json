@@ -1,0 +1,90 @@
+{
+  "label": "15M",
+  "seed": 1337,
+  "target_params": 15000000,
+  "landed_params": 54016136,
+  "param_error_pct": 2.6010757333333334,
+  "config": {
+    "label": "15M",
+    "target_params": 15000000,
+    "landed_params": 54016136,
+    "error_pct": 2.6010757333333334,
+    "d_model": 384,
+    "n_layers": 8,
+    "n_heads": 6,
+    "d_mlp": 1536,
+    "dropout": 0.0,
+    "positional_encoding": "rope",
+    "wave_interleave": true,
+    "wave_kernel_size": 3,
+    "wave_dilation_growth": 1
+  },
+  "training": {
+    "steps_requested": 50,
+    "steps_completed": 50,
+    "tokens_per_step": 8192,
+    "tokens_total": 409600,
+    "tokens_per_sec_avg": 97838.98134896636,
+    "wall_clock_s": 5.801320405676961,
+    "grad_accum": 2,
+    "seq_len": 1024,
+    "grad_clip": 1.0,
+    "lr": 0.0003,
+    "weight_decay": 0.01,
+    "warmup_steps": 200,
+    "amp_mode": "bf16",
+    "compile": false
+  },
+  "optimizer": {
+    "beta1": 0.9,
+    "beta2": 0.95
+  },
+  "loss": {
+    "final": 4.790842056274414,
+    "best": 4.790842056274414
+  },
+  "eval": {
+    "loss": 9.578690588474274,
+    "ppl": 14453.481351094984
+  },
+  "diagnostics": {
+    "participation_ratio": 9.209543228149414,
+    "grad_norms": [
+      1.895516276359558,
+      1.8415991067886353,
+      1.8544666767120361,
+      2.022549867630005,
+      1.7981693744659424,
+      1.7838444709777832,
+      1.6815799474716187,
+      1.752631425857544,
+      1.755943775177002,
+      1.8688715696334839,
+      1.7627559900283813,
+      1.6956223249435425,
+      1.8498167991638184,
+      1.943795919418335,
+      1.839818000793457,
+      1.9409797191619873
+    ],
+    "step_time_ms": {
+      "p50": 81.6127397119999,
+      "p90": 88.0721790716052,
+      "p99": 1576.0930255055428
+    },
+    "gpu_util_max": 83.0,
+    "gpu_mem_util_max": 9.494966833825819
+  },
+  "stability": {
+    "nan": false,
+    "oom": false
+  },
+  "environment": {
+    "git_commit": "6f6bbc9779fc3cca2d4566f4fc5c00adc7c950c9",
+    "cuda_version": "12.8",
+    "cudnn_version": 91002,
+    "device": "cuda",
+    "gpu_name": "NVIDIA H100 80GB HBM3",
+    "torch_version": "2.8.0+cu128"
+  }
+}
