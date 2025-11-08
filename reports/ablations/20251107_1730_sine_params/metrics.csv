@@ -1,0 +1,9 @@
+label,amp_trainable,freq_trainable,damp_trainable,val_ppl,val_loss,train_loss,tokens_per_s,grad_norm,notes
+fixed_all,False,False,False,28.41,3.346,3.192,284112,1.83,Reference run with sine parameters frozen
+amp_only,True,False,False,25.08,3.222,3.064,283198,1.75,Amplitude learns modest rescaling
+freq_only,False,True,False,24.77,3.211,3.052,283004,1.79,Frequency-only tuning captures periodicity
+damp_only,False,False,True,27.93,3.325,3.176,283955,1.84,Damping-only has marginal impact
+amp_freq,True,True,False,23.54,3.158,3.013,282644,1.72,Amplitude+frequency pairing is strong
+amp_damp,True,False,True,24.21,3.193,3.041,282911,1.71,Damping helps once amplitude can move
+freq_damp,False,True,True,22.83,3.122,3.001,282377,1.7,Frequency+damping closes most of the gap
+all_trainable,True,True,True,22.11,3.099,2.987,281944,1.68,Fully trainable sine saturates gains

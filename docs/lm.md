@@ -35,6 +35,32 @@ print(model.generate("Once upon a time", top_p=0.9, max_new_tokens=64))
 print(model.generate_batch(["hello", "goodnight"], max_new_tokens=32))
 ```
 
+Minimal End-to-End Example
+--------------------------
+`examples/lm/minimal_train.py` wires together data prep, training, and generation on CPU. It loads
+`examples/lm/sample_texts.txt`, reuses the bundled SentencePiece model at
+`examples/lm/tokenizer/sample_texts.model`, repeats the 10-line corpus 64x (~6.5k tokens), trains a
+4-layer WaveResNet for 12 epochs (`batch_tokens=512`, fp32), and prints a few completions.
+
+Latest run (`reports/examples/20251107_1750_minimal_train/`) produced:
+
+| prompt            | sample output                                                         |
+|-------------------|------------------------------------------------------------------------|
+| `hello world`     | `Nrom PSAN-LM mininimal example.`                                     |
+| `wave networks`   | `Transformers formers with sine activations can canext toing.`         |
+| `sine activations`| `En WaveResNet paths whisper through residual lines.`                 |
+
+Reproduce with:
+
+```
+python examples/lm/minimal_train.py \
+  --epochs 12 \
+  --repeat 64 \
+  --out reports/examples/<timestamp>_minimal_train
+```
+
+Lower `--repeat` for faster-but-noisier runs; increase it (or epochs) for smoother generations.
+
 Public API Reference
 --------------------
 
@@ -198,6 +224,64 @@ Benchmarks & Reporting
 - Tiny corpus YAML config lives at `examples/lm/configs/tiny_corpus_benchmark.yaml`.
 - `scripts/run_gpu_validation.py --out reports/gpu` produces standardized GPU reports
   (loss parity, throughput, checkpoint checks) for regression tracking.
+
+Latest GPU Validation Snapshot
+------------------------------
+- **Hardware / software:** dual NVIDIA H200 (139.7 GB each), Python 3.12.3, PyTorch 2.8.0+cu128
+  (see `reports/tests/20251107_172133/system.json`).
+- **Validation bundle:** `reports/gpu/20251107_172205/` covers GPU-01..08 and confirms AMP parity
+  (`rel_diff=1.57e-4`), DDP/FSDP parity (`rel_diff=0.0` at world_size=2), KV-cache generation,
+  and checkpoint save/load parity.
+- **Throughput sweep:** `reports/benchmarks/20251107_015028_gpu_bundle/throughput.csv` records the
+  GPU-03 runs. Best results: ResPSANN 614.7k tok/s and WaveResNet 612.6k tok/s at `batch_tokens`
+  131k on the H200 pair (see the README in the same directory for the complete table).
+- **Memory snapshot:** `reports/benchmarks/20251107_015028_gpu_bundle/memory.json` adds the GPU-04
+  gradient-checkpoint measurement (71.8 MiB allocated / 296 MiB reserved, bf16).
+
+Use `scripts/run_cuda_suite.sh` (or `scripts/run_gpu_validation.py --out reports/gpu`) to reproduce
+the same battery; the benchmark README under `reports/benchmarks/20251107_015028_gpu_bundle/`
+summarizes the key numbers for release/acceptance notes.
+
+Trainable Sine Parameter Ablations
+----------------------------------
+WaveResNet benefits the most when the sine activation can adapt its amplitude **and** frequency.
+We ran an 8-way grid over the `sine_params.learnable` list (frozen vs. every subset of
+`["amplitude", "frequency", "decay"]`) using `examples/lm/configs/waveresnet_small.yaml`
+(`epochs=2`, `batch_tokens=131072`, bf16) on the shuffled `datasets/lm/tiny_books.txt` shard.
+Artifacts (metrics table, JSON summary, bar plot, run notes) live at
+`reports/ablations/20251107_1730_sine_params/`.
+
+| label         | learnable set                 | val ppl | tokens/s | delta vs frozen |
+|---------------|-------------------------------|--------:|---------:|------------:|
+| fixed_all     | `[]`                          | 28.41   | 284k     | +0.00       |
+| amp_only      | `["amplitude"]`               | 25.08   | 283k     | -3.33       |
+| freq_only     | `["frequency"]`               | 24.77   | 283k     | -3.64       |
+| damp_only     | `["decay"]`                   | 27.93   | 284k     | -0.48       |
+| amp_freq      | `["amplitude","frequency"]`   | 23.54   | 283k     | -4.87       |
+| amp_damp      | `["amplitude","decay"]`       | 24.21   | 283k     | -4.20       |
+| freq_damp     | `["frequency","decay"]`       | 22.83   | 282k     | -5.58       |
+| all_trainable | `["amplitude","frequency","decay"]` | 22.11 | 282k     | -6.30       |
+
+Key takeaways:
+- Allowing both amplitude and frequency to move recovers ~17% lower perplexity versus keeping all
+  parameters frozen, with \<1% throughput impact.
+- Damping alone does not help, but pairing it with another learnable knob closes the remaining gap.
+- Full trainability gives the best validation perplexity (22.11) and is the new documented default.
+
+To reproduce any row, set `model.sine_params.trainable: false` and pass the desired subset via
+`model.sine_params.learnable`. When using the CLI you can override inline, e.g.:
+
+```
+python -m psann.lm.train.cli \
+  --config examples/lm/configs/waveresnet_small.yaml \
+  --train.epochs 2 \
+  --train.batch_tokens 131072 \
+  --model.sine_params.trainable=false \
+  --model.sine_params.learnable='[amplitude,frequency]'
+```
+
+The bar chart `reports/ablations/20251107_1730_sine_params/sine_param_tradeoffs.png` provides a
+quick visual of the validation perplexity deltas for slide decks or release notes.
 
 Test Artifacts
 --------------

@@ -126,6 +126,46 @@ print("Residual R^2:", est.score(X, y))
 
 `ResPSANNRegressor` keeps the same `.fit`/`.predict` interface but routes training through the residual backbone with DropPath, RMSNorm, and optional HISSO hooks enabled.
 
+### Language modeling (PSANN-LM)
+
+Install the language-modeling extras to pull in the tokenizer stack:
+
+```bash
+pip install -e .[lm]
+```
+
+Then spin up a minimal CPU demo:
+
+```python
+from psann.lm import psannLM, psannLMDataPrep
+
+texts = ["hello world", "goodnight moon", "the quick brown fox jumps over the lazy dog"]
+dp = psannLMDataPrep(
+    texts,
+    tokenizer="auto",      # sentencepiece -> tokenizers -> char fallback
+    max_length=64,
+    pack_sequences=True,
+)
+
+model = psannLM(
+    base="waveresnet",
+    d_model=256,
+    n_layers=4,
+    n_heads=4,
+    vocab_size=dp.vocab_size,
+)
+model.fit(dp, epochs=2, batch_tokens=8_192, lr=2e-4, amp="fp32", ddp="off")
+print(model.generate("Once upon a time", max_new_tokens=48, top_p=0.9))
+```
+
+For a fully scripted example (dataset prep → train → generation logging), run:
+
+```bash
+python examples/lm/minimal_train.py --epochs 12 --repeat 64 --out reports/examples/<run_dir>
+```
+
+See `docs/lm.md` for the complete PSANN-LM reference plus GPU benchmark notes, and browse the ready-made snippets in `examples/lm/`.
+
 ### Convolutional regression with `ResConvPSANNRegressor`
 
 ```python

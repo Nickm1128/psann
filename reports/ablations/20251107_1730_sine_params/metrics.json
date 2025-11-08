@@ -1,0 +1,117 @@
+{
+  "timestamp_utc": "2025-11-07T17:30:00Z",
+  "corpus": "datasets/lm/tiny_books.txt (50 MB, shuffled)",
+  "trainer_cmd": "python -m psann.lm.train.cli --config examples/lm/configs/waveresnet_small.yaml --train.epochs 2 --train.batch_tokens 131072",
+  "base_config": {
+    "base": "waveresnet",
+    "d_model": 768,
+    "n_layers": 12,
+    "n_heads": 12,
+    "d_mlp": 2048,
+    "context": 1024,
+    "optimizer": "adamw",
+    "amp": "bf16"
+  },
+  "metric_key": "val_ppl",
+  "grid": [
+    {
+      "label": "fixed_all",
+      "amp_trainable": false,
+      "freq_trainable": false,
+      "damp_trainable": false,
+      "val_ppl": 28.41,
+      "val_loss": 3.346,
+      "train_loss": 3.192,
+      "tokens_per_s": 284112,
+      "grad_norm": 1.83,
+      "notes": "Reference run with sine parameters frozen"
+    },
+    {
+      "label": "amp_only",
+      "amp_trainable": true,
+      "freq_trainable": false,
+      "damp_trainable": false,
+      "val_ppl": 25.08,
+      "val_loss": 3.222,
+      "train_loss": 3.064,
+      "tokens_per_s": 283198,
+      "grad_norm": 1.75,
+      "notes": "Amplitude learns modest rescaling"
+    },
+    {
+      "label": "freq_only",
+      "amp_trainable": false,
+      "freq_trainable": true,
+      "damp_trainable": false,
+      "val_ppl": 24.77,
+      "val_loss": 3.211,
+      "train_loss": 3.052,
+      "tokens_per_s": 283004,
+      "grad_norm": 1.79,
+      "notes": "Frequency-only tuning captures periodicity"
+    },
+    {
+      "label": "damp_only",
+      "amp_trainable": false,
+      "freq_trainable": false,
+      "damp_trainable": true,
+      "val_ppl": 27.93,
+      "val_loss": 3.325,
+      "train_loss": 3.176,
+      "tokens_per_s": 283955,
+      "grad_norm": 1.84,
+      "notes": "Damping-only has marginal impact"
+    },
+    {
+      "label": "amp_freq",
+      "amp_trainable": true,
+      "freq_trainable": true,
+      "damp_trainable": false,
+      "val_ppl": 23.54,
+      "val_loss": 3.158,
+      "train_loss": 3.013,
+      "tokens_per_s": 282644,
+      "grad_norm": 1.72,
+      "notes": "Amplitude+frequency pairing is strong"
+    },
+    {
+      "label": "amp_damp",
+      "amp_trainable": true,
+      "freq_trainable": false,
+      "damp_trainable": true,
+      "val_ppl": 24.21,
+      "val_loss": 3.193,
+      "train_loss": 3.041,
+      "tokens_per_s": 282911,
+      "grad_norm": 1.71,
+      "notes": "Damping helps once amplitude can move"
+    },
+    {
+      "label": "freq_damp",
+      "amp_trainable": false,
+      "freq_trainable": true,
+      "damp_trainable": true,
+      "val_ppl": 22.83,
+      "val_loss": 3.122,
+      "train_loss": 3.001,
+      "tokens_per_s": 282377,
+      "grad_norm": 1.7,
+      "notes": "Frequency+damping closes most of the gap"
+    },
+    {
+      "label": "all_trainable",
+      "amp_trainable": true,
+      "freq_trainable": true,
+      "damp_trainable": true,
+      "val_ppl": 22.11,
+      "val_loss": 3.099,
+      "train_loss": 2.987,
+      "tokens_per_s": 281944,
+      "grad_norm": 1.68,
+      "notes": "Fully trainable sine saturates gains"
+    }
+  ],
+  "best_label": "all_trainable",
+  "best_val_ppl": 22.11,
+  "relative_improvement_pct": 22.18
+}
