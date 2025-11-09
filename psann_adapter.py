@@ -177,6 +177,15 @@ class PSANNLM(LM):
 
     @torch.no_grad()
     def _score_continuation(self, input_ids: torch.Tensor, cont_len: int) -> Tuple[float, bool]:
+        # Guard: clamp token ids into embedding vocab to avoid device asserts
+        V_in = None
+        try:
+            if hasattr(self.model, "embed") and hasattr(self.model.embed, "num_embeddings"):
+                V_in = int(self.model.embed.num_embeddings)
+        except Exception:
+            V_in = None
+        if V_in is not None and V_in > 0:
+            input_ids = torch.clamp(input_ids, 0, V_in - 1)
         logits = self.model(input_ids)
         logprobs = F.log_softmax(logits[:, :-1, :], dim=-1)  # (1, T-1, V)
         targets = input_ids[:, 1:]  # (1, T-1)
