@@ -155,7 +155,7 @@ class PSANNLM(LM):
         self.max_ctx = int(max(8, max_ctx))
 
     # --------- Helper encoding/forward utilities ---------
-    def _encode_pair(self, context: str, continuation: str) -> Tuple[torch.Tensor, int, int]:
+    def _encode_pair(self, context: str, continuation: str) -> Tuple[torch.Tensor, int]:
         # Encode without injecting specials; we add BOS/EOS explicitly
         ctx_ids = self.tok.encode(context, add_specials=False)
         cont_ids = self.tok.encode(continuation, add_specials=False)
@@ -172,22 +172,30 @@ class PSANNLM(LM):
         # Continuation target range in next-token targets
         # input: [BOS, ctx..., cont..., EOS]
         # targets align to input[:, 1:], so the first cont token is at index ctx_len-1
-        ctx_len = min(self.max_ctx, 1 + len(ctx_ids))
         cont_len = len(cont_ids)
-        return input_ids, ctx_len, cont_len
+        return input_ids, cont_len
 
     @torch.no_grad()
-    def _score_continuation(self, input_ids: torch.Tensor, ctx_len: int, cont_len: int) -> Tuple[float, bool]:
+    def _score_continuation(self, input_ids: torch.Tensor, cont_len: int) -> Tuple[float, bool]:
         logits = self.model(input_ids)
         logprobs = F.log_softmax(logits[:, :-1, :], dim=-1)  # (1, T-1, V)
         targets = input_ids[:, 1:]  # (1, T-1)
-        start = max(0, ctx_len - 1)
-        end = start + cont_len
+        T = int(input_ids.shape[1])
+        # Continuation occupies the last cont_len positions before EOS
+        cont_start_full = max(0, T - 1 - int(cont_len))
+        # Map to target indices (targets align to positions 1..T-1)
+        start = max(0, cont_start_full - 1)
+        end = max(start, start + int(cont_len))
         if end > targets.shape[1]:
             end = targets.shape[1]
         # Gather logprobs over continuation region
         lp_slice = logprobs[:, start:end, :]
         tgt_slice = targets[:, start:end]
+        # Safety: clamp any out-of-range target ids
+        V = lp_slice.shape[-1]
+        if V <= 0:
+            return 0.0, False
+        tgt_slice = torch.clamp(tgt_slice, 0, V - 1)
         # Sum token log-probabilities
         lp = lp_slice.gather(-1, tgt_slice.unsqueeze(-1)).squeeze(-1)
         logprob_sum = float(lp.sum().item())
@@ -201,8 +209,8 @@ class PSANNLM(LM):
         out: List[Tuple[float, bool]] = []
         for req in requests:
             ctx, cont = req.args  # lm-eval wraps as Instance; .args -> (context, continuation)
-            ids, ctx_len, cont_len = self._encode_pair(ctx, cont)
-            lp, greedy = self._score_continuation(ids, ctx_len, cont_len)
+            ids, cont_len = self._encode_pair(ctx, cont)
+            lp, greedy = self._score_continuation(ids, cont_len)
             out.append((lp, greedy))
         return out
 
