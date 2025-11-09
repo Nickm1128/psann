@@ -22,6 +22,7 @@ class TokenizerConfig:
     vocab_size: int = 32000  # upper bound for learned vocab (where applicable)
     model_path: Optional[str] = None  # load prebuilt model if provided
     special_tokens_map_path: Optional[str] = None  # optional HF special tokens map path
+    hf_passthrough_ids: bool = False  # if True, expose raw HF ids (no +4 remap)
     min_frequency: int = 2  # for BPE tokenizers
     # SentencePiece options
     sp_model_type: str = "unigram"  # "unigram" | "bpe"
@@ -347,6 +348,8 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
         def vocab_size(self) -> int:
             if self.tk is None:
                 return int(self.cfg.vocab_size)
+            if self.cfg.hf_passthrough_ids:
+                return int(self.tk.get_vocab_size())
             # Reserve 0..3 for fixed specials; shift others by +4
             return 4 + int(self.tk.get_vocab_size())
 
@@ -464,12 +467,20 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
             tk = self._ensure()
             out = tk.encode(text)
             ids = [int(i) for i in out.ids]
-            # Map to fixed ids for PAD/BOS/EOS/UNK if needed
+            if self.cfg.hf_passthrough_ids:
+                # Use raw token ids; add actual BOS/EOS ids if requested
+                if add_specials:
+                    bos = self._src_special_ids.get("bos", self.BOS)
+                    eos = self._src_special_ids.get("eos", self.EOS)
+                    ids = ([bos] if bos is not None else []) + ids + ([eos] if eos is not None else [])
+                return ids
+
+            # Remapped fixed ids path
             pad_id = self._ids.get("[PAD]", self.PAD)
             bos_id = self._ids.get("[BOS]", self.BOS)
             eos_id = self._ids.get("[EOS]", self.EOS)
             unk_id = self._ids.get("[UNK]", self.UNK)
-            # We expose fixed ids (0..3). Shift other ids by +4 if they collide.
+
             def _map(i: int) -> int:
                 if i == pad_id:
                     return self.PAD
@@ -479,7 +490,7 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                     return self.EOS
                 if i == unk_id:
                     return self.UNK
-                return i + 4  # reserve 0..3
+                return i + 4
 
             ids = [_map(i) for i in ids]
             if add_specials:
@@ -488,13 +499,24 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
 
         def decode(self, ids: Sequence[int], skip_specials: bool = True) -> str:
             tk = self._ensure()
-            # inverse mapping (naive): remove specials and subtract 4 where applicable
+            if self.cfg.hf_passthrough_ids:
+                # Remove actual special ids if requested
+                if skip_specials:
+                    specials = {
+                        v for v in self._src_special_ids.values() if v is not None
+                    }
+                    out_ids = [int(i) for i in ids if int(i) not in specials]
+                else:
+                    out_ids = [int(i) for i in ids]
+                return tk.decode(out_ids)
+
+            # Remapped path: remove fixed specials and unshift by 4
             out_ids: List[int] = []
             for i in ids:
                 if skip_specials and i in (self.PAD, self.BOS, self.EOS):
                     continue
                 if i >= 4:
-                    out_ids.append(i - 4)
+                    out_ids.append(int(i) - 4)
             return tk.decode(out_ids)
 
     return HFTokenizersWrapper(cfg)

@@ -139,6 +139,7 @@ class PSANNLM(LM):
             backend=str(tokenizer_backend or "auto"),
             model_path=str(tokenizer_model_path) if tokenizer_model_path else None,
             special_tokens_map_path=str(tokenizer_special_map_path) if tokenizer_special_map_path else None,
+            hf_passthrough_ids=(str(tokenizer_backend or "auto").lower() == "tokenizers"),
         )
         tok = Tokenizer(cfg)
         # Ensure backend is fully ready (SP/HF loaders stick model in fit())
