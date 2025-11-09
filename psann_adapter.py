@@ -73,6 +73,7 @@ class PSANNLM(LM):
         device: str | None = None,
         tokenizer_backend: str = "auto",
         tokenizer_model_path: Optional[str] = None,
+        tokenizer_special_map_path: Optional[str] = None,
         max_batch_size: int = 8,
         max_ctx: int = 2048,
         batch_size: object | None = None,
@@ -137,6 +138,7 @@ class PSANNLM(LM):
         cfg = TokenizerConfig(
             backend=str(tokenizer_backend or "auto"),
             model_path=str(tokenizer_model_path) if tokenizer_model_path else None,
+            special_tokens_map_path=str(tokenizer_special_map_path) if tokenizer_special_map_path else None,
         )
         tok = Tokenizer(cfg)
         # Ensure backend is fully ready (SP/HF loaders stick model in fit())

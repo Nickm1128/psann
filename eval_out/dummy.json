@@ -95,7 +95,7 @@
   },
   "config": {
     "model": "psann",
-    "model_args": "ckpt=runs/lm/dummy_eval/final_model.pt,,,,,tokenizer_backend=simple,,max_ctx=2048,max_batch_size=8",
+    "model_args": "ckpt=runs/lm/dummy_eval/final_model.pt,,,,,tokenizer_backend=simple,,,max_ctx=2048,max_batch_size=8",
     "batch_size": "1",
     "batch_sizes": [],
     "device": "cpu",
@@ -104,8 +104,8 @@
     "bootstrap_iters": 100000,
     "gen_kwargs": null
   },
-  "git_hash": "v1.0.0-79-g86c08da",
-  "date": 1762708950.318554,
+  "git_hash": "v1.0.0-81-gfdb89cb",
+  "date": 1762710472.368831,
   "pretty_env_info": "PyTorch version: 2.7.1+cu118\nIs debug build: False\nCUDA used to build PyTorch: 11.8\nROCM used to build PyTorch: N/A\n\nOS: Microsoft Windows 11 Pro (10.0.26100 64-bit)\nGCC version: Could not collect\nClang version: Could not collect\nCMake version: Could not collect\nLibc version: N/A\n\nPython version: 3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)] (64-bit runtime)\nPython platform: Windows-10-10.0.26100-SP0\nIs CUDA available: False\nCUDA runtime version: No CUDA\nCUDA_MODULE_LOADING set to: N/A\nGPU models and configuration: No CUDA\nNvidia driver version: No CUDA\ncuDNN version: No CUDA\nHIP runtime version: N/A\nMIOpen runtime version: N/A\nIs XNNPACK available: True\n\nCPU:\nName: 13th Gen Intel(R) Core(TM) i5-1335U\nManufacturer: GenuineIntel\nFamily: 205\nArchitecture: 9\nProcessorType: 3\nDeviceID: CPU0\nCurrentClockSpeed: 1300\nMaxClockSpeed: 1300\nL2CacheSize: 6656\nL2CacheSpeed: None\nRevision: None\n\nVersions of relevant libraries:\n[pip3] mypy==1.18.2\n[pip3] mypy_extensions==1.1.0\n[pip3] numpy==1.26.4\n[pip3] torch==2.7.1+cu118\n[pip3] torchaudio==2.7.1+cu118\n[pip3] torchvision==0.22.1+cu118\n[conda] Could not collect",
   "transformers_version": "4.56.2",
   "upper_git_hash": null

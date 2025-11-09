@@ -7,6 +7,7 @@ fallback when `backend="auto"`. Adapters for `sentencepiece` and
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence
@@ -20,6 +21,7 @@ class TokenizerConfig:
     backend: str = "auto"  # "auto" | "simple" | "sentencepiece" | "tokenizers"
     vocab_size: int = 32000  # upper bound for learned vocab (where applicable)
     model_path: Optional[str] = None  # load prebuilt model if provided
+    special_tokens_map_path: Optional[str] = None  # optional HF special tokens map path
     min_frequency: int = 2  # for BPE tokenizers
     # SentencePiece options
     sp_model_type: str = "unigram"  # "unigram" | "bpe"
@@ -323,6 +325,7 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
             self.cfg = cfg
             self.tk: Optional[HFTokenizer] = None
             self._ids: Dict[str, int] = {}
+            self._src_special_ids: Dict[str, int] = {}
 
         @property
         def pad_id(self) -> int:
@@ -347,18 +350,79 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
             # Reserve 0..3 for fixed specials; shift others by +4
             return 4 + int(self.tk.get_vocab_size())
 
+        def _normalize_special_entry(self, value) -> Optional[str]:
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                return value.get("content") or value.get("token")
+            return None
+
+        def _load_special_token_strings(self) -> Dict[str, str]:
+            mapping: Dict[str, str] = {}
+            path = self.cfg.special_tokens_map_path
+            if not path:
+                return mapping
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    raw = json.load(fh)
+                for key in ("pad_token", "bos_token", "eos_token", "unk_token"):
+                    if key in raw:
+                        normalized = self._normalize_special_entry(raw[key])
+                        if normalized:
+                            mapping[key] = normalized
+            except Exception as exc:  # pragma: no cover - best-effort
+                logger.warning("Failed to read special tokens map '%s': %s", path, exc)
+            return mapping
+
+        def _resolve_special_id(
+            self,
+            tk: HFTokenizer,
+            key: str,
+            provided: Dict[str, str],
+            fallback_tokens: List[str],
+            default: int,
+        ) -> int:
+            candidates: List[Optional[str]] = []
+            if key in provided:
+                candidates.append(provided[key])
+            candidates.extend(fallback_tokens)
+            for token in candidates:
+                if not token:
+                    continue
+                tid = tk.token_to_id(token)
+                if tid is not None:
+                    return int(tid)
+            return int(default)
+
+        def _configure_special_ids(self, tk: HFTokenizer) -> None:
+            provided = self._load_special_token_strings()
+            pad_src = self._resolve_special_id(tk, "pad_token", provided, ["[PAD]", "<pad>", "<PAD>", "pad"], self.PAD)
+            bos_src = self._resolve_special_id(
+                tk, "bos_token", provided, ["[BOS]", "<s>", "<BOS>", "bos", "<bos>"], self.BOS
+            )
+            eos_src = self._resolve_special_id(
+                tk, "eos_token", provided, ["[EOS]", "</s>", "<EOS>", "eos", "<eos>"], self.EOS
+            )
+            unk_src = self._resolve_special_id(tk, "unk_token", provided, ["[UNK]", "<unk>", "<UNK>", "unk"], self.UNK)
+            self._ids = {
+                "[PAD]": pad_src,
+                "[BOS]": bos_src,
+                "[EOS]": eos_src,
+                "[UNK]": unk_src,
+            }
+            self._src_special_ids = {
+                "pad": pad_src,
+                "bos": bos_src,
+                "eos": eos_src,
+                "unk": unk_src,
+            }
+
         def fit(self, texts: Iterable[str]) -> None:
             # Load from JSON if provided
             if self.cfg.model_path:
                 tk = HFTokenizer.from_file(self.cfg.model_path)
                 self.tk = tk
-                # Map special token ids
-                self._ids = {
-                    "[PAD]": int(tk.token_to_id("[PAD]")) if tk.token_to_id("[PAD]") is not None else 0,
-                    "[BOS]": int(tk.token_to_id("[BOS]")) if tk.token_to_id("[BOS]") is not None else 1,
-                    "[EOS]": int(tk.token_to_id("[EOS]")) if tk.token_to_id("[EOS]") is not None else 2,
-                    "[UNK]": int(tk.token_to_id("[UNK]")) if tk.token_to_id("[UNK]") is not None else 3,
-                }
+                self._configure_special_ids(tk)
                 return
             # Train a BPE model with basic whitespace pre-tokenization
             model = models.BPE(unk_token="[UNK]")
@@ -386,13 +450,7 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                     os.remove(corpus_path)
                 except Exception:
                     pass
-            # Map special token ids
-            self._ids = {
-                "[PAD]": int(tk.token_to_id("[PAD]")),
-                "[BOS]": int(tk.token_to_id("[BOS]")),
-                "[EOS]": int(tk.token_to_id("[EOS]")),
-                "[UNK]": int(tk.token_to_id("[UNK]")),
-            }
+            self._configure_special_ids(tk)
             # Ensure our fixed ids map; if not aligned, add a decoder shim
             # For simplicity, we will keep wrapper ids fixed at 0..3 and remap in encode/decode.
             self.tk = tk

@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
+import warnings
 
 from lm_eval import evaluator
 from lm_eval.api import registry
@@ -42,9 +44,11 @@ def main() -> int:
     p.add_argument("--device", default="auto", type=str)
     p.add_argument("--tokenizer-backend", default="auto", type=str)
     p.add_argument("--tokenizer-model-path", default=None, type=str)
+    p.add_argument("--tokenizer-special-map-path", default=None, type=str, help="Path to special_tokens_map.json for Hugging Face tokenizers backends")
     p.add_argument("--hf-tokenizer-repo", default=None, type=str)
     p.add_argument("--hf-tokenizer-filename", default=None, type=str)
     p.add_argument("--hf-tokenizer-revision", default=None, type=str)
+    p.add_argument("--hf-tokenizer-special-map", default=None, type=str, help="Filename within the tokenizer repo for special_tokens_map.json (default: sibling to tokenizer json)")
     p.add_argument("--tasks", default="wikitext", type=str)
     p.add_argument("--limit", default=1500, type=int)
     p.add_argument("--num-fewshot", default=0, type=int)
@@ -61,18 +65,44 @@ def main() -> int:
     if not args.ckpt and not args.hf_repo:
         raise SystemExit("Provide --ckpt or --hf-repo to locate the model.")
 
-    # Optionally download tokenizer model from HF Hub
+    # Optionally download tokenizer assets from HF Hub
     tok_model_path = args.tokenizer_model_path
-    if tok_model_path is None and args.hf_tokenizer_repo and args.hf_tokenizer_filename:
+    tok_special_map = args.tokenizer_special_map_path
+    if args.hf_tokenizer_repo:
         try:
             from huggingface_hub import hf_hub_download
-            tok_model_path = hf_hub_download(
-                repo_id=args.hf_tokenizer_repo,
-                filename=args.hf_tokenizer_filename,
-                revision=args.hf_tokenizer_revision,
-            )
-        except Exception as e:
-            raise SystemExit(f"Failed to download tokenizer from HF Hub: {e}")
+        except Exception as e:  # pragma: no cover
+            raise SystemExit(f"Failed to import huggingface_hub: {e}")
+
+        if tok_model_path is None and args.hf_tokenizer_filename:
+            try:
+                tok_model_path = hf_hub_download(
+                    repo_id=args.hf_tokenizer_repo,
+                    filename=args.hf_tokenizer_filename,
+                    revision=args.hf_tokenizer_revision,
+                )
+            except Exception as e:
+                raise SystemExit(f"Failed to download tokenizer from HF Hub: {e}")
+
+        if tok_special_map is None:
+            special_filename = args.hf_tokenizer_special_map
+            if special_filename is None and args.hf_tokenizer_filename:
+                special_filename = str(
+                    PurePosixPath(args.hf_tokenizer_filename).with_name("special_tokens_map.json")
+                )
+            if special_filename:
+                try:
+                    tok_special_map = hf_hub_download(
+                        repo_id=args.hf_tokenizer_repo,
+                        filename=special_filename,
+                        revision=args.hf_tokenizer_revision,
+                    )
+                except Exception as exc:
+                    warnings.warn(
+                        f"Could not download special tokens map '{special_filename}' from "
+                        f"{args.hf_tokenizer_repo}: {exc}",
+                        RuntimeWarning,
+                    )
 
     cfg = {
         "batch_size": args.batch_size,
@@ -87,6 +117,7 @@ def main() -> int:
                 (f"hf_token={args.hf_token}" if args.hf_token else ""),
                 f"tokenizer_backend={args.tokenizer_backend}",
                 f"tokenizer_model_path={tok_model_path}" if tok_model_path else "",
+                f"tokenizer_special_map_path={tok_special_map}" if tok_special_map else "",
                 f"max_ctx={int(args.max_ctx)}",
                 f"max_batch_size={int(args.max_batch_size)}",
             ]
