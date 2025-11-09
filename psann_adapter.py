@@ -223,15 +223,15 @@ class PSANNLM(LM):
             out.append((lp, greedy))
         return out
 
-    def loglikelihood_rolling(self, requests) -> List[Tuple[float, int]]:
+    def loglikelihood_rolling(self, requests) -> List[Tuple[float]]:
         # Compute full-string loglikelihood per request with long-context rolling
-        results: List[Tuple[float, int]] = []
+        # lm-eval 0.4.2 expects list[(logprob,)] and handles weights internally.
+        results: List[Tuple[float]] = []
         for req in requests:
             (text,) = req.args
             # Tokenize without specials; we insert BOS/EOS and roll windows
             ids = self.tok.encode(text, add_specials=False)
             total_lp = 0.0
-            total_tokens = 0
             # Build [BOS] + ids + [EOS]
             seq = [self.tok.bos_id] + ids + [self.tok.eos_id]
             # Slide over seq with window size <= max_ctx
@@ -241,17 +241,23 @@ class PSANNLM(LM):
                 chunk = seq[pos:end]
                 # We always score all next-tokens in this chunk except the first input token
                 inp = torch.tensor([chunk], dtype=torch.long, device=self.device)
+                # Guard embedding range
+                try:
+                    V_in = int(self.model.embed.num_embeddings)  # type: ignore[attr-defined]
+                except Exception:
+                    V_in = None
+                if V_in is not None and V_in > 0:
+                    inp = torch.clamp(inp, 0, V_in - 1)
                 logits = self.model(inp)
                 logprobs = F.log_softmax(logits[:, :-1, :], dim=-1)
                 targets = inp[:, 1:]
-                # Number of predicted tokens in this chunk
-                n_pred = targets.numel()
+                V_out = int(logits.size(-1))
+                targets = torch.clamp(targets, 0, max(0, V_out - 1))
                 lp = logprobs.gather(-1, targets.unsqueeze(-1)).squeeze(-1).sum().item()
                 total_lp += float(lp)
-                total_tokens += int(n_pred)
                 # Move window to overlap by 1 token to maximize context, per lm-eval spec
                 pos = end - 1
-            results.append((total_lp, total_tokens))
+            results.append((total_lp,))
         return results
 
     @torch.no_grad()
