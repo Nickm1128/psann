@@ -24,11 +24,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
+import logging
+
 import math
 import torch
 import torch.nn.functional as F
 
 from lm_eval.api.model import LM
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -37,6 +41,7 @@ class _TokShim:
     pad_id: int
     bos_id: int
     eos_id: int
+    unk_id: int
 
     def encode(self, s: str, *, add_specials: bool = True) -> List[int]:
         return list(self.impl.encode(s, add_specials=add_specials))
@@ -141,9 +146,10 @@ class PSANNLM(LM):
         except Exception:
             # Some backends may already be materialized; ignore.
             pass
-        self.tok = _TokShim(tok, tok.pad_id, tok.bos_id, tok.eos_id)
+        self.tok = _TokShim(tok, tok.pad_id, tok.bos_id, tok.eos_id, tok.unk_id)
 
         self.vocab_size = int(getattr(self.model, "lm_head").weight.shape[0])
+        self._id_range_warned = False
         # lm-eval may pass a `batch_size` top-level arg into the model ctor.
         # We don't need it beyond shaping; keep a sensible cap.
         try:
@@ -175,17 +181,36 @@ class PSANNLM(LM):
         cont_len = len(cont_ids)
         return input_ids, cont_len
 
+    def _sanitize_token_ids(self, ids: torch.Tensor) -> torch.Tensor:
+        """Map any out-of-range token ids to a safe value (UNK by default)."""
+        vocab_cap = int(getattr(self, "vocab_size", 0) or 0)
+        if ids.dtype != torch.long:
+            ids = ids.long()
+        if vocab_cap <= 0:
+            return ids
+        mask = (ids < 0) | (ids >= vocab_cap)
+        needs_fix = bool(mask.any().item()) if mask.numel() else False
+        if not needs_fix:
+            return ids
+        if not self._id_range_warned:
+            unk = getattr(self.tok, "unk_id", None)
+            LOGGER.warning(
+                "Tokenizer ids exceed model vocab size (%d); remapping to unk_id=%s.",
+                vocab_cap,
+                unk,
+            )
+            self._id_range_warned = True
+        safe = ids.clamp(0, vocab_cap - 1)
+        unk_id = getattr(self.tok, "unk_id", None)
+        if unk_id is not None:
+            unk_val = int(unk_id)
+            if 0 <= unk_val < vocab_cap:
+                safe = safe.masked_fill(mask, unk_val)
+        return safe
+
     @torch.no_grad()
     def _score_continuation(self, input_ids: torch.Tensor, cont_len: int) -> Tuple[float, bool]:
-        # Guard: clamp token ids into embedding vocab to avoid device asserts
-        V_in = None
-        try:
-            if hasattr(self.model, "embed") and hasattr(self.model.embed, "num_embeddings"):
-                V_in = int(self.model.embed.num_embeddings)
-        except Exception:
-            V_in = None
-        if V_in is not None and V_in > 0:
-            input_ids = torch.clamp(input_ids, 0, V_in - 1)
+        input_ids = self._sanitize_token_ids(input_ids)
         logits = self.model(input_ids)
         logprobs = F.log_softmax(logits[:, :-1, :], dim=-1)  # (1, T-1, V)
         targets = input_ids[:, 1:]  # (1, T-1)
@@ -223,10 +248,10 @@ class PSANNLM(LM):
             out.append((lp, greedy))
         return out
 
-    def loglikelihood_rolling(self, requests) -> List[Tuple[float]]:
+    def loglikelihood_rolling(self, requests) -> List[float]:
         # Compute full-string loglikelihood per request with long-context rolling
-        # lm-eval 0.4.2 expects list[(logprob,)] and handles weights internally.
-        results: List[Tuple[float]] = []
+        # lm-eval expects flat float log-likelihoods per document.
+        results: List[float] = []
         for req in requests:
             (text,) = req.args
             # Tokenize without specials; we insert BOS/EOS and roll windows
@@ -241,13 +266,8 @@ class PSANNLM(LM):
                 chunk = seq[pos:end]
                 # We always score all next-tokens in this chunk except the first input token
                 inp = torch.tensor([chunk], dtype=torch.long, device=self.device)
+                inp = self._sanitize_token_ids(inp)
                 # Guard embedding range
-                try:
-                    V_in = int(self.model.embed.num_embeddings)  # type: ignore[attr-defined]
-                except Exception:
-                    V_in = None
-                if V_in is not None and V_in > 0:
-                    inp = torch.clamp(inp, 0, V_in - 1)
                 logits = self.model(inp)
                 logprobs = F.log_softmax(logits[:, :-1, :], dim=-1)
                 targets = inp[:, 1:]
@@ -257,7 +277,7 @@ class PSANNLM(LM):
                 total_lp += float(lp)
                 # Move window to overlap by 1 token to maximize context, per lm-eval spec
                 pos = end - 1
-            results.append((total_lp,))
+            results.append(total_lp)
         return results
 
     @torch.no_grad()
@@ -274,6 +294,7 @@ class PSANNLM(LM):
             generated: List[int] = []
             for _ in range(max_new):
                 inp = torch.tensor([seq], dtype=torch.long, device=self.device)
+                inp = self._sanitize_token_ids(inp)
                 logits = self.model(inp)
                 next_id = int(logits[0, -1].argmax(dim=-1).item())
                 seq.append(next_id)
