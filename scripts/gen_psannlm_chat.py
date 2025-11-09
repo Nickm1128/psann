@@ -50,7 +50,7 @@ class TokAdapter:
 
     def encode(self, text: str, add_specials: bool = True) -> List[int]:
         ids = self.t.encode(text, add_special_tokens=False)
-        return ([self.bos_id] + ids + [self.eos_id]) if add_specials else ids
+        return ([self.bos_id] + ids) if add_specials else ids
 
     def decode(self, ids, skip_specials: bool = True) -> str:
         return self.t.decode(ids, skip_special_tokens=skip_specials)
@@ -114,3 +114,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
