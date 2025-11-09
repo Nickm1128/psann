@@ -60,6 +60,22 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
   `metrics.csv`, `metrics.json`, and optionally `loss_curve.png` into
   `reports/benchmarks/<timestamp>/`.
 
+## Language Modeling
+
+- Train (streaming, tokenizer-in-loop, FSDP-ready):
+  - `python scripts/train_psann_lm.py --hf-dataset allenai/c4 --hf-name en --hf-split train --hf-text-key text --hf-keep-ascii-only --hf-lang en --base waveresnet --d-model 3072 --n-layers 30 --n-heads 24 --tokenizer-backend tokenizers --train-tokenizer --tokenizer-save-dir runs/tokenizer_3b --batch-tokens 65536 --grad-accum-steps 8 --amp bf16 --grad-checkpoint --fsdp full_shard --checkpoint-dir runs/lm/3b_en --export-dir artifacts/psannlm_3b_bundle`
+
+- Evaluate with lm-eval (chat template on MC):
+  - `python scripts/run_lm_eval_psann.py --hf-repo <user>/<repo> --hf-filename psannlm_chat_final.pt --tokenizer-backend tokenizers --hf-tokenizer-repo <user>/<repo> --hf-tokenizer-filename tokenizer_final/tokenizer.json --tasks hellaswag,piqa,winogrande --device cuda --num-fewshot 5 --apply-chat-template --fewshot-as-multiturn --output eval_out/mc_chat.json`
+
+- Data prep utilities:
+  - Deduplicate shards: `python tools/dedupe.py --input shards.txt --output shards_unique.txt`
+  - Heuristic decontamination: `python tools/decontaminate.py --input shards_unique.txt --refs wt2.txt lambada.txt --output shards_clean.txt`
+  - Build a manifest from directories/globs: `python tools/build_manifest.py --roots /data/en --pattern "*.txt" --recurse --absolute --output /data/en_manifest.txt`
+  - Use `--export-dir` on the training script to gather `model.pt`, tokenizer files, and metadata in one folder ready for `huggingface-cli upload`.
+
+See also: `docs/lm_3b_quickstart.md` for a focused 3B quickstart.
+
 ## Current Limitations
 
 - GPU runs depend on local PyTorch CUDA support; the benchmarking script

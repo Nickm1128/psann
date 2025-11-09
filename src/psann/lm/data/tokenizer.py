@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
 
@@ -188,6 +189,12 @@ class Tokenizer:
 
     def decode(self, ids: Sequence[int], skip_specials: bool = True) -> str:
         return self._impl.decode(ids, skip_specials=skip_specials)
+
+    def save(self, path: str, *, special_tokens_map_path: Optional[str] = None) -> None:
+        save_fn = getattr(self._impl, "save", None)
+        if save_fn is None:
+            raise NotImplementedError(f"save() not implemented for backend '{self._selected_backend}'")
+        save_fn(path, special_tokens_map_path=special_tokens_map_path)
 
 
 # ----------------------- SentencePiece backend -----------------------
@@ -518,6 +525,31 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                 if i >= 4:
                     out_ids.append(int(i) - 4)
             return tk.decode(out_ids)
+
+        def save(self, path: str, *, special_tokens_map_path: Optional[str] = None) -> None:
+            tk = self._ensure()
+            path_obj = Path(path)
+            path_obj.parent.mkdir(parents=True, exist_ok=True)
+            tk.save(str(path_obj))
+            if special_tokens_map_path:
+                mapping: Dict[str, Optional[str]] = {}
+                try:
+                    id_to_token = tk.id_to_token
+                except AttributeError:  # pragma: no cover - defensive
+                    id_to_token = lambda _: None  # type: ignore
+                for key, tid in self._src_special_ids.items():
+                    if tid is None or tid < 0:
+                        continue
+                    try:
+                        token = id_to_token(int(tid))
+                    except Exception:
+                        token = None
+                    if token:
+                        mapping[f"{key}_token"] = token
+                spec_path = Path(special_tokens_map_path)
+                spec_path.parent.mkdir(parents=True, exist_ok=True)
+                with spec_path.open("w", encoding="utf-8") as fh:
+                    json.dump(mapping, fh, indent=2)
 
     return HFTokenizersWrapper(cfg)
 

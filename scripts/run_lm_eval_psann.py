@@ -55,6 +55,8 @@ def main() -> int:
     p.add_argument("--batch-size", default="auto", type=str)
     p.add_argument("--max-ctx", default=2048, type=int)
     p.add_argument("--max-batch-size", default=8, type=int)
+    p.add_argument("--apply-chat-template", action="store_true", help="Apply chat template for tasks that benefit from chat-style formatting")
+    p.add_argument("--fewshot-as-multiturn", action="store_true", help="Render few-shot examples as multi-turn chat")
     p.add_argument("--output", default="eval_out/psann_eval.json", type=str)
     args = p.parse_args()
 
@@ -126,6 +128,11 @@ def main() -> int:
         "tasks": task_list,
         "limit": int(args.limit),
     }
+    # Optional chat-template flags pass-through (supported in recent lm-eval)
+    if args.apply_chat_template:
+        cfg["apply_chat_template"] = True
+    if args.fewshot_as_multiturn:
+        cfg["fewshot_as_multiturn"] = True
 
     results = evaluator.simple_evaluate(**cfg)
     out_path = Path(args.output)

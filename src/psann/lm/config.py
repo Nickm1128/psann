@@ -72,10 +72,19 @@ class TrainConfig:
     warmup_steps: int = 2000
     weight_decay: float = 0.01
     amp: str = "bf16"  # bf16 | fp16 | fp32 | none
+    optimizer: str = "adamw"  # adamw | adamw8bit | adafactor
+    betas: tuple[float, float] = (0.9, 0.95)
+    eps: float = 1e-8
     label_smoothing: float = 0.0
     grad_clip: float = 1.0
     grad_accum_steps: int = 1
     ddp: str = "auto"  # auto | on | off
+    fsdp: str = "off"  # off | full_shard
+    fsdp_cpu_offload: bool = False
+    fsdp_use_orig_params: bool = True
+    fsdp_auto_wrap_policy: str = "size"  # size | none
+    fsdp_min_params: int = 1_000_000
+    steps_per_epoch: int | None = None
     checkpoint_dir: str = "runs/lm/exp"
     log_interval_steps: int = 50
     save_interval_steps: int = 500
@@ -101,3 +110,9 @@ class TrainConfig:
             raise ValueError("amp must be one of {'bf16','fp16','fp32','none'}")
         if self.ddp.lower() not in {"auto", "on", "off"}:
             raise ValueError("ddp must be one of {'auto','on','off'}")
+        if self.optimizer.lower() not in {"adamw", "adamw8bit", "adafactor"}:
+            raise ValueError("optimizer must be one of {'adamw','adamw8bit','adafactor'}")
+        if self.fsdp.lower() not in {"off", "full_shard"}:
+            raise ValueError("fsdp must be one of {'off','full_shard'}")
+        if self.fsdp_auto_wrap_policy.lower() not in {"size", "none"}:
+            raise ValueError("fsdp_auto_wrap_policy must be one of {'size','none'}")

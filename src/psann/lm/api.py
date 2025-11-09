@@ -66,6 +66,7 @@ class psannLMDataPrep:
         *,
         tokenizer: str = "auto",
         tokenizer_model_path: Optional[str] = None,
+        tokenizer_special_map_path: Optional[str] = None,
         max_length: int = 1024,
         pack_sequences: bool = True,
         val_split: Optional[float] = None,
@@ -100,7 +101,16 @@ class psannLMDataPrep:
 
         # Placeholder attributes until tokenizer/dataset wiring lands.
         # Build tokenizer and cached dataset lazily
-        self._tokenizer = Tokenizer(TokenizerConfig(backend=tokenizer, model_path=tokenizer_model_path))
+        # Prefer passthrough ids for HF tokenizers to ensure parity with eval path
+        _backend = str(tokenizer or "auto").lower()
+        self._tokenizer = Tokenizer(
+            TokenizerConfig(
+                backend=_backend,
+                model_path=tokenizer_model_path,
+                special_tokens_map_path=tokenizer_special_map_path,
+                hf_passthrough_ids=(_backend == "tokenizers"),
+            )
+        )
         self._tokenizer.fit(self._texts)
         self._vocab_size: int = self._tokenizer.vocab_size
         # Optional train/val split

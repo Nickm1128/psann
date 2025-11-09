@@ -1,10 +1,18 @@
-"""Trainer for PSANN-LM with AMP and optional DDP.
+"""Trainer for PSANN-LM with AMP, DDP/FSDP, and optional 8-bit optimizers.
 
-Implements a next-token LM objective with AdamW, gradient accumulation,
-optional gradient clipping, cosine LR with warmup, AMP (bf16/fp16), and
-rank-aware checkpointing/logging. When running under torch.distributed
-(`torchrun` or initialized process group) and `ddp` is enabled, wraps
-the model in DistributedDataParallel and uses a DistributedSampler.
+Implements a next-token LM objective with AdamW (or optional 8-bit AdamW /
+Adafactor), gradient accumulation, optional gradient clipping, cosine LR
+with warmup, AMP (bf16/fp16), and rank-aware checkpointing/logging.
+
+Distributed training:
+  - DDP: Enabled when `ddp` is on/auto and world size > 1.
+  - FSDP: Enabled when `fsdp` in TrainConfig is not 'off'. FSDP takes
+    precedence over DDP when requested.
+
+Data handling:
+  - Supports `Dataset` and `IterableDataset`. For iterable datasets,
+    `DistributedSampler` is not used, and scheduler falls back to
+    `steps_per_epoch` (or a conservative default) if length is unknown.
 """
 
 from __future__ import annotations
@@ -15,7 +23,7 @@ import os
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, IterableDataset
 from torch.optim.lr_scheduler import LambdaLR
 from contextlib import nullcontext
 
@@ -43,9 +51,23 @@ class Trainer:
             os.makedirs(ckpt_dir, exist_ok=True)
         except Exception:
             pass
+        # Handle FSDP full-state extraction if applicable
+        state_dict: Dict[str, Any]
+        try:
+            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP  # type: ignore
+            from torch.distributed.fsdp.api import StateDictType, FullStateDictConfig  # type: ignore
+            if isinstance(model, FSDP):  # type: ignore[arg-type]
+                cfg = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
+                with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, cfg):
+                    state_dict = model.state_dict()
+            else:
+                state_dict = model.state_dict()
+        except Exception:
+            # Fallback: best-effort local state
+            state_dict = model.state_dict()
         payload = {
             "state": {"step": self.state.step, "epoch": self.state.epoch},
-            "model": model.state_dict(),
+            "model": state_dict,
             "optim": optim.state_dict(),
             "cfg": self.cfg.__dict__,
         }
@@ -75,6 +97,28 @@ class Trainer:
 
         return LambdaLR(optim, lr_lambda)
 
+    def _build_optimizer(self, model: nn.Module) -> torch.optim.Optimizer:
+        opt_name = str(getattr(self.cfg, "optimizer", "adamw")).lower()
+        wd = float(self.cfg.weight_decay)
+        lr = float(self.cfg.lr)
+        betas = tuple(self.cfg.betas) if hasattr(self.cfg, "betas") else (0.9, 0.95)
+        eps = float(getattr(self.cfg, "eps", 1e-8))
+        if opt_name == "adamw8bit":
+            try:
+                import bitsandbytes as bnb  # type: ignore
+
+                return bnb.optim.AdamW8bit(model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=wd)
+            except Exception:
+                print("[trainer] bitsandbytes not available; falling back to AdamW.")
+        if opt_name == "adafactor":
+            try:
+                from transformers.optimization import Adafactor  # type: ignore
+
+                return Adafactor(model.parameters(), lr=lr, weight_decay=wd, relative_step=False, scale_parameter=False)
+            except Exception:
+                print("[trainer] transformers.Adagactor not available; falling back to AdamW.")
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd, betas=betas, eps=eps)
+
     @staticmethod
     def _grad_global_norm(model: nn.Module) -> float:
         total = 0.0
@@ -99,19 +143,22 @@ class Trainer:
         # ---- Device selection ----
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # ---- DDP bring-up (if requested/available) ----
+        # ---- Distributed bring-up (DDP/FSDP) ----
         ddp_mode = str(getattr(self.cfg, "ddp", "auto")).lower()
+        fsdp_mode = str(getattr(self.cfg, "fsdp", "off")).lower()
         want_ddp = ddp_mode == "on"
-        # Auto-enable DDP if WORLD_SIZE>1 or already initialized
         world_env = int(os.environ.get("WORLD_SIZE", "1"))
         is_dist_env = world_env > 1
-        ddp_enabled = want_ddp or (ddp_mode == "auto" and is_dist_env)
+        use_fsdp = fsdp_mode != "off"
+        ddp_enabled = (want_ddp or (ddp_mode == "auto" and is_dist_env)) and not use_fsdp
 
         rank = 0
         world_size = 1
         local_rank = int(os.environ.get("LOCAL_RANK", "0"))
-        ddp = None
-        if ddp_enabled and torch.distributed.is_available():
+        wrapped = model
+        is_main = True
+
+        if (ddp_enabled or use_fsdp) and torch.distributed.is_available():
             import torch.distributed as dist
             if device.type == "cuda":
                 try:
@@ -125,17 +172,47 @@ class Trainer:
             rank = dist.get_rank()
             world_size = dist.get_world_size()
             model.to(device)
-            from torch.nn.parallel import DistributedDataParallel as DDP
-            ddp = DDP(
-                model,
-                device_ids=[local_rank] if device.type == "cuda" else None,
-                output_device=local_rank if device.type == "cuda" else None,
-                find_unused_parameters=False,
-            )
+            if use_fsdp:
+                try:
+                    from torch.distributed.fsdp import (
+                        FullyShardedDataParallel as FSDP,
+                        ShardingStrategy,
+                    )  # type: ignore
+                    from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy  # type: ignore
+                    auto_wrap = None
+                    if str(getattr(self.cfg, "fsdp_auto_wrap_policy", "size")).lower() == "size":
+                        min_params = int(getattr(self.cfg, "fsdp_min_params", 1_000_000))
+                        auto_wrap = size_based_auto_wrap_policy(min_num_params=min_params)
+                    strategy = ShardingStrategy.FULL_SHARD if fsdp_mode == "full_shard" else ShardingStrategy.FULL_SHARD
+                    wrapped = FSDP(
+                        model,
+                        auto_wrap_policy=auto_wrap,
+                        sharding_strategy=strategy,
+                        device_id=(local_rank if device.type == "cuda" else None),
+                        use_orig_params=bool(getattr(self.cfg, "fsdp_use_orig_params", True)),
+                        cpu_offload=None if not bool(getattr(self.cfg, "fsdp_cpu_offload", False)) else torch.distributed.fsdp.CPUOffload(offload_params=True),  # type: ignore
+                    )
+                except Exception as e:
+                    print(f"[trainer] FSDP requested but not available ({e!s}); falling back to DDP/model-only.")
+                    from torch.nn.parallel import DistributedDataParallel as DDP
+                    wrapped = DDP(
+                        model,
+                        device_ids=[local_rank] if device.type == "cuda" else None,
+                        output_device=local_rank if device.type == "cuda" else None,
+                        find_unused_parameters=False,
+                    )
+            elif ddp_enabled:
+                from torch.nn.parallel import DistributedDataParallel as DDP
+                wrapped = DDP(
+                    model,
+                    device_ids=[local_rank] if device.type == "cuda" else None,
+                    output_device=local_rank if device.type == "cuda" else None,
+                    find_unused_parameters=False,
+                )
             is_main = rank == 0
         else:
             model.to(device)
-            ddp = model  # type: ignore[assignment]
+            wrapped = model
             is_main = True
 
         # Enable model-level gradient checkpointing if requested and supported
@@ -154,27 +231,34 @@ class Trainer:
         # ---- DataLoader (DistributedSampler if DDP) ----
         batch_size = self._compute_batch_size(max_length)
         sampler = None
-        if ddp_enabled and torch.distributed.is_available():
+        if not isinstance(dataset, IterableDataset) and (ddp_enabled or use_fsdp) and torch.distributed.is_available():
             from torch.utils.data.distributed import DistributedSampler
             sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
         dl = DataLoader(
             dataset,
             batch_size=batch_size,
-            shuffle=(sampler is None),
+            shuffle=(False if isinstance(dataset, IterableDataset) else (sampler is None)),
             sampler=sampler,
             collate_fn=collate_batch,
             pin_memory=(device.type == "cuda"),
         )
 
-        optim = torch.optim.AdamW(model.parameters(), lr=self.cfg.lr, weight_decay=self.cfg.weight_decay)
+        optim = self._build_optimizer(model)
         criterion = nn.CrossEntropyLoss(label_smoothing=float(self.cfg.label_smoothing))
 
         # LR scheduler (cosine with warmup)
         # Estimate total optimizer steps (with grad accumulation)
-        try:
-            steps_per_epoch = _math.ceil(len(dataset) / float(batch_size * max(1, world_size if ddp_enabled else 1)))
-        except Exception:
-            steps_per_epoch = len(dl)
+        steps_per_epoch_cfg = getattr(self.cfg, "steps_per_epoch", None)
+        if steps_per_epoch_cfg is not None:
+            steps_per_epoch = int(steps_per_epoch_cfg)
+        else:
+            try:
+                steps_per_epoch = _math.ceil(len(dataset) / float(batch_size * max(1, world_size if (ddp_enabled or use_fsdp) else 1)))
+            except Exception:
+                try:
+                    steps_per_epoch = len(dl)
+                except Exception:
+                    steps_per_epoch = 1000  # conservative default when unknown
         total_optimizer_steps = int(self.cfg.epochs) * max(1, steps_per_epoch) // max(1, int(self.cfg.grad_accum_steps))
         scheduler = self._build_scheduler(optim, total_optimizer_steps)
 
@@ -204,11 +288,11 @@ class Trainer:
                 input_ids = batch["input_ids"].to(device)
                 labels = batch["labels"].to(device)
                 # Avoid gradient sync on accumulation micro-steps when using DDP
-                no_sync_ctx = getattr(ddp, "no_sync", None)
+                no_sync_ctx = getattr(wrapped, "no_sync", None)
                 sync_ctx = nullcontext() if (micro + 1) == accum or no_sync_ctx is None else no_sync_ctx()
                 with sync_ctx:
                     with autocast_ctx:
-                        logits = ddp(input_ids)  # type: ignore[operator]
+                        logits = wrapped(input_ids)  # type: ignore[operator]
                         B, T, V = logits.shape
                         loss = criterion(logits.view(B * T, V), labels.view(B * T))
                         loss = loss / float(accum)
@@ -249,16 +333,17 @@ class Trainer:
 
                     # Periodic checkpointing and optional validation
                     if is_main and global_step % max(1, self.cfg.save_interval_steps) == 0:
-                        self._save_checkpoint(model, optim, tag=f"ckpt_step{global_step:06d}")
+                        # Save via wrapper to support FSDP full state dict
+                        self._save_checkpoint(wrapped, optim, tag=f"ckpt_step{global_step:06d}")
                         if val_dataset is not None:
                             vloss = self.validate(model, val_dataset)
                             if vloss < self.best_val_loss:
                                 self.best_val_loss = float(vloss)
-                                self._save_checkpoint(model, optim, tag="best")
+                                self._save_checkpoint(wrapped, optim, tag="best")
 
         # Final save (main rank only)
         if is_main:
-            self._save_checkpoint(model, optim, tag="final")
+            self._save_checkpoint(wrapped, optim, tag="final")
 
     def validate(self, model: nn.Module, dataset) -> float:
         model.eval()

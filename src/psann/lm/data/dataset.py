@@ -8,12 +8,72 @@ sequence packing mode across documents.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Optional, Tuple, Dict, Any
+from typing import Iterable, Iterator, List, Optional, Tuple, Dict, Any, Sequence, Callable
 
 import torch
 from torch.utils.data import Dataset, IterableDataset
 
 from .tokenizer import Tokenizer
+
+
+def build_text_filter(
+    *,
+    ascii_only: bool = False,
+    languages: Optional[Sequence[str]] = None,
+    lang_threshold: float = 0.8,
+) -> Callable[[str], bool]:
+    """Return a predicate that checks whether a text sample passes filters."""
+
+    languages_norm = [s.lower() for s in languages or [] if s]
+    langdetect_state: Dict[str, Any] = {
+        "fn": None,
+        "unavailable": False,
+        "warned": False,
+    }
+
+    def _maybe_load_langdetect() -> Optional[Callable[[str], Any]]:
+        if langdetect_state["unavailable"]:
+            return None
+        if langdetect_state["fn"] is None:
+            try:
+                from langdetect import detect_langs  # type: ignore
+
+                langdetect_state["fn"] = detect_langs
+            except Exception:
+                langdetect_state["unavailable"] = True
+                if not langdetect_state["warned"]:
+                    print("[text_filter] langdetect not available; skipping language filter")
+                    langdetect_state["warned"] = True
+                return None
+        return langdetect_state["fn"]  # type: ignore[return-value]
+
+    def _filter(text: str) -> bool:
+        if not text:
+            return False
+        if ascii_only and not text.isascii():
+            return False
+        if languages_norm:
+            if len(text) < 5:
+                return True
+            detect_fn = _maybe_load_langdetect()
+            if detect_fn is None:
+                return True
+            try:
+                candidates = detect_fn(text)
+            except Exception:
+                return False
+            for cand in candidates:
+                try:
+                    code = cand.lang.lower()
+                    prob = float(cand.prob)
+                except Exception:
+                    continue
+                if code in languages_norm and prob >= float(lang_threshold):
+                    return True
+            return False
+        return True
+
+    return _filter
 
 
 @dataclass
@@ -132,3 +192,101 @@ class StreamingLMDataset(IterableDataset):
                             yield {"input_ids": input_ids, "labels": labels}
             except Exception:
                 continue
+
+
+class HFTextStreamingLMDataset(IterableDataset):
+    """Streaming dataset backed by Hugging Face `datasets` with streaming=True.
+
+    Loads a text dataset from the Hub and yields fixed-length examples
+    constructed from a contiguous token stream across rows.
+
+    Parameters
+    ----------
+    dataset:
+        HF dataset repo id, e.g. "allenai/c4" or "wikitext".
+    split:
+        Split name (e.g., "train").
+    text_key:
+        Column name containing raw text.
+    name:
+        Optional dataset configuration name (subset).
+    revision:
+        Optional branch/tag/commit on the Hub.
+    shuffle:
+        If True, apply streaming shuffle with a buffer.
+    seed:
+        RNG seed for shuffling.
+    shuffle_buffer:
+        Buffer size for streaming shuffle.
+    """
+
+    def __init__(
+        self,
+        *,
+        dataset: str,
+        tokenizer: Tokenizer,
+        cfg: PackingConfig = PackingConfig(),
+        split: str = "train",
+        text_key: str = "text",
+        name: str | None = None,
+        revision: str | None = None,
+        shuffle: bool = False,
+        seed: int = 1337,
+        shuffle_buffer: int = 10000,
+        ascii_only: bool = False,
+        languages: Optional[Sequence[str]] = None,
+        lang_threshold: float = 0.8,
+    ) -> None:
+        super().__init__()
+        self.dataset = str(dataset)
+        self.split = str(split)
+        self.text_key = str(text_key)
+        self.name = name
+        self.revision = revision
+        self.shuffle = bool(shuffle)
+        self.seed = int(seed)
+        self.shuffle_buffer = int(shuffle_buffer)
+        self.tok = tokenizer
+        self.cfg = cfg
+        self._filter = build_text_filter(
+            ascii_only=ascii_only,
+            languages=languages,
+            lang_threshold=lang_threshold,
+        )
+
+    def __iter__(self):
+        from datasets import load_dataset  # type: ignore
+
+        stream = load_dataset(
+            self.dataset,
+            name=self.name,
+            split=self.split,
+            streaming=True,
+            revision=self.revision,
+        )
+        if self.shuffle:
+            try:
+                stream = stream.shuffle(seed=self.seed, buffer_size=self.shuffle_buffer)
+            except Exception:
+                pass
+
+        T = int(self.cfg.max_length)
+        buffer: list[int] = []
+        for row in stream:
+            try:
+                s = str(row.get(self.text_key, "")).strip()
+            except Exception:
+                s = ""
+            if not s:
+                continue
+            if not self._filter(s):
+                continue
+            ids = self.tok.encode(s, add_specials=True)
+            buffer.extend(ids)
+            while len(buffer) >= T + 1:
+                chunk = buffer[: T + 1]
+                del buffer[:T]
+                yield {
+                    "input_ids": torch.tensor(chunk[:-1], dtype=torch.long),
+                    "labels": torch.tensor(chunk[1:], dtype=torch.long),
+                }
