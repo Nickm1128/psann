@@ -250,7 +250,7 @@ class Trainer:
         # Estimate total optimizer steps (with grad accumulation)
         steps_per_epoch_cfg = getattr(self.cfg, "steps_per_epoch", None)
         if steps_per_epoch_cfg is not None:
-            steps_per_epoch = int(steps_per_epoch_cfg)
+            steps_per_epoch = max(1, int(steps_per_epoch_cfg))
         else:
             try:
                 steps_per_epoch = _math.ceil(len(dataset) / float(batch_size * max(1, world_size if (ddp_enabled or use_fsdp) else 1)))
@@ -278,6 +278,7 @@ class Trainer:
         accum = max(1, int(self.cfg.grad_accum_steps))
         for epoch in range(self.cfg.epochs):
             self.state.epoch = epoch + 1
+            steps_this_epoch = 0
             # Set epoch for distributed sampler to reshuffle deterministically
             if sampler is not None and hasattr(sampler, "set_epoch"):
                 try:
@@ -330,6 +331,7 @@ class Trainer:
                     micro = 0
                     global_step += 1
                     self.state.step = global_step
+                    steps_this_epoch += 1
 
                     # Periodic checkpointing and optional validation
                     if is_main and global_step % max(1, self.cfg.save_interval_steps) == 0:
@@ -340,6 +342,11 @@ class Trainer:
                             if vloss < self.best_val_loss:
                                 self.best_val_loss = float(vloss)
                                 self._save_checkpoint(wrapped, optim, tag="best")
+
+                    if steps_this_epoch >= max(1, steps_per_epoch):
+                        break
+            if steps_this_epoch >= max(1, steps_per_epoch):
+                continue
 
         # Final save (main rank only)
         if is_main:
