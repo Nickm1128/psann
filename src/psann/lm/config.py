@@ -67,7 +67,7 @@ class DataConfig:
 @dataclass
 class TrainConfig:
     epochs: int = 1
-    batch_tokens: int = 131072
+    batch_tokens: int = 32768
     lr: float = 2e-4
     warmup_steps: int = 2000
     weight_decay: float = 0.01
