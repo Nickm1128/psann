@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, Iterator, List, Optional, Tuple, Dict, Any, Sequence, Callable
+import os
 
 import torch
 from torch.utils.data import Dataset, IterableDataset
