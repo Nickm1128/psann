@@ -25,7 +25,7 @@ pip install hf_transfer langdetect datasets tokenizers bitsandbytes accelerate
 
 NUM_GPUS=${NUM_GPUS:-1}
 BATCH_TOKENS=${BATCH_TOKENS:-4096}
-GRAD_ACCUM=${GRAD_ACCUM:-4}
+GRAD_ACCUM=${GRAD_ACCUM:-1}
 
 if [ "$NUM_GPUS" -gt 1 ]; then
   FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size"
