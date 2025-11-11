@@ -206,11 +206,10 @@ def _prepare_tokenizer(
         hf_passthrough_ids=(backend == "tokenizers"),
     )
     tokenizer = Tokenizer(final_cfg)
-    if artifacts["model"] is None:
-        try:
-            tokenizer.fit([""])
-        except Exception:
-            pass
+    try:
+        tokenizer.fit([""])
+    except Exception:
+        pass
     cfg_path = _ensure_tokenizer_config(artifacts["special_map"], args.max_length)
     if cfg_path:
         artifacts["config"] = cfg_path
