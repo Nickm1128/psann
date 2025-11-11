@@ -25,14 +25,24 @@ pip install -e .[lm]
 pip install hf_transfer langdetect datasets tokenizers bitsandbytes accelerate
 
 NUM_GPUS=${NUM_GPUS:-1}
-BATCH_TOKENS=${BATCH_TOKENS:-16384}
 
-# Choose FSDP mode based on GPU count to mirror smoke behavior on 1 GPU
+# reduce per-step peak; keep tokens/step with accumulation
+BATCH_TOKENS=${BATCH_TOKENS:-4096}
+GRAD_ACCUM=${GRAD_ACCUM:-4}
+
+# pick FSDP even for 1 GPU if you hit OOM
 if [ "$NUM_GPUS" -gt 1 ]; then
   FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size"
 else
-  FSDP_FLAGS="--fsdp off"
+  # enable CPU offload to protect HBM on single GPU
+  FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size --fsdp-param-offload cpu --fsdp-grad-offload cpu"
 fi
+
+# prefer SDPA/Flash attention if your trainer supports it
+ATTN_FLAGS="--attn-backend sdpa"   # or: --attn-backend flash2 / xformers
+
+# use 8-bit AdamW (you already install bitsandbytes)
+OPT_FLAGS="--optim adamw_8bit"     # rename to your trainer’s flag if different
 
 CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --hf-dataset allenai/c4 --hf-name en --hf-text-key text \
@@ -40,9 +50,9 @@ CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --tokenizer-backend tokenizers --train-tokenizer \
   --tokenizer-save-dir runs/tokenizer_300m --tokenizer-sample-limit 150000 \
   --base waveresnet --d-model 1536 --n-layers 18 --n-heads 12 --d-mlp 6144 \
-  --batch-tokens ${BATCH_TOKENS} --grad-accum-steps 1 \
+  --batch-tokens ${BATCH_TOKENS} --grad-accum-steps ${GRAD_ACCUM} \
   --lr 3e-4 --weight-decay 0.01 \
-  --amp bf16 ${FSDP_FLAGS} \
+  --amp bf16 ${FSDP_FLAGS} ${ATTN_FLAGS} ${OPT_FLAGS} \
   --grad-checkpoint --steps-per-epoch 2000 --epochs 120 \
   --log-interval-steps 25 \
   --checkpoint-dir runs/lm/300m_en \
