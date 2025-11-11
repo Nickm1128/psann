@@ -39,7 +39,6 @@ else
 fi
 
 # prefer SDPA/Flash attention if your trainer supports it
-ATTN_FLAGS="--attn-backend sdpa"   # or: --attn-backend flash2 / xformers
 
 # use 8-bit AdamW (you already install bitsandbytes)
 OPT_FLAGS="--optim adamw8bit"     # rename to your trainer’s flag if different
