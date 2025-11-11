@@ -40,7 +40,7 @@ CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --tokenizer-backend tokenizers --train-tokenizer \
   --tokenizer-save-dir runs/tokenizer_300m --tokenizer-sample-limit 150000 \
   --base waveresnet --d-model 1536 --n-layers 18 --n-heads 12 --d-mlp 6144 \
-  --batch-tokens ${BATCH_TOKENS} --grad-accum-steps 2 \
+  --batch-tokens ${BATCH_TOKENS} --grad-accum-steps 1 \
   --lr 3e-4 --weight-decay 0.01 \
   --amp bf16 ${FSDP_FLAGS} \
   --grad-checkpoint --steps-per-epoch 2000 --epochs 120 \
