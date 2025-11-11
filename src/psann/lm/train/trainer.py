@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional, Dict
 import os
+import time
 from functools import partial
 
 import torch
@@ -30,6 +31,7 @@ from contextlib import nullcontext
 
 from ..config import TrainConfig
 from ..data.dataset import collate_batch
+from ..utils.hf_cache import cleanup_hf_cache
 
 
 @dataclass
@@ -45,6 +47,8 @@ class Trainer:
         self.state = TrainState()
         self.cfg = cfg or TrainConfig()
         self.best_val_loss: float = float("inf")
+        self._last_cache_cleanup: float = 0.0
+        self._last_cache_warn: float = 0.0
 
     def _save_checkpoint(self, model: nn.Module, optim: torch.optim.Optimizer, tag: str) -> None:
         ckpt_dir = self.cfg.checkpoint_dir
@@ -132,6 +136,27 @@ class Trainer:
             param_norm = float(p.grad.data.norm(2).item())
             total += param_norm * param_norm
         return float(total ** 0.5)
+
+    def _maybe_cleanup_cache(self) -> None:
+        limit_gb = getattr(self.cfg, "hf_cache_limit_gb", None)
+        if limit_gb is None or limit_gb <= 0:
+            return
+        now = time.time()
+        if now - self._last_cache_cleanup < 60.0:
+            return
+        self._last_cache_cleanup = now
+        max_bytes = int(limit_gb * (1024 ** 3))
+        try:
+            freed, total = cleanup_hf_cache(max_bytes)
+        except Exception as exc:
+            if now - self._last_cache_warn > 300.0:
+                print(f"[trainer] HF cache cleanup failed: {exc}")
+                self._last_cache_warn = now
+            return
+        if freed > 0:
+            freed_gb = freed / (1024 ** 3)
+            total_gb = total / (1024 ** 3)
+            print(f"[trainer] HF cache cleanup freed {freed_gb:.2f} GB (cache now ~{total_gb:.2f} GB)")
 
     def train(
         self,
@@ -347,6 +372,7 @@ class Trainer:
                     global_step += 1
                     self.state.step = global_step
                     steps_this_epoch += 1
+                    self._maybe_cleanup_cache()
 
                     # Periodic checkpointing and optional validation
                     if is_main and global_step % max(1, self.cfg.save_interval_steps) == 0:

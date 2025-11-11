@@ -342,6 +342,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hf-lang", action="append", default=None, help="Language code to keep (repeatable, requires langdetect)")
     p.add_argument("--hf-lang-threshold", type=float, default=0.8, help="Minimum langdetect probability to accept")
     p.add_argument("--max-length", type=int, default=1024)
+    p.add_argument("--hf-cache-limit-gb", type=float, default=None, help="If set, periodically trim the HF datasets cache to this size (in GB).")
     p.add_argument("--shuffle-docs", action="store_true")
     p.add_argument("--seed", type=int, default=1337)
 
@@ -489,6 +490,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         dataloader_num_workers=int(args.num_workers),
         dataloader_prefetch_factor=int(args.prefetch_factor),
         dataloader_persistent_workers=not bool(args.no_persistent_workers),
+        hf_cache_limit_gb=(float(args.hf_cache_limit_gb) if args.hf_cache_limit_gb is not None else None),
     )
     trainer = Trainer(tcfg)
     trainer.train(model, dataset, max_length=int(args.max_length), val_dataset=None)

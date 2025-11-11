@@ -93,6 +93,7 @@ class TrainConfig:
     dataloader_num_workers: int = 8
     dataloader_prefetch_factor: int = 2
     dataloader_persistent_workers: bool = True
+    hf_cache_limit_gb: float | None = None
 
     def __post_init__(self) -> None:
         if self.epochs <= 0:
@@ -123,3 +124,5 @@ class TrainConfig:
             raise ValueError("dataloader_num_workers must be >= 0")
         if self.dataloader_prefetch_factor < 1:
             raise ValueError("dataloader_prefetch_factor must be >= 1")
+        if self.hf_cache_limit_gb is not None and self.hf_cache_limit_gb <= 0:
+            raise ValueError("hf_cache_limit_gb must be positive when provided")

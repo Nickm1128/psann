@@ -40,6 +40,7 @@ CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --hf-keep-ascii-only --hf-lang en --hf-lang-threshold 0.85 \
   --tokenizer-backend tokenizers --train-tokenizer \
   --tokenizer-save-dir runs/tokenizer_300m --tokenizer-sample-limit 150000 \
+  --hf-cache-limit-gb 40 \
   --base waveresnet --d-model 1024 --n-layers 16 --n-heads 16 --d-mlp 4096 \
   --batch-tokens ${BATCH_TOKENS} --grad-accum-steps ${GRAD_ACCUM} \
   --lr 3e-4 --weight-decay 0.01 \
