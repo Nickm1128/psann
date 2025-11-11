@@ -22,7 +22,7 @@ pip install --upgrade pip
 pip install -e .[lm]
 pip install hf_transfer langdetect datasets tokenizers bitsandbytes accelerate
 
-NUM_GPUS=${NUM_GPUS:-$(nvidia-smi -L | wc -l)}
+NUM_GPUS=${NUM_GPUS:-1}
 BATCH_TOKENS=${BATCH_TOKENS:-4096}
 
 CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
