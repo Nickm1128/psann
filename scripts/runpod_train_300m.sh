@@ -14,7 +14,9 @@ LOG_FILE="$LOG_DIR/${RUN_NAME}.log"
 export TORCH_ALLOC_CONF=expandable_segments:True
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export TOKENIZERS_PARALLELISM=false
-export NCCL_ASYNC_ERROR_HANDLING=1
+# Prefer the new TORCH_NCCL_ASYNC_ERROR_HANDLING; keep the old var unset
+export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
+unset NCCL_ASYNC_ERROR_HANDLING 2>/dev/null || true
 
 python -m venv .venv
 source .venv/bin/activate
@@ -22,8 +24,15 @@ pip install --upgrade pip
 pip install -e .[lm]
 pip install hf_transfer langdetect datasets tokenizers bitsandbytes accelerate
 
-NUM_GPUS=${NUM_GPUS:-$(nvidia-smi -L | wc -l)}
+NUM_GPUS=${NUM_GPUS:-1}
 BATCH_TOKENS=${BATCH_TOKENS:-16384}
+
+# Choose FSDP mode based on GPU count to mirror smoke behavior on 1 GPU
+if [ "$NUM_GPUS" -gt 1 ]; then
+  FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size"
+else
+  FSDP_FLAGS="--fsdp off"
+fi
 
 CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --hf-dataset allenai/c4 --hf-name en --hf-text-key text \
@@ -33,7 +42,7 @@ CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --base waveresnet --d-model 1536 --n-layers 18 --n-heads 12 --d-mlp 6144 \
   --batch-tokens ${BATCH_TOKENS} --grad-accum-steps 8 \
   --lr 3e-4 --weight-decay 0.01 \
-  --amp bf16 --fsdp full_shard --fsdp-auto-wrap size \
+  --amp bf16 ${FSDP_FLAGS} \
   --grad-checkpoint --steps-per-epoch 2000 --epochs 120 \
   --log-interval-steps 25 \
   --checkpoint-dir runs/lm/300m_en \
