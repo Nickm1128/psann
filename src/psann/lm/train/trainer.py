@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional, Dict
 import os
+from functools import partial
 
 import torch
 from torch import nn
@@ -185,7 +186,7 @@ class Trainer:
                     auto_wrap = None
                     if str(getattr(self.cfg, "fsdp_auto_wrap_policy", "size")).lower() == "size":
                         min_params = int(getattr(self.cfg, "fsdp_min_params", 1_000_000))
-                        auto_wrap = size_based_auto_wrap_policy(min_num_params=min_params)
+                        auto_wrap = partial(size_based_auto_wrap_policy, min_num_params=min_params)
                     strategy = ShardingStrategy.FULL_SHARD if fsdp_mode == "full_shard" else ShardingStrategy.FULL_SHARD
                     wrapped = FSDP(
                         model,

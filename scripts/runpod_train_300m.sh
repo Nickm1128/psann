@@ -21,7 +21,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
 pip install -e .[lm]
-pip install hf_transfer langdetect datasets tokenizers bitsandbytes accelerate
+pip install hf_transfer langdetect datasets tokenizers accelerate
 
 NUM_GPUS=${NUM_GPUS:-1}
 BATCH_TOKENS=${BATCH_TOKENS:-4096}
@@ -30,17 +30,17 @@ GRAD_ACCUM=${GRAD_ACCUM:-1}
 if [ "$NUM_GPUS" -gt 1 ]; then
   FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size"
 else
-  FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size"
+  FSDP_FLAGS="--fsdp off"
 fi
 
-OPT_FLAGS="--optim adamw8bit"
+OPT_FLAGS="--optim adamw"
 
 CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --hf-dataset allenai/c4 --hf-name en --hf-text-key text \
   --hf-keep-ascii-only --hf-lang en --hf-lang-threshold 0.85 \
   --tokenizer-backend tokenizers --train-tokenizer \
   --tokenizer-save-dir runs/tokenizer_300m --tokenizer-sample-limit 150000 \
-  --base waveresnet --d-model 1536 --n-layers 18 --n-heads 12 --d-mlp 6144 \
+  --base waveresnet --d-model 1024 --n-layers 16 --n-heads 16 --d-mlp 4096 \
   --batch-tokens ${BATCH_TOKENS} --grad-accum-steps ${GRAD_ACCUM} \
   --lr 3e-4 --weight-decay 0.01 \
   --amp bf16 ${FSDP_FLAGS} ${OPT_FLAGS} \
