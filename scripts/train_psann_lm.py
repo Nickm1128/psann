@@ -196,6 +196,7 @@ def _prepare_tokenizer(
             cfg_path = _ensure_tokenizer_config(artifacts["special_map"], args.max_length)
             if cfg_path:
                 artifacts["config"] = cfg_path
+
     final_cfg = TokenizerConfig(
         backend=backend,
         model_path=artifacts["model"],
