@@ -13,7 +13,7 @@ LOG_FILE="$LOG_DIR/${RUN_NAME}.log"
 
 export TORCH_ALLOC_CONF=expandable_segments:True
 export HF_HUB_ENABLE_HF_TRANSFER=1
-export TOKENIZERS_PARALLELISM=false
+export TOKENIZERS_PARALLELISM=true
 export NCCL_ASYNC_ERROR_HANDLING=1
 
 python -m venv .venv

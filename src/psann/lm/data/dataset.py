@@ -264,6 +264,21 @@ class HFTextStreamingLMDataset(IterableDataset):
             streaming=True,
             revision=self.revision,
         )
+        try:
+            import torch.distributed as dist
+            if dist.is_available() and dist.is_initialized():
+                world_size = dist.get_world_size()
+                rank = dist.get_rank()
+            else:
+                raise RuntimeError
+        except Exception:
+            rank = int(os.environ.get("RANK", "0"))
+            world_size = int(os.environ.get("WORLD_SIZE", "1"))
+        if world_size > 1:
+            try:
+                stream = stream.shard(num_shards=world_size, index=rank)
+            except Exception:
+                pass
         if self.shuffle:
             try:
                 stream = stream.shuffle(seed=self.seed, buffer_size=self.shuffle_buffer)
@@ -272,6 +287,13 @@ class HFTextStreamingLMDataset(IterableDataset):
 
         T = int(self.cfg.max_length)
         buffer: list[int] = []
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is not None and worker_info.num_workers > 1:
+            try:
+                stream = stream.shard(num_shards=worker_info.num_workers, index=worker_info.id)
+            except Exception:
+                pass
+
         for row in stream:
             try:
                 s = str(row.get(self.text_key, "")).strip()

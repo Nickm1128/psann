@@ -365,6 +365,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--steps-per-epoch", type=int, default=None)
     p.add_argument("--save-interval-steps", type=int, default=500)
     p.add_argument("--log-interval-steps", type=int, default=50)
+    p.add_argument("--num-workers", type=int, default=8)
+    p.add_argument("--prefetch-factor", type=int, default=2)
+    p.add_argument("--no-persistent-workers", action="store_true")
 
     # Outputs
     p.add_argument("--checkpoint-dir", type=str, default="runs/lm/exp")
@@ -483,6 +486,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         log_interval_steps=int(args.log_interval_steps),
         save_interval_steps=int(args.save_interval_steps),
         grad_checkpoint=bool(args.grad_checkpoint),
+        dataloader_num_workers=int(args.num_workers),
+        dataloader_prefetch_factor=int(args.prefetch_factor),
+        dataloader_persistent_workers=not bool(args.no_persistent_workers),
     )
     trainer = Trainer(tcfg)
     trainer.train(model, dataset, max_length=int(args.max_length), val_dataset=None)

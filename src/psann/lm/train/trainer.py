@@ -117,7 +117,10 @@ class Trainer:
                 return Adafactor(model.parameters(), lr=lr, weight_decay=wd, relative_step=False, scale_parameter=False)
             except Exception:
                 print("[trainer] transformers.Adagactor not available; falling back to AdamW.")
-        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=wd, betas=betas, eps=eps)
+        adamw_kwargs = dict(lr=lr, weight_decay=wd, betas=betas, eps=eps)
+        if torch.cuda.is_available():
+            adamw_kwargs["fused"] = True  # type: ignore[assignment]
+        return torch.optim.AdamW(model.parameters(), **adamw_kwargs)
 
     @staticmethod
     def _grad_global_norm(model: nn.Module) -> float:
@@ -241,6 +244,17 @@ class Trainer:
             sampler=sampler,
             collate_fn=collate_batch,
             pin_memory=(device.type == "cuda"),
+            num_workers=int(getattr(self.cfg, "dataloader_num_workers", 0)),
+            prefetch_factor=(
+                int(getattr(self.cfg, "dataloader_prefetch_factor", 2))
+                if int(getattr(self.cfg, "dataloader_num_workers", 0)) > 0
+                else None
+            ),
+            persistent_workers=(
+                bool(getattr(self.cfg, "dataloader_persistent_workers", False))
+                if int(getattr(self.cfg, "dataloader_num_workers", 0)) > 0
+                else False
+            ),
         )
 
         optim = self._build_optimizer(model)

@@ -13,7 +13,7 @@ LOG_FILE="$LOG_DIR/${RUN_NAME}.log"
 
 export TORCH_ALLOC_CONF=expandable_segments:True
 export HF_HUB_ENABLE_HF_TRANSFER=1
-export TOKENIZERS_PARALLELISM=false
+export TOKENIZERS_PARALLELISM=true
 # Prefer the new TORCH_NCCL_ASYNC_ERROR_HANDLING; keep the old var unset
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 unset NCCL_ASYNC_ERROR_HANDLING 2>/dev/null || true

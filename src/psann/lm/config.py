@@ -90,6 +90,9 @@ class TrainConfig:
     save_interval_steps: int = 500
     # Memory/perf knobs
     grad_checkpoint: bool = False
+    dataloader_num_workers: int = 8
+    dataloader_prefetch_factor: int = 2
+    dataloader_persistent_workers: bool = True
 
     def __post_init__(self) -> None:
         if self.epochs <= 0:
@@ -116,3 +119,7 @@ class TrainConfig:
             raise ValueError("fsdp must be one of {'off','full_shard'}")
         if self.fsdp_auto_wrap_policy.lower() not in {"size", "none"}:
             raise ValueError("fsdp_auto_wrap_policy must be one of {'size','none'}")
+        if self.dataloader_num_workers < 0:
+            raise ValueError("dataloader_num_workers must be >= 0")
+        if self.dataloader_prefetch_factor < 1:
+            raise ValueError("dataloader_prefetch_factor must be >= 1")
