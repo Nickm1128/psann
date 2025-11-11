@@ -42,7 +42,7 @@ fi
 ATTN_FLAGS="--attn-backend sdpa"   # or: --attn-backend flash2 / xformers
 
 # use 8-bit AdamW (you already install bitsandbytes)
-OPT_FLAGS="--optim adamw_8bit"     # rename to your trainer’s flag if different
+OPT_FLAGS="--optim adamw8bit"     # rename to your trainer’s flag if different
 
 CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
   --hf-dataset allenai/c4 --hf-name en --hf-text-key text \
