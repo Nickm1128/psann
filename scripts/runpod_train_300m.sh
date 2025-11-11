@@ -35,7 +35,7 @@ if [ "$NUM_GPUS" -gt 1 ]; then
   FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size"
 else
   # enable CPU offload to protect HBM on single GPU
-  FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size --fsdp-param-offload cpu --fsdp-grad-offload cpu"
+  FSDP_FLAGS="--fsdp full_shard --fsdp-auto-wrap size"
 fi
 
 # prefer SDPA/Flash attention if your trainer supports it
