@@ -260,10 +260,10 @@ class Trainer:
 
         # ---- DataLoader (DistributedSampler if DDP) ----
         batch_size = self._compute_batch_size(max_length)
+        sampler = None
         if data_loader is not None:
             dl = data_loader
         else:
-            sampler = None
             if not isinstance(dataset, IterableDataset) and (ddp_enabled or use_fsdp) and torch.distributed.is_available():
                 from torch.utils.data.distributed import DistributedSampler
 
