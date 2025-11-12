@@ -31,7 +31,7 @@ from contextlib import nullcontext
 
 from ..config import TrainConfig
 from ..data.dataset import collate_batch
-from ..utils.hf_cache import cleanup_hf_cache
+from ...utils.hf_cache import cleanup_hf_cache
 
 
 @dataclass
