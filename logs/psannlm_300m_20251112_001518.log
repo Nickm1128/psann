@@ -1,0 +1,44 @@
+[2025-11-12T00:21:06+00:00] Starting 300M run
+Traceback (most recent call last):
+  File "/workspace/psann/scripts/train_psann_lm.py", line 34, in <module>
+    from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
+  File "/workspace/psann/src/psann/lm/__init__.py", line 8, in <module>
+    from .api import psannLM, psannLMDataPrep
+  File "/workspace/psann/src/psann/lm/api.py", line 25, in <module>
+    from .train.trainer import Trainer
+  File "/workspace/psann/src/psann/lm/train/trainer.py", line 34, in <module>
+    from ..utils.hf_cache import cleanup_hf_cache
+ModuleNotFoundError: No module named 'psann.lm.utils'
+E1112 00:21:26.953000 759 torch/distributed/elastic/multiprocessing/api.py:882] failed (exitcode: 1) local_rank: 0 (pid: 825) of binary: /workspace/psann/.venv/bin/python
+Traceback (most recent call last):
+  File "/workspace/psann/.venv/bin/torchrun", line 7, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/workspace/psann/.venv/lib/python3.12/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 357, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/workspace/psann/.venv/lib/python3.12/site-packages/torch/distributed/run.py", line 936, in main
+    run(args)
+  File "/workspace/psann/.venv/lib/python3.12/site-packages/torch/distributed/run.py", line 927, in run
+    elastic_launch(
+  File "/workspace/psann/.venv/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 156, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/psann/.venv/lib/python3.12/site-packages/torch/distributed/launcher/api.py", line 293, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+scripts/train_psann_lm.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2025-11-12_00:21:26
+  host      : 4bb5e1e4ffe7
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 825)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================
