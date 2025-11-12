@@ -38,7 +38,7 @@ Changelog = "https://github.com/psann-project/psann/blob/main/docs/migration.md"
 Contributing = "https://github.com/psann-project/psann/blob/main/docs/CONTRIBUTING.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/psann"]
+packages = ["src/psann", "psannlm"]
 
 [tool.hatch.build]
 exclude = [
@@ -60,6 +60,7 @@ exclude = [
 [tool.hatch.build.targets.sdist]
 include = [
   "src/psann/**",
+  "psannlm/**",
   "pyproject.toml",
   "README.md",
   "LICENSE",

@@ -165,6 +165,7 @@ class Trainer:
         *,
         max_length: int,
         val_dataset: Optional[Any] = None,
+        data_loader: Optional[DataLoader] = None,
     ) -> None:
         import math as _math
         model.train()
@@ -259,29 +260,33 @@ class Trainer:
 
         # ---- DataLoader (DistributedSampler if DDP) ----
         batch_size = self._compute_batch_size(max_length)
-        sampler = None
-        if not isinstance(dataset, IterableDataset) and (ddp_enabled or use_fsdp) and torch.distributed.is_available():
-            from torch.utils.data.distributed import DistributedSampler
-            sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
-        dl = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=(False if isinstance(dataset, IterableDataset) else (sampler is None)),
-            sampler=sampler,
-            collate_fn=collate_batch,
-            pin_memory=(device.type == "cuda"),
-            num_workers=int(getattr(self.cfg, "dataloader_num_workers", 0)),
-            prefetch_factor=(
-                int(getattr(self.cfg, "dataloader_prefetch_factor", 2))
-                if int(getattr(self.cfg, "dataloader_num_workers", 0)) > 0
-                else None
-            ),
-            persistent_workers=(
-                bool(getattr(self.cfg, "dataloader_persistent_workers", False))
-                if int(getattr(self.cfg, "dataloader_num_workers", 0)) > 0
-                else False
-            ),
-        )
+        if data_loader is not None:
+            dl = data_loader
+        else:
+            sampler = None
+            if not isinstance(dataset, IterableDataset) and (ddp_enabled or use_fsdp) and torch.distributed.is_available():
+                from torch.utils.data.distributed import DistributedSampler
+
+                sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
+            dl = DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=(False if isinstance(dataset, IterableDataset) else (sampler is None)),
+                sampler=sampler,
+                collate_fn=collate_batch,
+                pin_memory=(device.type == "cuda"),
+                num_workers=int(getattr(self.cfg, "dataloader_num_workers", 0)),
+                prefetch_factor=(
+                    int(getattr(self.cfg, "dataloader_prefetch_factor", 2))
+                    if int(getattr(self.cfg, "dataloader_num_workers", 0)) > 0
+                    else None
+                ),
+                persistent_workers=(
+                    bool(getattr(self.cfg, "dataloader_persistent_workers", False))
+                    if int(getattr(self.cfg, "dataloader_num_workers", 0)) > 0
+                    else False
+                ),
+            )
 
         optim = self._build_optimizer(model)
         criterion = nn.CrossEntropyLoss(label_smoothing=float(self.cfg.label_smoothing))
