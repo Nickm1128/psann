@@ -434,13 +434,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     use_streaming = str2bool(args.dataset_streaming)
     if use_streaming and int(args.max_steps) <= 0:
         raise SystemExit("--max_steps (or --tokens-target) must be set when --dataset-streaming true.")
+    world_size = max(1, int(os.environ.get("WORLD_SIZE", "1")))
     rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
     if rank == 0:
         target_msg = f"{tokens_target:,}" if tokens_target > 0 else "n/a"
         max_steps_msg = f"{int(args.max_steps):,}" if int(args.max_steps) > 0 else "auto"
+        global_tokens_per_step = tokens_per_step * world_size
         print(
             f"[budget] seq_len={seq_len} micro_batch={micro_batch} tokens_per_step={tokens_per_step:,} "
-            f"target_tokens≈{target_msg} max_steps={max_steps_msg}"
+            f"tokens_per_step_global≈{global_tokens_per_step:,} target_tokens≈{target_msg} max_steps={max_steps_msg}"
         )
 
     # Resolve tokenizer assets (optionally from HF Hub)
