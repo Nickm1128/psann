@@ -85,3 +85,22 @@ def test_conv_attention_per_element_output():
     est.fit(X, y, verbose=0)
     preds = est.predict(X)
     assert preds.shape == y.shape
+
+
+def test_waveresnet_conv_attention_via_helper():
+    rng = np.random.default_rng(4)
+    X = rng.normal(size=(10, 8, 3)).astype(np.float32)  # (N, length, channels)
+    y = X.mean(axis=(1, 2), keepdims=False).astype(np.float32).reshape(10, 1)
+    est = WaveResNetRegressor.with_conv_stem(
+        conv_channels=16,
+        conv_kernel_size=3,
+        data_format="channels_last",
+        hidden_layers=2,
+        hidden_units=16,
+        epochs=2,
+        batch_size=5,
+        attention={"kind": "mha", "num_heads": 2},
+    )
+    est.fit(X, y, verbose=0)
+    preds = est.predict(X)
+    assert preds.shape == y.shape

@@ -223,6 +223,47 @@ class _AttentionConvModel(nn.Module):
         return fc(pooled)
 
 
+class _WaveResNetConvModel(nn.Module):
+    """Apply a convolutional stem, optional attention, then a WaveResNet readout."""
+
+    def __init__(
+        self,
+        conv_core: nn.Module,
+        wave_core: WaveResNet,
+        *,
+        spatial_shape: Tuple[int, ...],
+        attention_module: Optional[nn.Module] = None,
+    ) -> None:
+        super().__init__()
+        if not hasattr(conv_core, "forward_tokens"):
+            raise TypeError("WaveResNet convolutional mode requires conv_core.forward_tokens.")
+        self.conv_core = conv_core
+        self.wave = wave_core
+        self.attention = attention_module
+        self.spatial_shape = tuple(int(d) for d in spatial_shape)
+
+    def forward_tokens(self, x: torch.Tensor) -> torch.Tensor:
+        return self.conv_core.forward_tokens(x)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        context: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        tokens = self.forward_tokens(x)
+        if tokens.ndim < 3:
+            raise ValueError("WaveResNetConvModel expects tensors with spatial dimensions.")
+        batch = tokens.shape[0]
+        channels = tokens.shape[1]
+        seq = tokens.view(batch, channels, -1).transpose(1, 2)  # (B, T, C)
+        if self.attention is not None:
+            seq, _ = self.attention(seq, seq, seq)
+        flat = seq.reshape(batch, -1)
+        if context is None:
+            return self.wave(flat)
+        return self.wave(flat, context)
+
+
 class PSANNRegressor(BaseEstimator, RegressorMixin):
     """Sklearn-style regressor wrapper around a PSANN network (PyTorch).
 
@@ -2062,22 +2103,23 @@ class WaveResNetRegressor(PSANNRegressor):
         progressive_depth_interval: int = 15,
         progressive_depth_growth: int = 1,
     ) -> None:
-        if preserve_shape:
-            raise ValueError("WaveResNetRegressor currently supports preserve_shape=False.")
         if per_element:
             raise ValueError("WaveResNetRegressor does not support per_element=True.")
-        if conv_channels is not None:
-            warnings.warn(
-                "conv_channels has no effect for WaveResNetRegressor; ignoring value.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-        if conv_kernel_size != 1:
-            warnings.warn(
-                "conv_kernel_size has no effect for WaveResNetRegressor; ignoring value.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
+        if not preserve_shape:
+            if conv_channels is not None:
+                warnings.warn(
+                    "conv_channels has no effect for WaveResNetRegressor when preserve_shape=False; ignoring value.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            if conv_kernel_size != 1:
+                warnings.warn(
+                    "conv_kernel_size has no effect for WaveResNetRegressor when preserve_shape=False; ignoring value.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+        if preserve_shape and lsm is not None:
+            raise ValueError("WaveResNetRegressor does not support lsm preprocessors when preserve_shape=True.")
 
         norm_value = str(norm).lower()
         if norm_value not in {"none", "weight", "rms"}:
@@ -2151,11 +2193,11 @@ class WaveResNetRegressor(PSANNRegressor):
             loss_params=loss_params,
             loss_reduction=loss_reduction,
             w0=w0,
-            preserve_shape=False,
+            preserve_shape=preserve_shape,
             data_format=data_format,
-            conv_kernel_size=1,
-            conv_channels=None,
-            per_element=False,
+            conv_kernel_size=conv_kernel_size,
+            conv_channels=conv_channels,
+            per_element=per_element,
             activation_type=activation_type,
             attention=attention,
             stateful=stateful_flag,
@@ -2312,6 +2354,63 @@ class WaveResNetRegressor(PSANNRegressor):
             activation_config=activation_cfg,
         )
 
+    def _build_conv_core(
+        self,
+        spatial_ndim: int,
+        in_channels: int,
+        output_dim: int,
+        *,
+        segmentation_head: bool,
+        spatial_shape: Optional[Tuple[int, ...]] = None,
+        state_cfg: Optional[Dict[str, Any]] = None,
+    ) -> nn.Module:
+        if segmentation_head:
+            raise ValueError("WaveResNetRegressor does not support per_element=True in convolutional mode.")
+        if spatial_shape is None:
+            raise ValueError(
+                "WaveResNetRegressor requires known spatial dimensions for preserve_shape inputs."
+            )
+        conv_map = {
+            1: PSANNConv1dNet,
+            2: PSANNConv2dNet,
+            3: PSANNConv3dNet,
+        }
+        conv_cls = conv_map.get(int(spatial_ndim))
+        if conv_cls is None:
+            raise ValueError(f"Unsupported spatial dimensionality {spatial_ndim}; expected 1, 2, or 3.")
+        conv_channels = int(self.conv_channels)
+        conv_core = conv_cls(
+            int(in_channels),
+            out_dim=conv_channels,
+            hidden_layers=self.hidden_layers,
+            conv_channels=conv_channels,
+            hidden_channels=conv_channels,
+            kernel_size=self.conv_kernel_size,
+            act_kw=self.activation,
+            activation_type=self.activation_type,
+            w0=self.w0,
+            segmentation_head=False,
+        )
+        embed_dim = self._infer_conv_embed_dim(conv_core)
+        seq_len = int(math.prod(spatial_shape)) if spatial_shape else 1
+        attn_module: Optional[nn.Module] = None
+        if self._attention_enabled():
+            attn_module = build_attention_module(self.attention, embed_dim)
+            if attn_module is not None:
+                self._attention_shape_ = (seq_len, embed_dim)
+        wave_input_dim = seq_len * embed_dim
+        wave_core = self._build_dense_backbone(
+            wave_input_dim,
+            output_dim,
+            state_cfg=state_cfg,
+        )
+        return _WaveResNetConvModel(
+            conv_core,
+            wave_core,
+            spatial_shape=spatial_shape,
+            attention_module=attn_module,
+        )
+
     def _initial_w0_values(self) -> Tuple[float, float]:
         return float(self.first_layer_w0_initial), float(self.hidden_w0_initial)
 
@@ -2347,10 +2446,14 @@ class WaveResNetRegressor(PSANNRegressor):
         model = getattr(self, "model_", None)
         if isinstance(model, WaveResNet):
             return model
+        if isinstance(model, _WaveResNetConvModel):
+            return model.wave
         if isinstance(model, WithPreprocessor):
             core = model.core
             if isinstance(core, WaveResNet):
                 return core
+            if isinstance(core, _WaveResNetConvModel):
+                return core.wave
         return None
 
     def _apply_w0_values(self, first_w0: float, hidden_w0: float) -> None:

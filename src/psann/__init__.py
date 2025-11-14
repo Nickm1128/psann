@@ -106,4 +106,4 @@ __all__ = [
     "make_regime_switch_ts",
 ]
 
-__version__ = "0.10.17"
+__version__ = "0.10.19"
