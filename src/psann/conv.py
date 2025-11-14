@@ -126,10 +126,14 @@ class PSANNConv1dNet(nn.Module):
         else:
             init_siren_linear_(self.fc, is_first=False, w0=w0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (N, C, L)
+    def forward_tokens(self, x: torch.Tensor) -> torch.Tensor:
         if len(self.body) > 0:
             x = self.body(x)
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (N, C, L)
+        x = self.forward_tokens(x)
         if self.segmentation_head:
             return self.head(x)  # (N, out_dim, L)
         x = self.pool(x).squeeze(-1)  # (N, C)
@@ -196,10 +200,14 @@ class PSANNConv2dNet(nn.Module):
         else:
             init_siren_linear_(self.fc, is_first=False, w0=w0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (N, C, H, W)
+    def forward_tokens(self, x: torch.Tensor) -> torch.Tensor:
         if len(self.body) > 0:
             x = self.body(x)
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (N, C, H, W)
+        x = self.forward_tokens(x)
         if self.segmentation_head:
             return self.head(x)  # (N, out_dim, H, W)
         x = self.pool(x).flatten(1)  # (N, C)
@@ -266,10 +274,14 @@ class PSANNConv3dNet(nn.Module):
         else:
             init_siren_linear_(self.fc, is_first=False, w0=w0)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # x: (N, C, D, H, W)
+    def forward_tokens(self, x: torch.Tensor) -> torch.Tensor:
         if len(self.body) > 0:
             x = self.body(x)
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (N, C, D, H, W)
+        x = self.forward_tokens(x)
         if self.segmentation_head:
             return self.head(x)  # (N, out_dim, D, H, W)
         x = self.pool(x).flatten(1)  # (N, C)
@@ -447,11 +459,15 @@ class ResidualPSANNConv2dNet(nn.Module):
             self.fc = nn.Linear(channels, self.out_dim)
             init_siren_linear_(self.fc, is_first=False, w0=w0_hidden)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_tokens(self, x: torch.Tensor) -> torch.Tensor:
         z = self.in_proj(x)
         if len(self.body) > 0:
             z = self.body(z)
         z = self.head_norm(z)
+        return z
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.forward_tokens(x)
         if self.segmentation_head:
             return self.head(z)
         z = self.pool(z).flatten(1)

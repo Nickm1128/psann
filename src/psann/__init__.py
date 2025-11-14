@@ -31,6 +31,7 @@ from .rewards import (
     get_reward_strategy,
     register_reward_strategy,
 )
+from .attention import AttentionConfig
 from .sklearn import PSANNRegressor, ResConvPSANNRegressor, ResPSANNRegressor, WaveResNetRegressor
 from .state import StateConfig, StateController, ensure_state_config
 
@@ -52,6 +53,7 @@ from .utils import (
 
 __all__ = [
     # Estimators
+    "AttentionConfig",
     "PSANNRegressor",
     "ResPSANNRegressor",
     "ResConvPSANNRegressor",

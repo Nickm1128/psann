@@ -42,6 +42,7 @@ except Exception:  # Fallbacks if sklearn isn't installed at runtime
 
 
 from ._aliases import resolve_int_alias
+from .attention import AttentionConfig, build_attention_module, ensure_attention_config
 from .conv import PSANNConv1dNet, PSANNConv2dNet, PSANNConv3dNet, ResidualPSANNConv2dNet
 from .models import WaveResNet
 from .nn import PSANNNet, ResidualPSANNNet, WithPreprocessor
@@ -128,6 +129,100 @@ def _deserialize_hisso_options(data: Any) -> Optional[HISSOOptions]:
     raise TypeError(f"Unable to deserialize HISSO options from type {type(data)!r}")
 
 
+class _AttentionDenseModel(nn.Module):
+    """Wrap token-level backbone + attention pooling for flattened inputs."""
+
+    def __init__(
+        self,
+        token_backbone: nn.Module,
+        attention_module: Optional[nn.Module],
+        *,
+        seq_len: int,
+        token_dim: int,
+        embed_dim: int,
+        output_dim: int,
+        pool: str = "mean",
+    ) -> None:
+        super().__init__()
+        self.token_backbone = token_backbone
+        self.attention = attention_module
+        self.seq_len = int(seq_len)
+        self.token_dim = int(token_dim)
+        self.embed_dim = int(embed_dim)
+        self.readout = nn.Linear(self.embed_dim, output_dim)
+        pool = str(pool).lower()
+        if pool not in {"mean", "last"}:
+            raise ValueError("pool must be 'mean' or 'last'.")
+        self.pool = pool
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.ndim != 2:
+            raise ValueError(
+                f"Attention-enabled models expect 2D inputs (batch, features); received rank {x.ndim}."
+            )
+        if x.shape[1] != self.seq_len * self.token_dim:
+            raise ValueError(
+                "Input feature dimension does not match inferred attention shape "
+                f"(features={x.shape[1]}, expected={self.seq_len * self.token_dim})."
+            )
+        batch = x.shape[0]
+        tokens = x.view(batch, self.seq_len, self.token_dim)
+        embeds = self.token_backbone(tokens.reshape(batch * self.seq_len, self.token_dim))
+        embeds = embeds.view(batch, self.seq_len, self.embed_dim)
+        ctx = embeds
+        if self.attention is not None:
+            ctx, _ = self.attention(embeds, embeds, embeds)
+        if self.pool == "last":
+            pooled = ctx[:, -1, :]
+        else:
+            pooled = ctx.mean(dim=1)
+        return self.readout(pooled)
+
+
+class _AttentionConvModel(nn.Module):
+    """Wrap convolutional backbones with sequence attention."""
+
+    def __init__(
+        self,
+        conv_core: nn.Module,
+        attention_module: nn.Module,
+        *,
+        spatial_shape: Tuple[int, ...],
+        segmentation_head: bool,
+    ) -> None:
+        super().__init__()
+        if not hasattr(conv_core, "forward_tokens"):
+            raise TypeError("attention requires conv cores exposing forward_tokens.")
+        self.conv_core = conv_core
+        self.attention = attention_module
+        self.segmentation_head = bool(segmentation_head)
+        self.spatial_shape = tuple(int(d) for d in spatial_shape)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        tokens = self.conv_core.forward_tokens(x)
+        if tokens.ndim < 3:
+            raise ValueError("attention expects convolutional tokens with spatial dimensions.")
+        batch = tokens.shape[0]
+        channels = tokens.shape[1]
+        spatial = tokens.shape[2:]
+        seq = tokens.view(batch, channels, -1).transpose(1, 2)  # (B, T, C)
+        ctx, _ = self.attention(seq, seq, seq)
+        ctx = ctx.transpose(1, 2).reshape(batch, channels, *spatial)
+        if self.segmentation_head:
+            head = getattr(self.conv_core, "head", None)
+            if head is None:
+                raise RuntimeError("Convolutional core missing segmentation head.")
+            return head(ctx)
+        pool = getattr(self.conv_core, "pool", None)
+        fc = getattr(self.conv_core, "fc", None)
+        if pool is None or fc is None:
+            raise RuntimeError("Convolutional core missing pool/fc required for attention.")
+        pooled = pool(ctx)
+        if pooled.ndim > 2:
+            pooled = pooled.flatten(1)
+        return fc(pooled)
+
+
 class PSANNRegressor(BaseEstimator, RegressorMixin):
     """Sklearn-style regressor wrapper around a PSANN network (PyTorch).
 
@@ -161,6 +256,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         conv_channels: Optional[int] = None,
         per_element: bool = False,
         activation_type: str = "psann",
+        attention: Optional[AttentionConfig | Mapping[str, Any]] = None,
         stateful: bool = False,
         state: Optional[Union[StateConfig, Mapping[str, Any]]] = None,
         state_reset: str = "batch",  # 'batch' | 'epoch' | 'none'
@@ -231,6 +327,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         self.conv_kernel_size = int(conv_kernel_size)
         self.per_element = bool(per_element)
         self.activation_type = activation_type
+        self.attention = ensure_attention_config(attention)
         self.stateful = bool(stateful)
         self.state = ensure_state_config(state)
         self.state_reset = state_reset
@@ -289,6 +386,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         )
         self._context_dim_: Optional[int] = None
         self._model_device_: Optional[torch.device] = None
+        self._attention_shape_: Optional[Tuple[int, int]] = None
 
     @classmethod
     def with_conv_stem(
@@ -375,6 +473,10 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                     except Exception:
                         pass
         return result
+
+    def _attention_enabled(self) -> bool:
+        cfg = getattr(self, "attention", None)
+        return bool(cfg and cfg.is_enabled())
 
     def gradient_hook(self, _: nn.Module) -> None:
         """Hook executed after backward before the optimiser step."""
@@ -904,6 +1006,27 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         output_dim: int,
         *,
         state_cfg: Optional[Dict[str, Any]] = None,
+        input_shape: Optional[Tuple[int, ...]] = None,
+    ) -> nn.Module:
+        if self._attention_enabled():
+            return self._build_attention_dense_core(
+                input_dim,
+                output_dim,
+                state_cfg=state_cfg,
+                input_shape=input_shape,
+            )
+        return self._build_dense_backbone(
+            input_dim,
+            output_dim,
+            state_cfg=state_cfg,
+        )
+
+    def _build_dense_backbone(
+        self,
+        input_dim: int,
+        output_dim: int,
+        *,
+        state_cfg: Optional[Dict[str, Any]] = None,
     ) -> nn.Module:
         return PSANNNet(
             int(input_dim),
@@ -917,6 +1040,96 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             w0=self.w0,
         )
 
+    def _build_token_backbone(
+        self,
+        token_dim: int,
+        embed_dim: int,
+        *,
+        state_cfg: Optional[Dict[str, Any]] = None,
+    ) -> nn.Module:
+        return self._build_dense_backbone(
+            token_dim,
+            embed_dim,
+            state_cfg=state_cfg,
+        )
+
+    def _build_attention_dense_core(
+        self,
+        input_dim: int,
+        output_dim: int,
+        *,
+        state_cfg: Optional[Dict[str, Any]],
+        input_shape: Optional[Tuple[int, ...]],
+    ) -> nn.Module:
+        if input_shape is None or len(input_shape) < 2:
+            raise ValueError(
+                "attention requires inputs with shape (batch, ..., features); "
+                "provide tensors with at least two non-batch dimensions."
+            )
+        seq_dims = input_shape[:-1]
+        token_dim = int(input_shape[-1])
+        seq_len = int(math.prod(seq_dims)) if seq_dims else 1
+        expected = seq_len * token_dim
+        if expected != int(input_dim):
+            raise ValueError(
+                "attention expected input_dim matching seq_len * token_dim "
+                f"(inferred={expected}, received={input_dim}). "
+                "Ensure the last axis of X holds per-token features."
+            )
+        attn_module = build_attention_module(self.attention, int(self.hidden_units))
+        if attn_module is None:
+            return self._build_dense_backbone(
+                input_dim,
+                output_dim,
+                state_cfg=state_cfg,
+            )
+        token_backbone = self._build_token_backbone(
+            token_dim,
+            int(self.hidden_units),
+            state_cfg=state_cfg,
+        )
+        self._attention_shape_ = (seq_len, token_dim)
+        return _AttentionDenseModel(
+            token_backbone,
+            attn_module,
+            seq_len=seq_len,
+            token_dim=token_dim,
+            embed_dim=int(self.hidden_units),
+            output_dim=int(output_dim),
+            pool="mean",
+        )
+
+    def _infer_conv_embed_dim(self, core: nn.Module) -> int:
+        for attr in ("conv_channels", "hidden_channels"):
+            if hasattr(core, attr):
+                return int(getattr(core, attr))
+        raise ValueError("Unable to infer convolutional token dimension for attention.")
+
+    def _wrap_with_attention_conv(
+        self,
+        core: nn.Module,
+        spatial_shape: Optional[Tuple[int, ...]],
+        *,
+        segmentation_head: bool,
+    ) -> nn.Module:
+        if spatial_shape is None:
+            raise ValueError(
+                "attention requires known spatial dimensions for preserve_shape inputs; "
+                "ensure training inputs include spatial axes."
+            )
+        embed_dim = self._infer_conv_embed_dim(core)
+        attn_module = build_attention_module(self.attention, embed_dim)
+        if attn_module is None:
+            return core
+        seq_len = int(math.prod(spatial_shape)) if spatial_shape else 1
+        self._attention_shape_ = (seq_len, embed_dim)
+        return _AttentionConvModel(
+            core,
+            attn_module,
+            spatial_shape=spatial_shape,
+            segmentation_head=segmentation_head,
+        )
+
     def _build_conv_core(
         self,
         spatial_ndim: int,
@@ -924,6 +1137,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         output_dim: int,
         *,
         segmentation_head: bool,
+        spatial_shape: Optional[Tuple[int, ...]] = None,
     ) -> nn.Module:
         conv_map = {
             1: PSANNConv1dNet,
@@ -935,7 +1149,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             raise ValueError(
                 f"Unsupported spatial dimensionality {spatial_ndim}; expected 1, 2, or 3."
             )
-        return conv_cls(
+        core = conv_cls(
             int(in_channels),
             int(output_dim),
             hidden_layers=self.hidden_layers,
@@ -947,6 +1161,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             w0=self.w0,
             segmentation_head=bool(segmentation_head),
         )
+        if self._attention_enabled():
+            return self._wrap_with_attention_conv(core, spatial_shape, segmentation_head=segmentation_head)
+        return core
 
     def _make_optimizer(self, model: torch.nn.Module, lr: Optional[float] = None):
         lr = float(self.lr if lr is None else lr)
@@ -1020,6 +1237,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                 raise ValueError("per_element=True expects inputs with spatial dimensions.")
 
             in_channels = int(X_cf.shape[1])
+            spatial_shape = tuple(X_cf.shape[2:])
             lsm_module = request.lsm_module
             if lsm_module is not None:
                 if request.lsm_output_dim is not None:
@@ -1034,6 +1252,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                 in_channels,
                 int(prepared.output_dim),
                 segmentation_head=True,
+                spatial_shape=spatial_shape,
             )
 
             preproc = lsm_module
@@ -1055,6 +1274,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             raise ValueError("PreparedInputState missing channels-first shape for conv training.")
         spatial_ndim = max(1, len(internal_shape) - 1)
         base_channels = int(internal_shape[0])
+        spatial_shape = tuple(internal_shape[1:])
 
         def build_model(request: ModelBuildRequest) -> nn.Module:
             lsm_module = request.lsm_module
@@ -1072,6 +1292,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                 in_channels,
                 int(prepared.output_dim),
                 segmentation_head=bool(self.per_element),
+                spatial_shape=spatial_shape,
             )
 
             preproc = lsm_module
@@ -1137,10 +1358,16 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                 input_dim = int(request.lsm_output_dim)
             else:
                 input_dim = int(inputs_arr.shape[1])
+            if self._attention_enabled() and request.lsm_module is not None:
+                raise ValueError(
+                    "attention is currently incompatible with lsm preprocessors; "
+                    "attach attention after the LSM or disable lsm."
+                )
             core = self._build_dense_core(
                 input_dim,
                 int(prepared_local.output_dim),
                 state_cfg=(self.state if self.stateful else None),
+                input_shape=prepared_local.input_shape,
             )
             preproc = request.lsm_module
             if preproc is not None and not self.lsm_train:
@@ -1804,6 +2031,7 @@ class WaveResNetRegressor(PSANNRegressor):
         conv_channels: Optional[int] = None,
         per_element: bool = False,
         activation_type: str = "psann",
+        attention: Optional[AttentionConfig | Mapping[str, Any]] = None,
         stateful: bool = False,
         state: Optional[Union[StateConfig, Mapping[str, Any]]] = None,
         state_reset: str = "batch",
@@ -1929,6 +2157,7 @@ class WaveResNetRegressor(PSANNRegressor):
             conv_channels=None,
             per_element=False,
             activation_type=activation_type,
+            attention=attention,
             stateful=stateful_flag,
             state=state_cfg,
             state_reset=state_reset,
@@ -2049,7 +2278,7 @@ class WaveResNetRegressor(PSANNRegressor):
             self.context_dim = int(self._context_dim_)
         return fitted
 
-    def _build_dense_core(
+    def _build_dense_backbone(
         self,
         input_dim: int,
         output_dim: int,
@@ -2292,6 +2521,7 @@ class ResPSANNRegressor(PSANNRegressor):
         conv_channels: Optional[int] = None,
         per_element: bool = False,
         activation_type: str = "psann",
+        attention: Optional[AttentionConfig | Mapping[str, Any]] = None,
         stateful: bool = False,
         state: Optional[Union[StateConfig, Mapping[str, Any]]] = None,
         state_reset: str = "batch",
@@ -2336,6 +2566,7 @@ class ResPSANNRegressor(PSANNRegressor):
             conv_channels=conv_channels,
             per_element=per_element,
             activation_type=activation_type,
+            attention=attention,
             stateful=stateful,
             state=state,
             state_reset=state_reset,
@@ -2357,7 +2588,7 @@ class ResPSANNRegressor(PSANNRegressor):
         if self.preserve_shape:
             self._use_channel_first_train_inputs_ = True
 
-    def _build_dense_core(
+    def _build_dense_backbone(
         self,
         input_dim: int,
         output_dim: int,

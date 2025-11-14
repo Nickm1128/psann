@@ -101,6 +101,24 @@ Behind the scenes the estimator normalises arguments via `normalise_fit_args` an
 
 **Device & dtype.** The estimators operate internally in float32. Supplying `np.float32` arrays (as shown above) avoids extra copies. For GPU training, pass `device="cuda"` (or a specific `torch.device`) when constructing the estimator *before* calling `fit`; the helper will keep HISSO loops and inference on the pinned device.
 
+### Attention-enabled sequences
+
+Attach lightweight self-attention to any flattened PSANN (including residual and WaveResNet variants) by providing the `attention` config:
+
+```python
+seqs = X.reshape(-1, 32, 4)  # (batch, timesteps, features)
+model = PSANNRegressor(
+    hidden_layers=2,
+    hidden_units=64,
+    epochs=80,
+    batch_size=32,
+    attention={"kind": "mha", "num_heads": 4},  # optional MultiheadAttention
+)
+model.fit(seqs, y, verbose=0)
+```
+
+The estimator infers the `(timesteps, features)` layout automatically from the training tensor shape and inserts `nn.MultiheadAttention` after the PSANN per-token backbone. The same knob works when `preserve_shape=True` (including `per_element=True` conv paths); spatial positions are treated as tokens before passing through the existing convolutional heads. Set `attention=None` (default) to keep the legacy architecture.
+
 ### Residual regression with `ResPSANNRegressor`
 
 ```python
