@@ -24,6 +24,8 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 
 ## Available Scripts
 
+### HISSO, parity, and diagnostics
+
 - `profile_hisso.py` - quick sanity check for the lightweight HISSO trainer with
   a synthetic MLP.
 - `benchmark_hisso_variants.py` - benchmarks residual dense vs. convolutional
@@ -38,8 +40,13 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
   other ticker/date range) and writes a `date,open,close` CSV for HISSO runs.
 - `run_light_probes.py` - executes the lightweight Colab probes locally. Use
   `--results-dir` to redirect metric dumps away from the repository if desired.
+- `gpu_env_report.py` - prints a compact summary of GPU / CUDA / driver state for bug reports.
+
+### GPU validation and CUDA test harness
+
 - `run_gpu_validation.py` - unified GPU validation (GPU-01..08). Writes
   timestamped reports under `reports/gpu/`. Accepts `--only GPU-03` etc.
+- `run_cuda_tests.py` / `run_gpu_tests.py` - lower-level CUDA and GPU smoke tests; usually called via `run_cuda_suite.sh`.
 - `run_cuda_suite.sh` - convenience wrapper that sequentially runs `run_cuda_tests.py`,
   `run_gpu_tests.py`, and `run_gpu_validation.py` so a single command exercises the
   full CUDA + GPU validation battery. Emits artifacts under `reports/tests/`,
@@ -48,17 +55,33 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
   full validation, throughput sweeps at three batch token sizes, gradient
   checkpoint/memory step, and a tiny-corpus training. Produces benchmark
   artifacts in `reports/benchmarks/<timestamp>/`.
+
+### Benchmarks, corpora, and log parsing
+
 - `aggregate_benchmarks.py` - aggregates GPU validation outputs into
   `throughput.csv` and `memory.json` under a benchmark directory.
 - `finalize_bmrk01.py` - builds `metrics.json` for the tiny-corpus benchmark by
   parsing training metrics and computing validation loss/perplexity.
 - `parse_trainer_log.py` - parses trainer stdout to `metrics.csv` and, if
   `matplotlib` is available, `loss_curve.png`.
+- `plot_loss_from_csv.py` - quick helper to visualise loss curves from CSV logs.
 - `make_tiny_corpus.py` - synthesizes a ~50MB `datasets/lm/tiny_books.txt` if a
   real corpus is not available in the pod.
 - `run_bmrk01.sh` - one-shot runner for the BMRK-01 tiny-corpus benchmark. Emits
   `metrics.csv`, `metrics.json`, and optionally `loss_curve.png` into
   `reports/benchmarks/<timestamp>/`.
+
+### Language modeling and PSANN-LM tooling
+
+- `train_psann_lm.py` - shim around `psannlm.train` for one-command LM training (see `docs/lm.md`).
+- `train_psannlm_chat.py` / `gen_psannlm_chat.py` - helpers for chat-style PSANN-LM runs and interactive generation.
+- `run_lm_eval_psann.py` - ties PSANN-LM checkpoints into `lm-eval-harness` via a small adapter.
+- `benchmark_kv_cache.py` / `compare_tokenizers.py` / `count_psannlm_params.py` / `ppl_wikitext_psann.py` - focused LM utilities for KV-cache, tokenizer benchmarks, parameter counting, and perplexity; mainly used in docs and internal benchmarks.
+- `runpod_psannlm.sh`, `runpod_smoke_train.sh`, `runpod_train_1b.sh`, `runpod_train_300m.sh` - RunPod / multi-GPU orchestration scripts for LM training at different scales.
+
+### Release tooling
+
+- `release.py` - small helper used when cutting PyPI releases and tagging versions.
 
 ## Language Modeling
 

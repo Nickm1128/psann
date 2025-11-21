@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 # Autocast compatibility helpers
 # ---------------------------------------------------------------------------
 
+
 def _autocast_context(
     device: torch.device,
     dtype: Optional[torch.dtype],
@@ -597,13 +598,17 @@ class HISSOTrainer:
 
                     total_reward += float(reward_tensor.detach().mean().item())
                     episode_count += 1
-                    self.profile["episodes_sampled"] = int(self.profile.get("episodes_sampled", 0)) + 1
+                    self.profile["episodes_sampled"] = (
+                        int(self.profile.get("episodes_sampled", 0)) + 1
+                    )
 
                     if self.profile.get("episode_view_is_shared") is None:
                         base_ptr = _storage_ptr(x_tensor)
                         episode_ptr = _storage_ptr(episode)
                         self.profile["episode_view_is_shared"] = (
-                            base_ptr is not None and episode_ptr is not None and base_ptr == episode_ptr
+                            base_ptr is not None
+                            and episode_ptr is not None
+                            and base_ptr == episode_ptr
                         )
 
                     epoch_episode_time += time.perf_counter() - batch_start
@@ -864,6 +869,5 @@ def ensure_hisso_trainer_config(
             transition_penalty=float(value.get("transition_penalty", 0.0)),
         )
     raise TypeError(
-        "Unsupported HISSO trainer configuration format; "
-        f"received {type(value).__name__}."
+        "Unsupported HISSO trainer configuration format; " f"received {type(value).__name__}."
     )

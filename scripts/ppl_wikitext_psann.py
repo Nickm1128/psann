@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import math
-from pathlib import Path
 
 import torch
 from datasets import load_dataset
@@ -22,6 +21,7 @@ from datasets import load_dataset
 # Ensure repository root on path
 import sys
 from pathlib import Path as _Path
+
 _here = _Path(__file__).resolve()
 _root = _here.parent.parent
 if str(_root) not in sys.path:
@@ -98,4 +98,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

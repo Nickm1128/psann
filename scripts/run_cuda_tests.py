@@ -63,7 +63,7 @@ def system_info() -> Dict[str, Any]:
                     {
                         "index": i,
                         "name": props.name,
-                        "total_memory_gb": round(props.total_memory / (1024 ** 3), 2),
+                        "total_memory_gb": round(props.total_memory / (1024**3), 2),
                         "major": props.major,
                         "minor": props.minor,
                     }
@@ -110,7 +110,11 @@ def main() -> int:
 
     # Detailed environment report (best-effort)
     try:
-        subprocess.run([sys.executable, "scripts/gpu_env_report.py", "--outdir", str(outdir)], check=False, env=env)
+        subprocess.run(
+            [sys.executable, "scripts/gpu_env_report.py", "--outdir", str(outdir)],
+            check=False,
+            env=env,
+        )
     except Exception:
         pass
 
@@ -179,4 +183,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

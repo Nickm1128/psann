@@ -11,12 +11,9 @@ and writes the final psannLM checkpoint + tokenizer for downstream evaluation.
 from __future__ import annotations
 
 import argparse
-import collections
 import json
 import math
-import os
 import random
-import statistics
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -276,7 +273,9 @@ def land_config(
 # Training core
 
 
-def build_scheduler(optimizer: AdamW, total_steps: int, warmup_steps: int) -> torch.optim.lr_scheduler.LambdaLR:
+def build_scheduler(
+    optimizer: AdamW, total_steps: int, warmup_steps: int
+) -> torch.optim.lr_scheduler.LambdaLR:
     warmup = max(0, warmup_steps)
 
     def lr_lambda(step: int) -> float:

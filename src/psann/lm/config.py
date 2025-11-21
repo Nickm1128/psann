@@ -7,7 +7,7 @@ hold options that also maps cleanly to CLI/YAML.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 POS_ENCODING_CHOICES = ("rope", "alibi", "sinusoidal")
@@ -90,6 +90,7 @@ class TrainConfig:
     save_interval_steps: int = 500
     # Memory/perf knobs
     grad_checkpoint: bool = False
+    log_gpu_mem: bool = False
     dataloader_num_workers: int = 8
     dataloader_prefetch_factor: int = 2
     dataloader_persistent_workers: bool = True

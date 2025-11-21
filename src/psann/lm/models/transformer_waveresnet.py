@@ -16,7 +16,6 @@ from torch import nn
 from .transformer_respsann import (
     RMSNorm,
     SineConfig,
-    TransformerBlock,
     _sinusoidal_positions,
     SelfAttention,
 )
@@ -38,16 +37,18 @@ class WaveResNetTransformerConfig:
     sine: Optional[SineConfig] = None
     # WaveResNet-temporal options (scaffolding)
     wave_interleave: bool = False  # if True, add a temporal conv residual per block
-    wave_replace: bool = False     # if True, replace MLP with temporal conv residual
+    wave_replace: bool = False  # if True, replace MLP with temporal conv residual
     wave_kernel_size: int = 3
     wave_dilation_growth: int = 1  # 1 = no dilation growth across layers
     wave_dropout: float = 0.0
+    attn_impl: str = "math"  # "math" | "sdpa" | "auto"
 
     def __post_init__(self) -> None:
         if self.rope is not None:
             self.positional_encoding = "rope" if self.rope else "sinusoidal"
         self.positional_encoding = normalize_positional_encoding(self.positional_encoding)
         self.rope = self.positional_encoding == "rope"
+
 
 class WaveResNetTransformer(nn.Module):
     def __init__(self, cfg: WaveResNetTransformerConfig) -> None:
@@ -62,7 +63,7 @@ class WaveResNetTransformer(nn.Module):
             dilation = 1
             if int(cfg.wave_dilation_growth) > 1:
                 try:
-                    dilation = int(max(1, (cfg.wave_dilation_growth ** i)))
+                    dilation = int(max(1, (cfg.wave_dilation_growth**i)))
                 except Exception:
                     dilation = 1
             blk = TransformerBlockWRN(
@@ -79,6 +80,7 @@ class WaveResNetTransformer(nn.Module):
                 wave_kernel_size=int(cfg.wave_kernel_size),
                 wave_dilation=int(dilation),
                 wave_dropout=float(cfg.wave_dropout),
+                attn_impl=cfg.attn_impl,
             )
             blocks.append(blk)
         self.blocks = nn.ModuleList(blocks)
@@ -111,7 +113,7 @@ class WaveResNetTransformer(nn.Module):
         if self.cfg.positional_encoding == "sinusoidal":
             past_len = int(past_kvs[0][0].size(-2)) if (use_cache and past_kvs) else 0
             pe = _sinusoidal_positions(past_len + T, self.cfg.d_model, x.device).unsqueeze(0)
-            x = x + pe[:, past_len: past_len + T, :]
+            x = x + pe[:, past_len : past_len + T, :]
         if use_cache:
             presents: List[Tuple[torch.Tensor, torch.Tensor]] = []
             for i, blk in enumerate(self.blocks):
@@ -125,6 +127,7 @@ class WaveResNetTransformer(nn.Module):
         else:
             if self.gradient_checkpointing and self.training:
                 from torch.utils.checkpoint import checkpoint as _cp
+
                 for blk in self.blocks:
                     x = _cp(blk, x, use_reentrant=False)
             else:
@@ -167,7 +170,9 @@ class WaveBlock1D(nn.Module):
         self._dil = dil
         # same-length padding for odd kernels
         pad = (k - 1) // 2 * dil
-        self.dw = nn.Conv1d(d_model, d_model, kernel_size=k, groups=d_model, dilation=dil, padding=pad, bias=False)
+        self.dw = nn.Conv1d(
+            d_model, d_model, kernel_size=k, groups=d_model, dilation=dil, padding=pad, bias=False
+        )
         activation = (activation or "sine").lower()
         if activation == "sine":
             self.act: nn.Module = build_sine(d_model, sine)
@@ -258,6 +263,7 @@ class TransformerBlockWRN(nn.Module):
         wave_kernel_size: int = 3,
         wave_dilation: int = 1,
         wave_dropout: float = 0.0,
+        attn_impl: str = "math",
     ) -> None:
         super().__init__()
         self.attn = SelfAttention(
@@ -265,6 +271,7 @@ class TransformerBlockWRN(nn.Module):
             n_heads,
             dropout=dropout,
             positional_encoding=positional_encoding,
+            attn_impl=attn_impl,
         )
         # reuse PSANN MLP as in base
         from .transformer_respsann import PSANNMLP  # local import to avoid cycle in type checking
@@ -272,7 +279,9 @@ class TransformerBlockWRN(nn.Module):
         self.wave_replace = bool(wave_replace)
         self.mlp: Optional[nn.Module]
         if not self.wave_replace:
-            self.mlp = PSANNMLP(d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout)
+            self.mlp = PSANNMLP(
+                d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout
+            )
         else:
             self.mlp = None
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()

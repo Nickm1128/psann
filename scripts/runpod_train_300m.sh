@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 # RunPod training script for ~300M PSANN-LM (63B tokens target)
+# Prereqs (PyPI-style): `pip install psann psannlm` and CUDA-ready PyTorch.
+# For local development from this repo: `pip install -e .[dev,lm]`.
 
 set -euo pipefail
 
 REPO=${REPO:-/workspace/psann}
 cd "$REPO"
 
-ATTN_FLAGS="${ATTN_FLAGS:-}"
+ATTN_FLAGS="${ATTN_FLAGS:---attn-impl sdpa}"
 DATA_FLAGS="${DATA_FLAGS:-}"
 AMP_FLAGS="${AMP_FLAGS:-}"
 EXTRA_FLAGS="${EXTRA_FLAGS:-}"
+AMP_MODE="${AMP_MODE:-bf16}"
 
 LOG_DIR=${LOG_DIR:-$REPO/logs}
 mkdir -p "$LOG_DIR" artifacts runs runs/tokenizer_300m
@@ -38,6 +41,14 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -e .[lm]
 pip install hf_transfer langdetect datasets tokenizers accelerate
+
+case "$AMP_MODE" in
+  bf16|fp16|fp32|none) ;;
+  *)
+    echo "[warn] Unknown AMP_MODE='$AMP_MODE', defaulting to 'bf16'."
+    AMP_MODE="bf16"
+    ;;
+esac
 
 NUM_GPUS=${NUM_GPUS:-1}
 GRAD_ACCUM=${GRAD_ACCUM:-1}
@@ -99,7 +110,7 @@ CMD="${LAUNCHER} \
   --dataloader_num_workers 2 \
   --batch-tokens ${BATCH_TOKENS} --grad-accum-steps ${GRAD_ACCUM} \
   --lr 3e-4 --weight-decay 0.01 \
-  --amp bf16 ${FSDP_FLAGS} ${OPT_FLAGS} \
+  --amp ${AMP_MODE} ${FSDP_FLAGS} ${OPT_FLAGS} \
   --grad-checkpoint \
   --log-interval-steps 25 \
   --checkpoint-dir runs/lm/300m_en \
@@ -110,6 +121,14 @@ CMD="${LAUNCHER} \
   ${EXTRA_FLAGS:+$EXTRA_FLAGS}"
 
 echo "[$(date -Iseconds)] Starting 300M run" | tee "$LOG_FILE"
-echo "[config] seq_len=${SEQ_LEN} batch_tokens=${BATCH_TOKENS} grad_accum=${GRAD_ACCUM} num_gpus=${NUM_GPUS} tokens_per_step=${TOKENS_PER_STEP_ACTUAL} tokens_target=${TOKENS_TARGET} max_steps=${MAX_STEPS}" | tee -a "$LOG_FILE"
-eval $CMD 2>&1 | tee -a "$LOG_FILE"
+if command -v nvidia-smi >/dev/null 2>&1; then
+  echo "[gpu] Initial GPU state:" | tee -a "$LOG_FILE"
+  nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader | tee -a "$LOG_FILE" || true
+fi
+echo "[config] seq_len=${SEQ_LEN} batch_tokens=${BATCH_TOKENS} grad_accum=${GRAD_ACCUM} num_gpus=${NUM_GPUS} amp_mode=${AMP_MODE} tokens_per_step=${TOKENS_PER_STEP_ACTUAL} tokens_target=${TOKENS_TARGET} max_steps=${MAX_STEPS}" | tee -a "$LOG_FILE"
+eval $CMD --log-gpu-mem 2>&1 | tee -a "$LOG_FILE"
+if command -v nvidia-smi >/dev/null 2>&1; then
+  echo "[gpu] Final GPU state:" | tee -a "$LOG_FILE"
+  nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv,noheader | tee -a "$LOG_FILE" || true
+fi
 echo "[$(date -Iseconds)] Training complete" | tee -a "$LOG_FILE"

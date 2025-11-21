@@ -30,6 +30,7 @@ from typing import Iterable, Optional
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 INIT_PATH = ROOT / "src" / "psann" / "__init__.py"
+PSANNLM_PYPROJECT_PATH = ROOT / "psannlm" / "pyproject.toml"
 
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 INIT_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
@@ -78,6 +79,16 @@ def write_init_version(new_version: str) -> None:
     INIT_PATH.write_text(updated, encoding="utf-8")
 
 
+def write_psannlm_version(new_version: str) -> None:
+    if not PSANNLM_PYPROJECT_PATH.exists():
+        raise RuntimeError(f"psannlm pyproject.toml not found at {PSANNLM_PYPROJECT_PATH}")
+    text = PSANNLM_PYPROJECT_PATH.read_text(encoding="utf-8")
+    if not VERSION_RE.search(text):
+        raise RuntimeError(f"Could not update version in {PSANNLM_PYPROJECT_PATH}")
+    updated = VERSION_RE.sub(f'version = "{new_version}"', text, count=1)
+    PSANNLM_PYPROJECT_PATH.write_text(updated, encoding="utf-8")
+
+
 def clean_artifacts(paths: Iterable[Path]) -> None:
     for path in paths:
         if not path.exists():
@@ -92,9 +103,14 @@ def discover_egg_info(root: Path) -> Iterable[Path]:
     yield from root.glob("*.egg-info")
 
 
-def run_cmd(args: list[str], *, env: Optional[dict[str, str]] = None) -> None:
-    print(f"+ {' '.join(args)}")
-    subprocess.check_call(args, cwd=ROOT, env=env)
+def run_cmd(
+    args: list[str],
+    *,
+    env: Optional[dict[str, str]] = None,
+    cwd: Optional[Path] = None,
+) -> None:
+    print(f"+ {' '.join(args)} (cwd={cwd or ROOT})")
+    subprocess.check_call(args, cwd=str(cwd or ROOT), env=env)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,14 +166,23 @@ def main(argv: list[str] | None = None) -> int:
 
     write_pyproject_version(new_version)
     write_init_version(new_version)
+    write_psannlm_version(new_version)
     print(f"Updated version metadata to {new_version}.")
 
-    artifacts = [ROOT / "dist", ROOT / "build", *discover_egg_info(ROOT)]
+    artifacts = [
+        ROOT / "dist",
+        ROOT / "build",
+        ROOT / "psannlm" / "dist",
+        ROOT / "psannlm" / "build",
+        *discover_egg_info(ROOT),
+        *discover_egg_info(ROOT / "psannlm"),
+    ]
     clean_artifacts(artifacts)
     print("Removed previous build artifacts.")
 
     if not args.skip_build:
         run_cmd([sys.executable, "-m", "build"])
+        run_cmd([sys.executable, "-m", "build"], cwd=ROOT / "psannlm")
     else:
         print("Skipping build step (--skip-build).")
 
@@ -174,7 +199,11 @@ def main(argv: list[str] | None = None) -> int:
         print("No token provided; relying on existing Twine configuration or keyring.")
 
     run_cmd([sys.executable, "-m", "twine", "upload", "--non-interactive", "dist/*"], env=env)
-    print("Upload complete.")
+    run_cmd(
+        [sys.executable, "-m", "twine", "upload", "--non-interactive", "psannlm/dist/*"],
+        env=env,
+    )
+    print("Upload complete for psann and psannlm.")
     return 0
 
 

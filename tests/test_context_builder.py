@@ -24,7 +24,9 @@ def test_context_builder_set_params_resets_callable():
     builder_first = est._get_context_builder()
     assert builder_first is not None
 
-    est.set_params(context_builder_params={"frequencies": 2, "include_sin": False, "include_cos": True})
+    est.set_params(
+        context_builder_params={"frequencies": 2, "include_sin": False, "include_cos": True}
+    )
     assert est._context_builder_callable_ is None
     builder_second = est._get_context_builder()
     assert builder_second is not builder_first

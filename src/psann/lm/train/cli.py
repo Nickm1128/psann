@@ -58,11 +58,21 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI wiring
     dp = psannLMDataPrep(
         texts,
         tokenizer=str(data_cfg.get("tokenizer", "auto")),
-        tokenizer_model_path=str(data_cfg.get("tokenizer_model_path")) if data_cfg.get("tokenizer_model_path") is not None else None,
-        tokenizer_special_map_path=str(data_cfg.get("tokenizer_special_map_path")) if data_cfg.get("tokenizer_special_map_path") is not None else None,
+        tokenizer_model_path=(
+            str(data_cfg.get("tokenizer_model_path"))
+            if data_cfg.get("tokenizer_model_path") is not None
+            else None
+        ),
+        tokenizer_special_map_path=(
+            str(data_cfg.get("tokenizer_special_map_path"))
+            if data_cfg.get("tokenizer_special_map_path") is not None
+            else None
+        ),
         max_length=int(data_cfg.get("max_length", 1024)),
         pack_sequences=bool(data_cfg.get("pack_sequences", True)),
-        val_split=float(data_cfg.get("val_split", 0.0)) if data_cfg.get("val_split") is not None else None,
+        val_split=(
+            float(data_cfg.get("val_split", 0.0)) if data_cfg.get("val_split") is not None else None
+        ),
         seed=int(data_cfg.get("seed", 1337)),
     )
 

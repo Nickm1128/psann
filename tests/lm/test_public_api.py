@@ -3,7 +3,9 @@ from psann.lm import psannLM, psannLMDataPrep
 
 def test_public_api_fit_generate_and_checkpoint_roundtrip(tmp_path):
     texts = ["hello world", "goodnight moon"]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=8, pack_sequences=True, val_split=0.0)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=8, pack_sequences=True, val_split=0.0
+    )
     model = psannLM(
         base="waveresnet",
         d_model=64,

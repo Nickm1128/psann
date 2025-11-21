@@ -61,6 +61,7 @@ class Trainer:
         try:
             from torch.distributed.fsdp import FullyShardedDataParallel as FSDP  # type: ignore
             from torch.distributed.fsdp.api import StateDictType, FullStateDictConfig  # type: ignore
+
             if isinstance(model, FSDP):  # type: ignore[arg-type]
                 cfg = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
                 with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, cfg):
@@ -112,14 +113,22 @@ class Trainer:
             try:
                 import bitsandbytes as bnb  # type: ignore
 
-                return bnb.optim.AdamW8bit(model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=wd)
+                return bnb.optim.AdamW8bit(
+                    model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=wd
+                )
             except Exception:
                 print("[trainer] bitsandbytes not available; falling back to AdamW.")
         if opt_name == "adafactor":
             try:
                 from transformers.optimization import Adafactor  # type: ignore
 
-                return Adafactor(model.parameters(), lr=lr, weight_decay=wd, relative_step=False, scale_parameter=False)
+                return Adafactor(
+                    model.parameters(),
+                    lr=lr,
+                    weight_decay=wd,
+                    relative_step=False,
+                    scale_parameter=False,
+                )
             except Exception:
                 print("[trainer] transformers.Adagactor not available; falling back to AdamW.")
         adamw_kwargs = dict(lr=lr, weight_decay=wd, betas=betas, eps=eps)
@@ -135,7 +144,7 @@ class Trainer:
                 continue
             param_norm = float(p.grad.data.norm(2).item())
             total += param_norm * param_norm
-        return float(total ** 0.5)
+        return float(total**0.5)
 
     def _maybe_cleanup_cache(self) -> None:
         limit_gb = getattr(self.cfg, "hf_cache_limit_gb", None)
@@ -145,7 +154,7 @@ class Trainer:
         if now - self._last_cache_cleanup < 60.0:
             return
         self._last_cache_cleanup = now
-        max_bytes = int(limit_gb * (1024 ** 3))
+        max_bytes = int(limit_gb * (1024**3))
         try:
             freed, total = cleanup_hf_cache(max_bytes)
         except Exception as exc:
@@ -154,9 +163,11 @@ class Trainer:
                 self._last_cache_warn = now
             return
         if freed > 0:
-            freed_gb = freed / (1024 ** 3)
-            total_gb = total / (1024 ** 3)
-            print(f"[trainer] HF cache cleanup freed {freed_gb:.2f} GB (cache now ~{total_gb:.2f} GB)")
+            freed_gb = freed / (1024**3)
+            total_gb = total / (1024**3)
+            print(
+                f"[trainer] HF cache cleanup freed {freed_gb:.2f} GB (cache now ~{total_gb:.2f} GB)"
+            )
 
     def train(
         self,
@@ -168,6 +179,7 @@ class Trainer:
         data_loader: Optional[DataLoader] = None,
     ) -> None:
         import math as _math
+
         model.train()
 
         # ---- Device selection ----
@@ -190,6 +202,7 @@ class Trainer:
 
         if (ddp_enabled or use_fsdp) and torch.distributed.is_available():
             import torch.distributed as dist
+
             if device.type == "cuda":
                 try:
                     torch.cuda.set_device(local_rank)
@@ -209,11 +222,16 @@ class Trainer:
                         ShardingStrategy,
                     )  # type: ignore
                     from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy  # type: ignore
+
                     auto_wrap = None
                     if str(getattr(self.cfg, "fsdp_auto_wrap_policy", "size")).lower() == "size":
                         min_params = int(getattr(self.cfg, "fsdp_min_params", 1_000_000))
                         auto_wrap = partial(size_based_auto_wrap_policy, min_num_params=min_params)
-                    strategy = ShardingStrategy.FULL_SHARD if fsdp_mode == "full_shard" else ShardingStrategy.FULL_SHARD
+                    strategy = (
+                        ShardingStrategy.FULL_SHARD
+                        if fsdp_mode == "full_shard"
+                        else ShardingStrategy.FULL_SHARD
+                    )
                     wrapped = FSDP(
                         model,
                         auto_wrap_policy=auto_wrap,
@@ -223,8 +241,11 @@ class Trainer:
                         cpu_offload=None if not bool(getattr(self.cfg, "fsdp_cpu_offload", False)) else torch.distributed.fsdp.CPUOffload(offload_params=True),  # type: ignore
                     )
                 except Exception as e:
-                    print(f"[trainer] FSDP requested but not available ({e!s}); falling back to DDP/model-only.")
+                    print(
+                        f"[trainer] FSDP requested but not available ({e!s}); falling back to DDP/model-only."
+                    )
                     from torch.nn.parallel import DistributedDataParallel as DDP
+
                     wrapped = DDP(
                         model,
                         device_ids=[local_rank] if device.type == "cuda" else None,
@@ -233,6 +254,7 @@ class Trainer:
                     )
             elif ddp_enabled:
                 from torch.nn.parallel import DistributedDataParallel as DDP
+
                 wrapped = DDP(
                     model,
                     device_ids=[local_rank] if device.type == "cuda" else None,
@@ -250,10 +272,14 @@ class Trainer:
             if bool(getattr(self.cfg, "grad_checkpoint", False)):
                 if hasattr(model, "enable_gradient_checkpointing"):
                     model.enable_gradient_checkpointing(True)  # type: ignore[attr-defined]
-                    print("[trainer] Gradient checkpointing: enabled via model.enable_gradient_checkpointing()")
+                    print(
+                        "[trainer] Gradient checkpointing: enabled via model.enable_gradient_checkpointing()"
+                    )
                 elif hasattr(model, "gradient_checkpointing"):
                     setattr(model, "gradient_checkpointing", True)
-                    print("[trainer] Gradient checkpointing: enabled via model.gradient_checkpointing attr")
+                    print(
+                        "[trainer] Gradient checkpointing: enabled via model.gradient_checkpointing attr"
+                    )
         except Exception:
             # non-fatal; proceed without checkpointing
             pass
@@ -264,10 +290,16 @@ class Trainer:
         if data_loader is not None:
             dl = data_loader
         else:
-            if not isinstance(dataset, IterableDataset) and (ddp_enabled or use_fsdp) and torch.distributed.is_available():
+            if (
+                not isinstance(dataset, IterableDataset)
+                and (ddp_enabled or use_fsdp)
+                and torch.distributed.is_available()
+            ):
                 from torch.utils.data.distributed import DistributedSampler
 
-                sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False)
+                sampler = DistributedSampler(
+                    dataset, num_replicas=world_size, rank=rank, shuffle=True, drop_last=False
+                )
             dl = DataLoader(
                 dataset,
                 batch_size=batch_size,
@@ -298,13 +330,18 @@ class Trainer:
             steps_per_epoch = max(1, int(steps_per_epoch_cfg))
         else:
             try:
-                steps_per_epoch = _math.ceil(len(dataset) / float(batch_size * max(1, world_size if (ddp_enabled or use_fsdp) else 1)))
+                steps_per_epoch = _math.ceil(
+                    len(dataset)
+                    / float(batch_size * max(1, world_size if (ddp_enabled or use_fsdp) else 1))
+                )
             except Exception:
                 try:
                     steps_per_epoch = len(dl)
                 except Exception:
                     steps_per_epoch = 1000  # conservative default when unknown
-        total_optimizer_steps = int(self.cfg.epochs) * max(1, steps_per_epoch) // max(1, int(self.cfg.grad_accum_steps))
+        total_optimizer_steps = (
+            int(self.cfg.epochs) * max(1, steps_per_epoch) // max(1, int(self.cfg.grad_accum_steps))
+        )
         scheduler = self._build_scheduler(optim, total_optimizer_steps)
 
         # ---- AMP setup ----
@@ -335,7 +372,9 @@ class Trainer:
                 labels = batch["labels"].to(device)
                 # Avoid gradient sync on accumulation micro-steps when using DDP
                 no_sync_ctx = getattr(wrapped, "no_sync", None)
-                sync_ctx = nullcontext() if (micro + 1) == accum or no_sync_ctx is None else no_sync_ctx()
+                sync_ctx = (
+                    nullcontext() if (micro + 1) == accum or no_sync_ctx is None else no_sync_ctx()
+                )
                 with sync_ctx:
                     with autocast_ctx:
                         logits = wrapped(input_ids)  # type: ignore[operator]
@@ -349,11 +388,15 @@ class Trainer:
                 micro += 1
 
                 # Logging on micro-steps if requested
-                if is_main and (global_step + 1) % max(1, self.cfg.log_interval_steps) == 0 and micro == accum:
+                if (
+                    is_main
+                    and (global_step + 1) % max(1, self.cfg.log_interval_steps) == 0
+                    and micro == accum
+                ):
                     try:
                         ppl = float(_math.exp(loss.detach().float().item() * accum))
                     except Exception:
-                        ppl = float('nan')
+                        ppl = float("nan")
                     lr = optim.param_groups[0]["lr"]
                     grad_norm = self._grad_global_norm(model)
                     toks = int(B * T * accum)
@@ -361,6 +404,17 @@ class Trainer:
                         f"rank={rank} epoch={epoch+1} step={global_step+1} loss={loss.detach().float().item()*accum:.4f} "
                         f"ppl={ppl:.3f} lr={lr:.6g} grad_norm={grad_norm:.3f} toks/step~{toks}"
                     )
+                    if bool(getattr(self.cfg, "log_gpu_mem", False)) and device.type == "cuda":
+                        try:
+                            alloc = torch.cuda.memory_allocated(device) / float(1024**3)
+                            reserved = torch.cuda.memory_reserved(device) / float(1024**3)
+                            max_alloc = torch.cuda.max_memory_allocated(device) / float(1024**3)
+                            print(
+                                f"[gpu-mem] rank={rank} step={global_step+1} "
+                                f"alloc_gb={alloc:.3f} reserved_gb={reserved:.3f} max_alloc_gb={max_alloc:.3f}"
+                            )
+                        except Exception:
+                            pass
 
                 if micro == accum:
                     # Optional grad clipping

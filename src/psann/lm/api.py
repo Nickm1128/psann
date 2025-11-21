@@ -18,7 +18,7 @@ from typing import Any, Dict, Iterable, Optional, Sequence
 import torch
 from torch import nn
 
-from .config import ModelConfig, DataConfig, TrainConfig, normalize_positional_encoding
+from .config import TrainConfig, normalize_positional_encoding
 from .models.registry import get_base
 from .data.tokenizer import Tokenizer, TokenizerConfig
 from .data.dataset import LMDataset
@@ -126,7 +126,6 @@ class psannLMDataPrep:
             idxs = list(range(n))
             rng = _random.Random(int(seed))
             rng.shuffle(idxs)
-            vidx = set(idxs[:val_n])
             self._train_texts = [self._texts[i] for i in idxs[val_n:]]
             self._val_texts = [self._texts[i] for i in idxs[:val_n]]
 
@@ -296,14 +295,16 @@ class psannLM:
             raise TypeError("train_data must be psannLMDataPrep")
         vocab = int(train_data.vocab_size if self.vocab_size is None else self.vocab_size)
         model = self._ensure_model(vocab)
-        self._trainer = self._trainer or Trainer(TrainConfig(
-            epochs=int(epochs),
-            batch_tokens=int(batch_tokens or 131072),
-            lr=float(lr or 2e-4),
-            amp=str(amp or "bf16"),
-            ddp=str(ddp or "auto"),
-            grad_checkpoint=bool(kwargs.get("grad_checkpoint", False)),
-        ))
+        self._trainer = self._trainer or Trainer(
+            TrainConfig(
+                epochs=int(epochs),
+                batch_tokens=int(batch_tokens or 131072),
+                lr=float(lr or 2e-4),
+                amp=str(amp or "bf16"),
+                ddp=str(ddp or "auto"),
+                grad_checkpoint=bool(kwargs.get("grad_checkpoint", False)),
+            )
+        )
         # Update existing trainer config if present and overrides provided
         if self._trainer is not None and ("grad_checkpoint" in kwargs):
             try:
@@ -366,7 +367,11 @@ class psannLM:
                         next_logits.scatter_add_(
                             -1,
                             idxs.view(1, -1),
-                            torch.full((1, len(generated)), -abs(float(repetition_penalty)), device=next_logits.device),
+                            torch.full(
+                                (1, len(generated)),
+                                -abs(float(repetition_penalty)),
+                                device=next_logits.device,
+                            ),
                         )
                 next_id = sample_next_token(
                     next_logits,
@@ -436,11 +441,19 @@ class psannLM:
                         if repetition_penalty and repetition_penalty > 1.0:
                             for b in range(len(items)):
                                 if generated_bucket[b]:
-                                    idxs_rep = torch.tensor(generated_bucket[b], dtype=torch.long, device=next_logits.device)
-                                    next_logits[b:b+1].scatter_add_(
+                                    idxs_rep = torch.tensor(
+                                        generated_bucket[b],
+                                        dtype=torch.long,
+                                        device=next_logits.device,
+                                    )
+                                    next_logits[b : b + 1].scatter_add_(
                                         -1,
                                         idxs_rep.view(1, -1),
-                                        torch.full((1, len(generated_bucket[b])), -abs(float(repetition_penalty)), device=next_logits.device),
+                                        torch.full(
+                                            (1, len(generated_bucket[b])),
+                                            -abs(float(repetition_penalty)),
+                                            device=next_logits.device,
+                                        ),
                                     )
                         next_ids = sample_next_token(
                             next_logits,
@@ -462,8 +475,7 @@ class psannLM:
             return outputs
 
         # Equal-length fast path with KV cache
-        T0 = lengths[0]
-        context = torch.tensor(enc, dtype=torch.long, device=device)  # (B,T0)
+        context = torch.tensor(enc, dtype=torch.long, device=device)
         with torch.no_grad():
             logits, past_kvs = self._model(context, use_cache=True)  # type: ignore[call-arg]
         generated: list[list[int]] = [[] for _ in range(B)]
@@ -476,11 +488,17 @@ class psannLM:
                 if repetition_penalty and repetition_penalty > 1.0:
                     for b in range(B):
                         if generated[b]:
-                            idxs = torch.tensor(generated[b], dtype=torch.long, device=next_logits.device)
-                            next_logits[b:b+1].scatter_add_(
+                            idxs = torch.tensor(
+                                generated[b], dtype=torch.long, device=next_logits.device
+                            )
+                            next_logits[b : b + 1].scatter_add_(
                                 -1,
                                 idxs.view(1, -1),
-                                torch.full((1, len(generated[b])), -abs(float(repetition_penalty)), device=next_logits.device),
+                                torch.full(
+                                    (1, len(generated[b])),
+                                    -abs(float(repetition_penalty)),
+                                    device=next_logits.device,
+                                ),
                             )
                 next_ids = sample_next_token(
                     next_logits,

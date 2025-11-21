@@ -14,9 +14,9 @@ from typing import Optional, Tuple, List
 
 import torch
 from torch import nn
+import torch.nn.functional as F
 import math
 
-from ...activations import SineParam
 from ...layers.sine_residual import RMSNorm
 from .sine import SineConfig, build_sine
 from ..config import normalize_positional_encoding
@@ -25,7 +25,8 @@ from ..config import normalize_positional_encoding
 def _sinusoidal_positions(seq_len: int, dim: int, device: torch.device) -> torch.Tensor:
     position = torch.arange(seq_len, device=device).unsqueeze(1)
     div_term = torch.exp(
-        torch.arange(0, dim, 2, device=device) * (-torch.log(torch.tensor(10000.0, device=device)) / dim)
+        torch.arange(0, dim, 2, device=device)
+        * (-torch.log(torch.tensor(10000.0, device=device)) / dim)
     )
     pe = torch.zeros(seq_len, dim, device=device)
     pe[:, 0::2] = torch.sin(position * div_term)
@@ -62,11 +63,15 @@ class PSANNMLP(nn.Module):
         return self.drop(h)
 
 
-def _build_rope_cache(seq_len: int, head_dim: int, device: torch.device, dtype: torch.dtype) -> tuple[torch.Tensor, torch.Tensor]:
+def _build_rope_cache(
+    seq_len: int, head_dim: int, device: torch.device, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Create RoPE cosine and sine caches of shape (1, 1, T, D)."""
     assert head_dim % 2 == 0, "RoPE head_dim must be even"
     half_dim = head_dim // 2
-    inv_freq = 1.0 / (10000.0 ** (torch.arange(0, half_dim, device=device, dtype=torch.float32) / half_dim))
+    inv_freq = 1.0 / (
+        10000.0 ** (torch.arange(0, half_dim, device=device, dtype=torch.float32) / half_dim)
+    )
     # positions
     t = torch.arange(seq_len, device=device, dtype=torch.float32)
     freqs = torch.einsum("t,f->tf", t, inv_freq)  # (T, half_dim)
@@ -86,14 +91,18 @@ def _rope_rotate_half(x: torch.Tensor) -> torch.Tensor:
     return out.flatten(-2)  # (..., D)
 
 
-def _build_rope_cache_offset(offset: int, seq_len: int, head_dim: int, device: torch.device, dtype: torch.dtype) -> Tuple[torch.Tensor, torch.Tensor]:
+def _build_rope_cache_offset(
+    offset: int, seq_len: int, head_dim: int, device: torch.device, dtype: torch.dtype
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """RoPE cache for a window starting at position `offset`.
 
     Returns (cos, sin) with shape (1,1,seq_len,head_dim).
     """
     assert head_dim % 2 == 0
     half_dim = head_dim // 2
-    inv_freq = 1.0 / (10000.0 ** (torch.arange(0, half_dim, device=device, dtype=torch.float32) / half_dim))
+    inv_freq = 1.0 / (
+        10000.0 ** (torch.arange(0, half_dim, device=device, dtype=torch.float32) / half_dim)
+    )
     t = torch.arange(offset, offset + seq_len, device=device, dtype=torch.float32)
     freqs = torch.einsum("t,f->tf", t, inv_freq)
     cos = torch.cos(freqs).repeat_interleave(2, dim=-1)
@@ -142,6 +151,7 @@ class SelfAttention(nn.Module):
         *,
         dropout: float = 0.0,
         positional_encoding: str = "rope",
+        attn_impl: str = "math",
     ) -> None:
         super().__init__()
         if d_model % n_heads != 0:
@@ -152,6 +162,7 @@ class SelfAttention(nn.Module):
         self.positional_encoding = normalize_positional_encoding(positional_encoding)
         self._use_rope = self.positional_encoding == "rope"
         self._use_alibi = self.positional_encoding == "alibi"
+        self.attn_impl = (attn_impl or "math").lower()
         if self._use_rope and (self.head_dim % 2 != 0):
             raise ValueError("head_dim must be even when using RoPE")
         self.q_proj = nn.Linear(d_model, d_model, bias=False)
@@ -198,27 +209,49 @@ class SelfAttention(nn.Module):
             k = torch.cat([pk, k], dim=-2)
             v = torch.cat([pv, v], dim=-2)
 
-        att = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
-        Klen = k.size(-2)
-        if self._use_alibi:
-            alibi = _build_alibi_bias(
-                self._alibi_slopes,
-                past_len=past_len,
-                q_len=T,
-                k_len=Klen,
-                device=device,
-                dtype=att.dtype,
-            )
-            att = att + alibi.unsqueeze(0)
-        # causal mask for (T, K): take last T rows from a (K,K) upper triangular
-        base = torch.full((Klen, Klen), float("-inf"), device=device, dtype=att.dtype)
-        base = torch.triu(base, diagonal=1)
-        mask = base[-T:, :]
-        att = att + mask
-        att = torch.softmax(att, dim=-1)
-        att = self.attn_drop(att)
-        out = torch.matmul(att, v)  # (B,H,T,hd)
-        out = out.transpose(1, 2).contiguous().view(B, T, D)
+        use_sdpa = (
+            self.attn_impl in {"sdpa", "auto"}
+            and past_kv is None
+            and not use_cache
+            and not self._use_alibi
+            and hasattr(F, "scaled_dot_product_attention")
+        )
+
+        if use_sdpa:
+            # Use PyTorch SDPA (which can leverage Flash Attention 2 on supported GPUs).
+            dropout_p = float(getattr(self.attn_drop, "p", 0.0)) if self.training else 0.0
+            out = F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=None,
+                dropout_p=dropout_p,
+                is_causal=True,
+            )  # (B,H,T,hd)
+            out = out.transpose(1, 2).contiguous().view(B, T, D)
+        else:
+            att = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.head_dim)
+            Klen = k.size(-2)
+            if self._use_alibi:
+                alibi = _build_alibi_bias(
+                    self._alibi_slopes,
+                    past_len=past_len,
+                    q_len=T,
+                    k_len=Klen,
+                    device=device,
+                    dtype=att.dtype,
+                )
+                att = att + alibi.unsqueeze(0)
+            # causal mask for (T, K): take last T rows from a (K,K) upper triangular
+            base = torch.full((Klen, Klen), float("-inf"), device=device, dtype=att.dtype)
+            base = torch.triu(base, diagonal=1)
+            mask = base[-T:, :]
+            att = att + mask
+            att = torch.softmax(att, dim=-1)
+            att = self.attn_drop(att)
+            out = torch.matmul(att, v)  # (B,H,T,hd)
+            out = out.transpose(1, 2).contiguous().view(B, T, D)
+
         out = self.o_proj(out)
         out = self.proj_drop(out)
         if use_cache or past_kv is not None:
@@ -238,6 +271,7 @@ class TransformerBlock(nn.Module):
         sine: Optional[SineConfig] = None,
         mlp_activation: str = "sine",
         positional_encoding: str = "rope",
+        attn_impl: str = "math",
     ) -> None:
         super().__init__()
         self.attn = SelfAttention(
@@ -245,8 +279,11 @@ class TransformerBlock(nn.Module):
             n_heads,
             dropout=dropout,
             positional_encoding=positional_encoding,
+            attn_impl=attn_impl,
         )
-        self.mlp = PSANNMLP(d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout)
+        self.mlp = PSANNMLP(
+            d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout
+        )
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         # Optional residual scaling (learnable), default 1.0 (shape 1 for FSDP)
         self.alpha = nn.Parameter(torch.ones(1))
@@ -291,6 +328,7 @@ class ResPSANNTransformerConfig:
     rope: Optional[bool] = None
     mlp_activation: str = "sine"  # "sine" | "gelu"
     sine: Optional[SineConfig] = None
+    attn_impl: str = "math"  # "math" | "sdpa" | "auto"
 
     def __post_init__(self) -> None:
         if self.rope is not None:
@@ -317,6 +355,7 @@ class ResPSANNTransformer(nn.Module):
                     sine=sinecfg,
                     mlp_activation=cfg.mlp_activation,
                     positional_encoding=cfg.positional_encoding,
+                    attn_impl=cfg.attn_impl,
                 )
                 for _ in range(cfg.n_layers)
             ]
@@ -351,7 +390,7 @@ class ResPSANNTransformer(nn.Module):
         if self.cfg.positional_encoding == "sinusoidal":
             past_len = int(past_kvs[0][0].size(-2)) if (use_cache and past_kvs) else 0
             pe = _sinusoidal_positions(past_len + T, self.cfg.d_model, x.device).unsqueeze(0)
-            x = x + pe[:, past_len: past_len + T, :]
+            x = x + pe[:, past_len : past_len + T, :]
         if use_cache:
             presents: List[Tuple[torch.Tensor, torch.Tensor]] = []
             for i, blk in enumerate(self.blocks):
@@ -365,6 +404,7 @@ class ResPSANNTransformer(nn.Module):
         else:
             if self.gradient_checkpointing and self.training:
                 from torch.utils.checkpoint import checkpoint as _cp
+
                 for blk in self.blocks:
                     x = _cp(blk, x, use_reentrant=False)
             else:

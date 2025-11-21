@@ -57,7 +57,9 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
             "'/content/hisso_logs/' on Colab/Runpod."
         ),
     )
-    parser.add_argument("--run-name", default=None, help="Optional run identifier for output naming.")
+    parser.add_argument(
+        "--run-name", default=None, help="Optional run identifier for output naming."
+    )
     parser.add_argument("--device", default=None, help="Torch device override (e.g., cpu, cuda:0).")
     parser.add_argument("--seed", type=int, default=42, help="Global RNG seed.")
     parser.add_argument(
@@ -119,7 +121,9 @@ def _as_numpy(value: Any) -> Optional[np.ndarray]:
     try:
         return np.asarray(value, dtype=np.float32)
     except Exception as exc:  # pragma: no cover - defensive
-        raise TypeError(f"Unable to coerce value of type {type(value).__name__} to ndarray.") from exc
+        raise TypeError(
+            f"Unable to coerce value of type {type(value).__name__} to ndarray."
+        ) from exc
 
 
 def _coerce_dataset(result: Any) -> Dict[str, Any]:
@@ -347,7 +351,7 @@ def _compute_mse(y_true: Optional[np.ndarray], y_pred: Optional[np.ndarray]) -> 
         except ValueError:
             return None
     diff = y_pred.astype(np.float32) - y_true.astype(np.float32)
-    return float(np.mean(diff ** 2))
+    return float(np.mean(diff**2))
 
 
 def toy_hisso_dataset(
@@ -642,7 +646,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 preds_eval = preds_val
             else:
                 preds_eval = preds_test
-            metrics["portfolio_metrics"] = portfolio_metrics(preds_eval, prices, trans_cost=trans_cost)
+            metrics["portfolio_metrics"] = portfolio_metrics(
+                preds_eval, prices, trans_cost=trans_cost
+            )
 
         metrics["history_length"] = len(history)
         metrics["timestamp"] = _dt.datetime.now().isoformat()
@@ -661,11 +667,11 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     "primary_transform": hisso_cfg.get("primary_transform"),
                     "transition_penalty": hisso_cfg.get("transition_penalty"),
                     "trans_cost": hisso_cfg.get("trans_cost"),
-                    "episodes_per_batch": getattr(
-                        getattr(trainer, "cfg", None), "episodes_per_batch", None
-                    )
-                    if trainer is not None
-                    else None,
+                    "episodes_per_batch": (
+                        getattr(getattr(trainer, "cfg", None), "episodes_per_batch", None)
+                        if trainer is not None
+                        else None
+                    ),
                     "mixed_precision": mixed_precision,
                     "amp_dtype": amp_dtype_name if mixed_precision else None,
                 },

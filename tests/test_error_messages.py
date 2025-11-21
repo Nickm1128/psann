@@ -74,9 +74,7 @@ def test_multiplicative_return_reward_requires_matching_shapes():
     actions = torch.zeros(2, 3, 4)
     context = torch.zeros(2, 3, 5)
 
-    with pytest.raises(
-        ValueError, match="actions and context must align element-wise"
-    ):
+    with pytest.raises(ValueError, match="actions and context must align element-wise"):
         multiplicative_return_reward(actions, context)
 
 

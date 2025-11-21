@@ -57,10 +57,16 @@ def _build_dataprep(cfg: Dict[str, Any]):
     dp = psannLMDataPrep(
         sources,
         tokenizer=str(data_cfg.get("tokenizer", "auto")),
-        tokenizer_model_path=str(data_cfg.get("tokenizer_model_path")) if data_cfg.get("tokenizer_model_path") is not None else None,
+        tokenizer_model_path=(
+            str(data_cfg.get("tokenizer_model_path"))
+            if data_cfg.get("tokenizer_model_path") is not None
+            else None
+        ),
         max_length=int(data_cfg.get("max_length", 512)),
         pack_sequences=bool(data_cfg.get("pack_sequences", True)),
-        val_split=float(data_cfg.get("val_split", 0.02)) if data_cfg.get("val_split") is not None else 0.0,
+        val_split=(
+            float(data_cfg.get("val_split", 0.02)) if data_cfg.get("val_split") is not None else 0.0
+        ),
         seed=int(data_cfg.get("seed", 1337)),
     )
     return dp
@@ -132,8 +138,15 @@ def main() -> None:
     ap.add_argument("--config", type=str, required=True)
     ap.add_argument("--bench-dir", type=str, required=True)
     ap.add_argument("--log", type=str, default=None, help="Path to training log (tee output)")
-    ap.add_argument("--out", type=str, default=None, help="Path to metrics.json (default: <bench-dir>/metrics.json)")
-    ap.add_argument("--plot", action="store_true", help="Generate loss_curve.png if matplotlib available")
+    ap.add_argument(
+        "--out",
+        type=str,
+        default=None,
+        help="Path to metrics.json (default: <bench-dir>/metrics.json)",
+    )
+    ap.add_argument(
+        "--plot", action="store_true", help="Generate loss_curve.png if matplotlib available"
+    )
     args = ap.parse_args()
 
     bench_dir = Path(args.bench_dir)
@@ -177,7 +190,10 @@ def main() -> None:
         "train_ppl_final": train_summary.get("train_ppl"),
         "val_loss": val_summary.get("val_loss"),
         "val_ppl": val_summary.get("val_ppl"),
-        "corpus_path": [ent.get("path") if isinstance(ent, dict) else ent for ent in (data_cfg.get("sources") or [])],
+        "corpus_path": [
+            ent.get("path") if isinstance(ent, dict) else ent
+            for ent in (data_cfg.get("sources") or [])
+        ],
         "model": {
             "base": model_cfg.get("base"),
             "d_model": model_cfg.get("d_model"),

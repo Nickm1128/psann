@@ -465,6 +465,4 @@ def test_hisso_seed_controls_episode_sampling() -> None:
 
     np.testing.assert_allclose(preds_a, preds_b, rtol=1e-6, atol=1e-6)
     assert profile_a.get("episodes_sampled") == profile_b.get("episodes_sampled")
-    assert profile_a.get("dataset_transfer_batches") == profile_b.get(
-        "dataset_transfer_batches"
-    )
+    assert profile_a.get("dataset_transfer_batches") == profile_b.get("dataset_transfer_batches")

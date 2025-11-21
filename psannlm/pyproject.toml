@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "psannlm"
+version = "0.12.0"
+description = "PSANN-LM: language modeling and training utilities for PSANN"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Nicholas Milinkovich" }
+]
+keywords = ["pytorch", "language-modeling", "transformers", "sine", "psann"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Developers",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "psann>=0.10.19",
+  "sentencepiece>=0.1.99",
+  "tokenizers>=0.13",
+  "datasets>=2.14",
+]
+
+[project.urls]
+Homepage = "https://github.com/psann-project/psann"
+Repository = "https://github.com/psann-project/psann"
+Issues = "https://github.com/psann-project/psann/issues"
+Documentation = "https://github.com/psann-project/psann/tree/main/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["psannlm"]
+
+[tool.hatch.build]
+exclude = [
+  ".github",
+  ".idea",
+  ".vscode",
+  ".venv*",
+  "__pycache__",
+  "*.py[cod]",
+  ".pytest_cache",
+  "tests",
+]
+

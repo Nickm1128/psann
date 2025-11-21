@@ -15,6 +15,7 @@ def test_cuda_available(torch_available, cuda_available, output_dir: Path):
     import torch
 
     import json
+
     summary = {
         "torch_version": torch.__version__,
         "cuda_available": bool(cuda_available),
@@ -68,9 +69,7 @@ def test_reproducible_random_on_cuda(cuda_available, output_dir: Path):
     a2 = torch.randn((4, 4), generator=gen, device="cuda")
     assert torch.equal(a1, a2)
 
-    (output_dir / "test_reproducible_random_on_cuda.pt").write_bytes(
-        a1.cpu().numpy().tobytes()
-    )
+    (output_dir / "test_reproducible_random_on_cuda.pt").write_bytes(a1.cpu().numpy().tobytes())
 
 
 @pytest.mark.gpu

@@ -772,9 +772,11 @@ def _prepare_validation_tensors(
         if actual_cf != expected_cf:
             expected_channels = expected_cf[0] if expected_cf else None
             actual_channels = actual_cf[0] if actual_cf else None
-            if expected_channels is not None and actual_channels is not None and tuple(
-                expected_cf[1:]
-            ) == tuple(actual_cf[1:]):
+            if (
+                expected_channels is not None
+                and actual_channels is not None
+                and tuple(expected_cf[1:]) == tuple(actual_cf[1:])
+            ):
                 raise ValueError(
                     f"validation_data channels mismatch: expected {expected_channels}, "
                     f"received {actual_channels}."

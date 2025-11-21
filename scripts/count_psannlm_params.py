@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 
-import torch
 
 from psann.lm.models.registry import get_base
 from psann.lm.models.sine import SineConfig

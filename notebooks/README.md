@@ -1,6 +1,6 @@
 # PSANN Research Notebooks
 
-This directory hosts exploratory and reproducibility notebooks that complement the library and docs.
+This directory hosts exploratory and reproducibility notebooks that complement the library and docs. They are intended as example/analysis artifacts and are not imported as part of the public `psann` Python API.
 
 ## Available notebooks
 

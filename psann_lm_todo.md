@@ -15,12 +15,12 @@
 
 ## Progress Tracker (Codex MUST keep updated)
 
-* **Tasks complete:** `140 / 141` - `99.29%`
-* **Last edit (UTC):** `2025-11-07 22:19`
+* **Tasks complete:** `145 / 151` - `96.03%`
+* **Last edit (UTC):** `2025-11-21 17:57`
 * **Editor:** `Codex`
 * **Session Notes Summary (1-3 bullet points MAX):**
-  * Verified tests and GPU validation artifacts under `reports/` and reconciled TODOs with results.
-  * Checked off acceptance items (API/docs, ablations, e2e example, GPU metrics, tests, docs).
+  * Updated `scripts/runpod_train_300m.sh` to drive `psannlm.train` via an `AMP_MODE` env var (defaulting to `bf16`) and to log the AMP mode in the 300M config header.
+  * Marked GX10-TRAIN-01 complete in the PSANN-LM TODO while leaving the remaining GX10 training and execution tuning items for when the hardware is available.
 
 > **Codex:**
 >
@@ -110,6 +110,24 @@
   * [x] Stage under reports/* paths
   * [x] Check off Acceptance items once verifiable
   * Notes: All GPU/benchmark/test outputs live under `reports/tests/20251107_172133/`, `reports/gpu/20251107_172205/`, `reports/benchmarks/20251107_015028_gpu_bundle/`, `reports/ablations/20251107_1730_sine_params/`, and `reports/examples/20251107_1750_minimal_train/`. No outstanding remote artifacts remain.
+
+* [ ] GX10-ENV-01: Verify psann and all training dependencies are ARM64/aarch64 compatible on the ASUS Ascent GX10 (no x86-only wheels) and update any build/install docs if needed; confirm only Blackwell-supported CUDA/cuDNN versions are used. (Requires ASUS Ascent GX10 access.)
+* [ ] GX10-ENV-02: Confirm the NVIDIA DGX OS and preloaded AI stack on the GX10 (CUDA, cuDNN, TensorRT, NeMo) are installed at supported versions and pass simple `nvidia-smi` / `torch.cuda` smoke tests. (Requires ASUS Ascent GX10 access.)
+* [ ] GX10-ENV-03: Select an official NGC PyTorch container optimized for Blackwell GB10, ensure it runs correctly on the GX10, and document the container launch command we will use for psann-lm training. (Requires ASUS Ascent GX10 access.)
+
+* [x] GX10-TRAIN-01: Update `scripts/runpod_train_300m.sh` (or a GX10-specific variant) so the 300M model trains in BF16 by default on supported GPUs (e.g., `--bf16 True` / `--dtype bf16`), keeping optimizer and checkpoint formats compatible. (Can be implemented without GPU access.)
+  * Notes: `scripts/runpod_train_300m.sh` now uses an `AMP_MODE` env var (default `bf16`) for the `--amp` flag when launching `psannlm.train` and logs the chosen AMP mode in the config line, while leaving optimizer and checkpoint handling unchanged.
+* [x] GX10-TRAIN-02: Enable gradient checkpointing for the 300M configuration (e.g., `--gradient_checkpointing True`) so attention and MLP blocks use activation checkpointing to cut memory while preserving logging/checkpoint behavior. (Can be wired up and unit-tested without a large GPU.)
+  * Notes: `scripts/runpod_train_300m.sh` already passes `--grad-checkpoint` into `psannlm.train`, which sets `TrainConfig.grad_checkpoint=True`; the Trainer then calls `model.enable_gradient_checkpointing(True)` when supported, so checkpointing is enabled by default on the 300M path.
+* [x] GX10-TRAIN-03: Integrate Flash Attention 2 into the 300M training path (via `flash-attn` or PyTorch SDPA fast path), gated by config/version checks so CPU or non-Flash environments still run correctly.
+  * Notes: Added an `attn_impl` knob to the transformer configs and CLI (`psannlm.train`), and wired `SelfAttention` to use `torch.nn.functional.scaled_dot_product_attention` when `attn_impl` is `sdpa`/`auto`, there is no KV-cache, and PyTorch SDPA is available (otherwise it falls back to the existing matmul+softmax path). The 300M RunPod script (`scripts/runpod_train_300m.sh`) now defaults `ATTN_FLAGS` to `--attn-impl sdpa`, so the 300M training run will use the SDPA/FlashAttention2 fast path on supported GPUs while remaining safe on CPU or non-Flash environments.
+* [x] GX10-TRAIN-04: Revisit the 300M optimizer/adapter strategy: if the current script uses QLoRA/4-bit, add options for LoRA and full BF16 finetuning on the GX10 and choose a sensible default given 128 GB VRAM.
+  * Notes: The 300M RunPod script (`scripts/runpod_train_300m.sh`) trains a full BF16 waveresnet transformer with standard AdamW (`--optimizer adamw`) and FSDP, and does not use QLoRA/4-bit or LoRA adapters. Given the ASUS Ascent GX10’s 128 GB VRAM, full BF16 fine-tuning is the default policy for 300M; optional 8‑bit optimizers (via `adamw8bit`) remain available in the Trainer but are not enabled for this config.
+
+* [x] GX10-EXEC-01: Add lightweight GPU memory monitoring hooks to the 300M training script (e.g., `torch.cuda.memory_summary()`, periodic `nvidia-smi` logging) so we can measure actual GB used per step on the GX10.
+  * Notes: `psannlm.train` gained a `--log-gpu-mem` flag (`TrainConfig.log_gpu_mem`) that prints per-step GPU memory stats (allocated/reserved/max, in GB) at each log interval on the main rank. The 300M RunPod script now appends `--log-gpu-mem` to the training command and emits initial/final `nvidia-smi` snapshots around the run, so GX10 experiments will capture both coarse GPU usage and per-step memory measurements in the log.
+* [ ] GX10-EXEC-02: Once on the ASUS Ascent GX10, perform a batch-size sweep for the 300M config: start from a small local batch (4-8), progressively increase local batch and/or grad accumulation, and stop near 80-90% of the 128 GB memory without OOMs while recording tokens/sec. (Requires ASUS Ascent GX10 access.)
+* [ ] GX10-EXEC-03: Based on the batch-size sweep, lock in a "recommended GX10 300M preset" (batch size, grad accumulation, seq length, precision, checkpointing, Flash Attention status) and store it in a config file plus a short markdown note under `reports/` or `docs/`. (Requires ASUS Ascent GX10 access.)
 
 ---
 ## Success Criteria
@@ -416,6 +434,8 @@ train:
 
 
 ## Session History
+* [2025-11-21 17:27 UTC] Added a GX10/Blackwell training TODO (env, script changes, batch tuning) for PSANN-LM and deferred ASUS Ascent GX10 GPU runs and 300M training experiments until the hardware is available.
+* [2025-11-07 22:19 UTC] Verified tests and GPU validation artifacts under `reports/`, reconciled TODOs with results, and checked off remaining PSANN-LM acceptance items (API/docs, ablations, end-to-end example, GPU metrics, tests, docs).
 * [2025-11-07 21:41 UTC] Added README PSANN-LM quickstart instructions (install extra, code snippet, CLI command), linked to docs/examples, and closed the README/docs quickstart TODO block.
 * [2025-11-07 21:31 UTC] Wrote `reports/benchmarks/20251107_015028_gpu_bundle/README.md`, linked the GPU throughput/memory bundle + validation run inside docs/lm.md, and closed the GPU block completion confirmation task.
 * [2025-11-07 22:07 UTC] Marked the Tests passing in CI/local matrix item complete by recording the CPU GitHub Actions flow and gating merges on `./scripts/run_cuda_suite.sh` + the associated GPU artifacts (`reports/tests/20251107_172133`, `reports/gpu/20251107_172205`).

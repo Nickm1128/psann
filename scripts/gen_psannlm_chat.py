@@ -15,7 +15,6 @@ Usage (examples):
 from __future__ import annotations
 
 import argparse
-import os
 from typing import List
 
 import torch
@@ -114,4 +113,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

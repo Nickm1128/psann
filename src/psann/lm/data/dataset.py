@@ -8,7 +8,7 @@ sequence packing mode across documents.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Optional, Tuple, Dict, Any, Sequence, Callable
+from typing import Iterable, Iterator, List, Optional, Dict, Any, Sequence, Callable
 import os
 
 import torch
@@ -267,6 +267,7 @@ class HFTextStreamingLMDataset(IterableDataset):
         )
         try:
             import torch.distributed as dist
+
             if dist.is_available() and dist.is_initialized():
                 world_size = dist.get_world_size()
                 rank = dist.get_rank()

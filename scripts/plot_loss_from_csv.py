@@ -18,9 +18,7 @@ from pathlib import Path
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", required=True, help="Path to metrics.csv")
-    ap.add_argument(
-        "--out", required=True, help="Output PNG path for the loss curve"
-    )
+    ap.add_argument("--out", required=True, help="Output PNG path for the loss curve")
     args = ap.parse_args()
 
     csv_path = Path(args.csv)
@@ -65,4 +63,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

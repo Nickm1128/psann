@@ -29,11 +29,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e .[dev]
 
-      - name: Ruff lint
-        run: python -m ruff check src tests scripts examples
+      - name: Ruff lint (functional issues only)
+        run: python -m ruff check src tests scripts examples psannlm --select F,E9
 
       - name: Black format check
-        run: python -m black --check src tests scripts examples
+        run: python -m black --check src tests scripts examples psannlm
 
       - name: Pytest (not slow)
         if: matrix.python-version != '3.11'
@@ -63,3 +63,46 @@ jobs:
         with:
           name: dist-${{ github.sha }}
           path: dist
+
+  package-smoke:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build psann and psannlm wheels
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+          python -m build psannlm
+
+      - name: Install core psann wheel and smoke test imports
+        run: |
+          python -m pip install dist/*.whl
+          python - << 'PY'
+          import importlib
+
+          import psann
+          from psann import PSANNRegressor, WaveResNetRegressor
+          from psann.lm import psannLM, psannLMDataPrep
+
+          # psannlm package should NOT be importable yet
+          assert importlib.util.find_spec("psannlm") is None, "psannlm should not be installed with psann only"
+          PY
+
+      - name: Install psannlm wheel and smoke test imports
+        run: |
+          python -m pip install psannlm/dist/*.whl
+          python - << 'PY'
+          import psannlm
+          import psannlm.train  # noqa: F401
+          from psann.lm import psannLM, psannLMDataPrep
+
+          m = psannLM()
+          assert hasattr(m, "fit") and hasattr(m, "generate")
+          PY

@@ -26,9 +26,8 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Iterator, List, Optional, Any
+from typing import Iterator, Optional, Any
 
-import torch
 
 # Local imports from package
 from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
@@ -109,7 +108,9 @@ def _iter_hf_texts(args: argparse.Namespace, limit: Optional[int]) -> Iterator[s
             break
 
 
-def _tokenizer_sample_iterator(args: argparse.Namespace, shard_paths: list[str], limit: Optional[int]) -> Iterator[str]:
+def _tokenizer_sample_iterator(
+    args: argparse.Namespace, shard_paths: list[str], limit: Optional[int]
+) -> Iterator[str]:
     if args.hf_dataset:
         yield from _iter_hf_texts(args, limit)
     else:
@@ -164,7 +165,11 @@ def _prepare_tokenizer(
     is_rank0 = rank == 0
 
     if args.train_tokenizer:
-        limit = None if args.tokenizer_sample_limit is None or int(args.tokenizer_sample_limit) <= 0 else int(args.tokenizer_sample_limit)
+        limit = (
+            None
+            if args.tokenizer_sample_limit is None or int(args.tokenizer_sample_limit) <= 0
+            else int(args.tokenizer_sample_limit)
+        )
         save_dir = Path(args.tokenizer_save_dir or os.path.join(args.checkpoint_dir, "tokenizer"))
         tok_json = save_dir / "tokenizer.json"
         special_map = save_dir / "special_tokens_map.json"
@@ -268,7 +273,11 @@ def _export_bundle(
         "tokenizer": {
             "backend": args.tokenizer_backend,
             "trained": bool(tokenizer_artifacts.get("trained")),
-            "files": {k: Path(v).name for k, v in tokenizer_artifacts.items() if k in {"model", "special_map", "config"} and v},
+            "files": {
+                k: Path(v).name
+                for k, v in tokenizer_artifacts.items()
+                if k in {"model", "special_map", "config"} and v
+            },
         },
         "data": (
             {
@@ -322,23 +331,51 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--d-mlp", type=int, default=None)
     p.add_argument("--vocab-size", type=int, default=None)
     p.add_argument("--pos-enc", type=str, default="rope", choices=["rope", "alibi", "sinusoidal"])
+    p.add_argument(
+        "--attn-impl",
+        type=str,
+        default="math",
+        choices=["math", "sdpa", "auto"],
+        help="Attention implementation: 'math' = explicit matmul+softmax, 'sdpa'/'auto' use torch.scaled_dot_product_attention when available.",
+    )
 
     # Tokenizer
-    p.add_argument("--tokenizer-backend", type=str, default="auto", choices=["auto", "simple", "sentencepiece", "tokenizers"])
+    p.add_argument(
+        "--tokenizer-backend",
+        type=str,
+        default="auto",
+        choices=["auto", "simple", "sentencepiece", "tokenizers"],
+    )
     p.add_argument("--tokenizer-model-path", type=str, default=None)
     p.add_argument("--tokenizer-special-map-path", type=str, default=None)
     p.add_argument("--hf-tokenizer-repo", type=str, default=None)
     p.add_argument("--hf-tokenizer-filename", type=str, default=None)
     p.add_argument("--hf-tokenizer-revision", type=str, default=None)
-    p.add_argument("--train-tokenizer", action="store_true", help="Train a tokenizer before model training (tokenizers backend only)")
-    p.add_argument("--tokenizer-save-dir", type=str, default=None, help="Directory to save newly trained tokenizer artifacts")
+    p.add_argument(
+        "--train-tokenizer",
+        action="store_true",
+        help="Train a tokenizer before model training (tokenizers backend only)",
+    )
+    p.add_argument(
+        "--tokenizer-save-dir",
+        type=str,
+        default=None,
+        help="Directory to save newly trained tokenizer artifacts",
+    )
     p.add_argument("--tokenizer-vocab-size", type=int, default=50257)
     p.add_argument("--tokenizer-min-frequency", type=int, default=2)
-    p.add_argument("--tokenizer-sample-limit", type=int, default=200000, help="Maximum number of documents to use for tokenizer training (0 = all)")
+    p.add_argument(
+        "--tokenizer-sample-limit",
+        type=int,
+        default=200000,
+        help="Maximum number of documents to use for tokenizer training (0 = all)",
+    )
 
     # Data (choose one: manifest or HF dataset)
     g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument("--data-manifest", type=str, help="Path to a newline-separated list of text shard files")
+    g.add_argument(
+        "--data-manifest", type=str, help="Path to a newline-separated list of text shard files"
+    )
     g.add_argument(
         "--hf-dataset",
         "--dataset-name",
@@ -363,7 +400,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="train",
         help="HF dataset split (default: train)",
     )
-    p.add_argument("--hf-revision", type=str, default=None, help="HF dataset revision (branch/tag/commit)")
+    p.add_argument(
+        "--hf-revision", type=str, default=None, help="HF dataset revision (branch/tag/commit)"
+    )
     p.add_argument(
         "--hf-text-key",
         "--dataset-text-field",
@@ -372,16 +411,55 @@ def build_parser() -> argparse.ArgumentParser:
         default="text",
         help="Column containing raw text (default: text)",
     )
-    p.add_argument("--hf-shuffle", action="store_true", help="Shuffle streaming HF dataset with a buffer")
-    p.add_argument("--hf-shuffle-buffer", type=int, default=10000, help="Streaming shuffle buffer size")
-    p.add_argument("--hf-keep-ascii-only", action="store_true", help="Filter rows to ASCII-only text")
-    p.add_argument("--hf-lang", action="append", default=None, help="Language code to keep (repeatable, requires langdetect)")
-    p.add_argument("--hf-lang-threshold", type=float, default=0.8, help="Minimum langdetect probability to accept")
+    p.add_argument(
+        "--hf-shuffle", action="store_true", help="Shuffle streaming HF dataset with a buffer"
+    )
+    p.add_argument(
+        "--hf-shuffle-buffer", type=int, default=10000, help="Streaming shuffle buffer size"
+    )
+    p.add_argument(
+        "--hf-keep-ascii-only", action="store_true", help="Filter rows to ASCII-only text"
+    )
+    p.add_argument(
+        "--hf-lang",
+        action="append",
+        default=None,
+        help="Language code to keep (repeatable, requires langdetect)",
+    )
+    p.add_argument(
+        "--hf-lang-threshold",
+        type=float,
+        default=0.8,
+        help="Minimum langdetect probability to accept",
+    )
     p.add_argument("--max-length", type=int, default=1024)
-    p.add_argument("--seq-len", "--seq_len", type=int, default=None, help="Override sequence length (defaults to --max-length)")
-    p.add_argument("--dataset-streaming", "--dataset_streaming", type=str, default="false", help="true/false to enable HF streaming iterator")
-    p.add_argument("--pack-buffer-tokens", "--pack_buffer_tokens", type=int, default=2_000_000, help="Soft cap for streaming tokenizer buffer")
-    p.add_argument("--hf-cache-limit-gb", type=float, default=None, help="If set, periodically trim the HF datasets cache to this size (in GB).")
+    p.add_argument(
+        "--seq-len",
+        "--seq_len",
+        type=int,
+        default=None,
+        help="Override sequence length (defaults to --max-length)",
+    )
+    p.add_argument(
+        "--dataset-streaming",
+        "--dataset_streaming",
+        type=str,
+        default="false",
+        help="true/false to enable HF streaming iterator",
+    )
+    p.add_argument(
+        "--pack-buffer-tokens",
+        "--pack_buffer_tokens",
+        type=int,
+        default=2_000_000,
+        help="Soft cap for streaming tokenizer buffer",
+    )
+    p.add_argument(
+        "--hf-cache-limit-gb",
+        type=float,
+        default=None,
+        help="If set, periodically trim the HF datasets cache to this size (in GB).",
+    )
     p.add_argument("--shuffle-docs", action="store_true")
     p.add_argument("--seed", type=int, default=1337)
 
@@ -391,31 +469,63 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--grad-accum-steps", type=int, default=1)
     p.add_argument("--lr", type=float, default=2e-4)
     p.add_argument("--weight-decay", type=float, default=0.01)
-    p.add_argument("--optimizer", type=str, default="adamw", choices=["adamw", "adamw8bit", "adafactor"])
+    p.add_argument(
+        "--optimizer", type=str, default="adamw", choices=["adamw", "adamw8bit", "adafactor"]
+    )
     p.add_argument("--betas", type=str, default="0.9,0.95")
     p.add_argument("--eps", type=float, default=1e-8)
     p.add_argument("--amp", type=str, default="bf16", choices=["bf16", "fp16", "fp32", "none"])
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--grad-checkpoint", action="store_true")
+    p.add_argument(
+        "--log-gpu-mem",
+        action="store_true",
+        help="Log basic GPU memory stats (allocated/reserved/max, in GB) at each log interval on the main rank.",
+    )
     p.add_argument("--ddp", type=str, default="auto", choices=["auto", "on", "off"])
     p.add_argument("--fsdp", type=str, default="off", choices=["off", "full_shard"])
     p.add_argument("--fsdp-auto-wrap", type=str, default="size", choices=["size", "none"])
     p.add_argument("--fsdp-min-params", type=int, default=1_000_000)
     p.add_argument("--fsdp-cpu-offload", action="store_true")
     p.add_argument("--steps-per-epoch", type=int, default=None)
-    p.add_argument("--max-steps", "--max_steps", type=int, default=0, help="Total optimizer steps override (required for streaming mode)")
+    p.add_argument(
+        "--max-steps",
+        "--max_steps",
+        type=int,
+        default=0,
+        help="Total optimizer steps override (required for streaming mode)",
+    )
     p.add_argument("--save-interval-steps", type=int, default=500)
     p.add_argument("--log-interval-steps", type=int, default=50)
-    p.add_argument("--tokens-target", "--tokens_target", type=int, default=0, help="Approximate token budget to derive max_steps")
-    p.add_argument("--tokens-per-step", "--tokens_per_step", type=int, default=0, help="Override tokens processed per optimizer step")
-    p.add_argument("--num-workers", "--dataloader-num-workers", "--dataloader_num_workers", type=int, default=8)
+    p.add_argument(
+        "--tokens-target",
+        "--tokens_target",
+        type=int,
+        default=0,
+        help="Approximate token budget to derive max_steps",
+    )
+    p.add_argument(
+        "--tokens-per-step",
+        "--tokens_per_step",
+        type=int,
+        default=0,
+        help="Override tokens processed per optimizer step",
+    )
+    p.add_argument(
+        "--num-workers", "--dataloader-num-workers", "--dataloader_num_workers", type=int, default=8
+    )
     p.add_argument("--prefetch-factor", type=int, default=2)
     p.add_argument("--no-persistent-workers", action="store_true")
 
     # Outputs
     p.add_argument("--checkpoint-dir", type=str, default="runs/lm/exp")
     p.add_argument("--out-ckpt", type=str, default=None)
-    p.add_argument("--export-dir", type=str, default=None, help="Optional directory to gather model+tokenizer artifacts for Hugging Face upload")
+    p.add_argument(
+        "--export-dir",
+        type=str,
+        default=None,
+        help="Optional directory to gather model+tokenizer artifacts for Hugging Face upload",
+    )
 
     return p
 
@@ -427,13 +537,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     args.max_length = seq_len
     micro_batch = max(1, int(args.batch_tokens) // seq_len)
     tokens_per_micro = micro_batch * seq_len
-    tokens_per_step = int(args.tokens_per_step) if int(args.tokens_per_step) > 0 else tokens_per_micro * max(1, int(args.grad_accum_steps))
+    tokens_per_step = (
+        int(args.tokens_per_step)
+        if int(args.tokens_per_step) > 0
+        else tokens_per_micro * max(1, int(args.grad_accum_steps))
+    )
     tokens_target = max(0, int(args.tokens_target))
     if tokens_target > 0 and int(args.max_steps) <= 0 and tokens_per_step > 0:
         args.max_steps = max(1, tokens_target // tokens_per_step)
     use_streaming = str2bool(args.dataset_streaming)
     if use_streaming and int(args.max_steps) <= 0:
-        raise SystemExit("--max_steps (or --tokens-target) must be set when --dataset-streaming true.")
+        raise SystemExit(
+            "--max_steps (or --tokens-target) must be set when --dataset-streaming true."
+        )
     world_size = max(1, int(os.environ.get("WORLD_SIZE", "1")))
     rank = int(os.environ.get("RANK", os.environ.get("LOCAL_RANK", "0")))
     if rank == 0:
@@ -460,7 +576,9 @@ def main(argv: Optional[list[str]] = None) -> int:
             if tok_special is None:
                 from pathlib import PurePosixPath
 
-                special_name = str(PurePosixPath(args.hf_tokenizer_filename).with_name("special_tokens_map.json"))
+                special_name = str(
+                    PurePosixPath(args.hf_tokenizer_filename).with_name("special_tokens_map.json")
+                )
                 try:
                     tok_special = hf_hub_download(
                         repo_id=args.hf_tokenizer_repo,
@@ -485,7 +603,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Data
     pack = PackingConfig(max_length=seq_len, pack_sequences=True)
     stream_loader = None
-    effective_steps_per_epoch: Optional[int] = int(args.steps_per_epoch) if args.steps_per_epoch is not None else None
+    effective_steps_per_epoch: Optional[int] = (
+        int(args.steps_per_epoch) if args.steps_per_epoch is not None else None
+    )
     if use_streaming:
         if not args.hf_dataset:
             raise SystemExit("--dataset-streaming true requires --hf-dataset/--dataset-name.")
@@ -540,7 +660,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         if not shard_paths:
             raise SystemExit("No data shards found in --data-manifest.")
-        dataset = StreamingLMDataset(shard_paths, tokenizer, pack, shuffle_docs=bool(args.shuffle_docs), seed=int(args.seed))
+        dataset = StreamingLMDataset(
+            shard_paths, tokenizer, pack, shuffle_docs=bool(args.shuffle_docs), seed=int(args.seed)
+        )
 
     if effective_steps_per_epoch is None and int(args.max_steps) > 0:
         effective_steps_per_epoch = int(args.max_steps)
@@ -560,6 +682,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         positional_encoding=str(args.pos_enc),
         mlp_activation="sine",
         sine=sine,
+        attn_impl=str(args.attn_impl),
     )
 
     # Trainer
@@ -591,10 +714,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         log_interval_steps=int(args.log_interval_steps),
         save_interval_steps=int(args.save_interval_steps),
         grad_checkpoint=bool(args.grad_checkpoint),
+        log_gpu_mem=bool(getattr(args, "log_gpu_mem", False)),
         dataloader_num_workers=int(args.num_workers),
         dataloader_prefetch_factor=int(args.prefetch_factor),
         dataloader_persistent_workers=not bool(args.no_persistent_workers),
-        hf_cache_limit_gb=(float(args.hf_cache_limit_gb) if args.hf_cache_limit_gb is not None else None),
+        hf_cache_limit_gb=(
+            float(args.hf_cache_limit_gb) if args.hf_cache_limit_gb is not None else None
+        ),
     )
     trainer = Trainer(tcfg)
     trainer.train(model, dataset, max_length=seq_len, val_dataset=None, data_loader=stream_loader)

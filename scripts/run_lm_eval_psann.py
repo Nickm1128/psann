@@ -25,6 +25,7 @@ from lm_eval.api import registry
 # Ensure repository root is on sys.path so we can import psann_adapter
 import sys
 from pathlib import Path as _Path
+
 _here = _Path(__file__).resolve()
 _root = _here.parent.parent
 if str(_root) not in sys.path:
@@ -37,26 +38,51 @@ from psann_adapter import PSANNLM
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", required=False, type=str)
-    p.add_argument("--hf-repo", required=False, type=str, help="Hugging Face repo id, e.g. user/model")
-    p.add_argument("--hf-filename", required=False, type=str, help="Filename inside repo (default: final_model.pt)")
+    p.add_argument(
+        "--hf-repo", required=False, type=str, help="Hugging Face repo id, e.g. user/model"
+    )
+    p.add_argument(
+        "--hf-filename",
+        required=False,
+        type=str,
+        help="Filename inside repo (default: final_model.pt)",
+    )
     p.add_argument("--hf-revision", required=False, type=str, help="Branch/tag/commit")
     p.add_argument("--hf-token", required=False, type=str, help="HF token if the repo is private")
     p.add_argument("--device", default="auto", type=str)
     p.add_argument("--tokenizer-backend", default="auto", type=str)
     p.add_argument("--tokenizer-model-path", default=None, type=str)
-    p.add_argument("--tokenizer-special-map-path", default=None, type=str, help="Path to special_tokens_map.json for Hugging Face tokenizers backends")
+    p.add_argument(
+        "--tokenizer-special-map-path",
+        default=None,
+        type=str,
+        help="Path to special_tokens_map.json for Hugging Face tokenizers backends",
+    )
     p.add_argument("--hf-tokenizer-repo", default=None, type=str)
     p.add_argument("--hf-tokenizer-filename", default=None, type=str)
     p.add_argument("--hf-tokenizer-revision", default=None, type=str)
-    p.add_argument("--hf-tokenizer-special-map", default=None, type=str, help="Filename within the tokenizer repo for special_tokens_map.json (default: sibling to tokenizer json)")
+    p.add_argument(
+        "--hf-tokenizer-special-map",
+        default=None,
+        type=str,
+        help="Filename within the tokenizer repo for special_tokens_map.json (default: sibling to tokenizer json)",
+    )
     p.add_argument("--tasks", default="wikitext", type=str)
     p.add_argument("--limit", default=1500, type=int)
     p.add_argument("--num-fewshot", default=0, type=int)
     p.add_argument("--batch-size", default="auto", type=str)
     p.add_argument("--max-ctx", default=2048, type=int)
     p.add_argument("--max-batch-size", default=8, type=int)
-    p.add_argument("--apply-chat-template", action="store_true", help="Apply chat template for tasks that benefit from chat-style formatting")
-    p.add_argument("--fewshot-as-multiturn", action="store_true", help="Render few-shot examples as multi-turn chat")
+    p.add_argument(
+        "--apply-chat-template",
+        action="store_true",
+        help="Apply chat template for tasks that benefit from chat-style formatting",
+    )
+    p.add_argument(
+        "--fewshot-as-multiturn",
+        action="store_true",
+        help="Render few-shot examples as multi-turn chat",
+    )
     p.add_argument("--output", default="eval_out/psann_eval.json", type=str)
     args = p.parse_args()
 

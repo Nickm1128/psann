@@ -11,4 +11,3 @@ def test_param_count_and_forward():
     x = torch.randint(0, vocab, (1, 3))
     y = model(x)
     assert y.shape == (1, 3, vocab)
-

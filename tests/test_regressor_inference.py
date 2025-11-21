@@ -7,7 +7,7 @@ import torch
 
 from psann import PSANNRegressor, StateConfig, WaveResNetRegressor
 from psann.episodes import multiplicative_return_reward
-from psann.hisso import hisso_evaluate_reward, hisso_infer_series
+from psann.hisso import hisso_infer_series
 from psann.utils import seed_all
 
 
@@ -15,10 +15,7 @@ def _make_dataset(seed: int = 42) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((240, 6)).astype(np.float32)
     y = (
-        np.sin(X[:, 0]) * 0.4
-        + 0.25 * X[:, 1]
-        - 0.15 * X[:, 2] ** 2
-        + 0.1 * X[:, 3] * X[:, 4]
+        np.sin(X[:, 0]) * 0.4 + 0.25 * X[:, 1] - 0.15 * X[:, 2] ** 2 + 0.1 * X[:, 3] * X[:, 4]
     ).astype(np.float32)
     return X, y
 
@@ -86,9 +83,7 @@ def test_predict_sequence_shapes_and_online_updates():
     assert isinstance(seq_full, np.ndarray)
     assert seq_full.shape == (X_seq.shape[0],)
 
-    online_seq = model.predict_sequence_online(
-        X_seq, y_seq, reset_state=True, return_sequence=True
-    )
+    online_seq = model.predict_sequence_online(X_seq, y_seq, reset_state=True, return_sequence=True)
     assert isinstance(online_seq, np.ndarray)
     assert online_seq.shape == (X_seq.shape[0],)
 

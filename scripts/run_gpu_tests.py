@@ -28,11 +28,7 @@ def main():
     args, extra = parser.parse_known_args()
 
     ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    outdir = (
-        Path(args.outdir)
-        if args.outdir
-        else Path("outputs") / "gpu_tests" / ts
-    )
+    outdir = Path(args.outdir) if args.outdir else Path("outputs") / "gpu_tests" / ts
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Let tests know where to write artifacts
@@ -68,4 +64,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

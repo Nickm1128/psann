@@ -34,8 +34,11 @@ import torch
 
 try:
     from psann.lm import psannLM, psannLMDataPrep
-except Exception as e:  # pragma: no cover - runner convenience
-    print("Failed to import psann.lm — ensure PYTHONPATH=.<repo root> or install -e .", file=sys.stderr)
+except Exception:  # pragma: no cover - runner convenience
+    print(
+        "Failed to import psann.lm — ensure PYTHONPATH=.<repo root> or install -e .",
+        file=sys.stderr,
+    )
     raise
 
 
@@ -79,6 +82,7 @@ def _write_json(path: Path, payload: Dict[str, Any]) -> None:
 
 
 # -------------------------- DDP worker helper --------------------------
+
 
 def _setup_dist_env(rank: int, world_size: int, port: int) -> None:
     import os as _os
@@ -130,11 +134,14 @@ def _ddp_loss_worker(
         # Build model consistent with single-GPU baseline
         lm = psannLM(**model_cfg)
         model = lm._ensure_model(int(vocab_size)).to(device).eval()
-        model = _DDP(model, device_ids=[int(rank)], output_device=int(rank), find_unused_parameters=False)
+        model = _DDP(
+            model, device_ids=[int(rank)], output_device=int(rank), find_unused_parameters=False
+        )
         model.eval()
 
         # Build batch tensor on this device
         import torch.nn.functional as _F
+
         B = len(batch_ids)
         T = len(batch_ids[0]) if B > 0 else 0
         seq = _torch.tensor(batch_ids, dtype=_torch.long, device=device)
@@ -163,6 +170,7 @@ def _ddp_loss_worker(
 
 
 # -------------------------- FSDP worker helper --------------------------
+
 
 def _fsdp_loss_worker(
     rank: int,
@@ -202,6 +210,7 @@ def _fsdp_loss_worker(
 
         # Build batch tensor on this device
         import torch.nn.functional as _F
+
         B = len(batch_ids)
         T = len(batch_ids[0]) if B > 0 else 0
         seq = _torch.tensor(batch_ids, dtype=_torch.long, device=device)
@@ -235,8 +244,12 @@ def _fsdp_loss_worker(
 def gpu_01_forward_backward() -> Dict[str, Any]:
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
     # Use a small max_length to ensure at least one chunk from tiny texts
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0)
-    lm = psannLM(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0
+    )
+    lm = psannLM(
+        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    )
     t0 = time.time()
     lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
     dt = time.time() - t0
@@ -260,12 +273,20 @@ def gpu_02_amp_parity() -> Dict[str, Any]:
         return {"status": "skipped", "reason": "cuda not available"}
 
     texts = ["a b c d e f g", "h i j k l m", "n o p q r s"]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0)
-    lm = psannLM(base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
+    )
+    lm = psannLM(
+        base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    )
 
     # Build a single batch tensor
     tok = dp.tokenizer  # type: ignore[attr-defined]
-    seq = torch.tensor([[tok.bos_id] + tok.encode("hello world", add_specials=False) + [tok.eos_id]], dtype=torch.long, device=device)
+    seq = torch.tensor(
+        [[tok.bos_id] + tok.encode("hello world", add_specials=False) + [tok.eos_id]],
+        dtype=torch.long,
+        device=device,
+    )
     model = lm._ensure_model(dp.vocab_size).to(device)
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -276,7 +297,11 @@ def gpu_02_amp_parity() -> Dict[str, Any]:
     loss32 = criterion(logits.view(B * T, V), seq.view(B * T)).detach().float().item()
 
     # AMP (prefer bf16 if supported)
-    amp_dtype = torch.bfloat16 if getattr(torch.cuda, "is_bf16_supported", lambda: False)() else torch.float16
+    amp_dtype = (
+        torch.bfloat16
+        if getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+        else torch.float16
+    )
     scaler = torch.amp.GradScaler("cuda", enabled=True)
     model.zero_grad(set_to_none=True)
     with torch.amp.autocast("cuda", dtype=amp_dtype):
@@ -382,8 +407,12 @@ def gpu_04_checkpointing() -> Dict[str, Any]:
         "lorem ipsum",
         "pack my box with five dozen liquor jugs",
     ]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0)
-    lm = psannLM(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
+    )
+    lm = psannLM(
+        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    )
     # Reset and record CUDA memory stats for a clean measurement window
     try:
         torch.cuda.reset_peak_memory_stats()
@@ -406,7 +435,9 @@ def gpu_04_checkpointing() -> Dict[str, Any]:
         "status": "ok",
         "grad_checkpoint": True,
         "elapsed_s": round(dt, 4),
-        "max_memory_allocated_mb": None if max_mem_alloc < 0 else round(max_mem_alloc / (1024**2), 2),
+        "max_memory_allocated_mb": (
+            None if max_mem_alloc < 0 else round(max_mem_alloc / (1024**2), 2)
+        ),
         "max_memory_reserved_mb": None if max_mem_res < 0 else round(max_mem_res / (1024**2), 2),
         "vocab_size": dp.vocab_size,
         "model": {
@@ -425,7 +456,9 @@ def gpu_05_ddp() -> Dict[str, Any]:
     # Single-GPU baseline (rank 0) forward loss
     torch.manual_seed(123)
     texts = ["the quick brown fox", "jumps over the lazy dog"]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0
+    )
     vocab = int(dp.vocab_size)
     # Build one small batch tensor
     tok = dp.tokenizer  # type: ignore[attr-defined]
@@ -435,24 +468,33 @@ def gpu_05_ddp() -> Dict[str, Any]:
     base_ids = sample[:T]
     batch_ids = [base_ids, base_ids]  # B=2
 
-    model_cfg = dict(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True)
+    model_cfg = dict(
+        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True
+    )
 
     device0 = torch.device("cuda", 0)
     lm = psannLM(**model_cfg)
     model = lm._ensure_model(vocab).to(device0).eval()
     with torch.no_grad():
         import torch.nn.functional as F
+
         seq0 = torch.tensor(batch_ids, dtype=torch.long, device=device0)
         logits0 = model(seq0)
         V = int(vocab)
-        loss_single = F.cross_entropy(logits0.view(seq0.size(0) * seq0.size(1), V), seq0.view(-1)).detach().float().item()
+        loss_single = (
+            F.cross_entropy(logits0.view(seq0.size(0) * seq0.size(1), V), seq0.view(-1))
+            .detach()
+            .float()
+            .item()
+        )
 
     # Multi-process DDP run (2 ranks) to compute average loss
     import torch.multiprocessing as mp
     from random import randint as _randint
+
     port = 29577 + (_randint(0, 1000))  # reduce chance of collision
     ctx = mp.get_context("spawn")
-    manager = mp.Manager()
+    manager = ctx.Manager()
     shared = manager.dict()
     nprocs = 2
     try:
@@ -488,14 +530,18 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
     # Build a tiny batch/model config similar to GPU-05
     try:
         texts = ["the quick brown fox", "jumps over the lazy dog"]
-        dp = psannLMDataPrep(texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0)
+        dp = psannLMDataPrep(
+            texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0
+        )
         vocab = int(dp.vocab_size)
         tok = dp.tokenizer  # type: ignore[attr-defined]
         sample = tok.encode("the quick brown fox", add_specials=True)
         T = min(16, len(sample))
         base_ids = sample[:T]
         batch_ids = [base_ids, base_ids]
-        model_cfg = dict(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True)
+        model_cfg = dict(
+            base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True
+        )
 
         # Compute single-GPU baseline
         device0 = torch.device("cuda", 0)
@@ -506,17 +552,24 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
         model = lm._ensure_model(vocab).to(device0).eval()
         with torch.no_grad():
             import torch.nn.functional as F
+
             seq0 = torch.tensor(batch_ids, dtype=torch.long, device=device0)
             logits0 = model(seq0)
             V = int(vocab)
-            loss_single = F.cross_entropy(logits0.view(seq0.size(0) * seq0.size(1), V), seq0.view(-1)).detach().float().item()
+            loss_single = (
+                F.cross_entropy(logits0.view(seq0.size(0) * seq0.size(1), V), seq0.view(-1))
+                .detach()
+                .float()
+                .item()
+            )
 
         # Try FSDP multi-process run
         import torch.multiprocessing as mp
         from random import randint as _randint
+
         port = 29677 + (_randint(0, 1000))
         ctx = mp.get_context("spawn")
-        manager = mp.Manager()
+        manager = ctx.Manager()
         shared = manager.dict()
         nprocs = 2
         try:
@@ -546,7 +599,7 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
     except Exception as e:
         # Try DeepSpeed fallback if installed
         try:
-            import deepspeed  # type: ignore
+            pass  # type: ignore
         except Exception:
             return {"status": "skipped", "reason": f"FSDP/deepspeed unavailable: {e}"}
         return {"status": "skipped", "reason": f"DeepSpeed path not implemented: {e}"}
@@ -554,8 +607,12 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
 
 def gpu_07_generation_smoke() -> Dict[str, Any]:
     texts = ["pack my box with five dozen liquor jugs", "sphinx of black quartz judge my vow"]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0)
-    lm = psannLM(base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
+    )
+    lm = psannLM(
+        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    )
     lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
     out = lm.generate("Once upon a time", max_new_tokens=24, top_p=0.9, temperature=0.9)
     return {
@@ -568,8 +625,12 @@ def gpu_07_generation_smoke() -> Dict[str, Any]:
 def gpu_08_save_load(outdir: Path) -> Dict[str, Any]:
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
     # Use a small max_length to ensure dataset has samples for tiny texts
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0)
-    lm = psannLM(base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0
+    )
+    lm = psannLM(
+        base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    )
     lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
 
     ckpt_dir = outdir / "checkpoints"
@@ -586,7 +647,9 @@ def gpu_08_save_load(outdir: Path) -> Dict[str, Any]:
     if lm._model is None or loaded._model is None:
         same = False
     else:
-        for (n1, p1), (n2, p2) in zip(lm._model.state_dict().items(), loaded._model.state_dict().items()):
+        for (n1, p1), (n2, p2) in zip(
+            lm._model.state_dict().items(), loaded._model.state_dict().items()
+        ):
             if n1 != n2:
                 same = False
                 break
@@ -657,7 +720,9 @@ def main() -> None:
         for name in args.only:
             name = name.upper()
             if name not in step_fns:
-                raise SystemExit(f"Unknown step '{name}'. Valid options: {', '.join(step_fns.keys())}")
+                raise SystemExit(
+                    f"Unknown step '{name}'. Valid options: {', '.join(step_fns.keys())}"
+                )
             filtered.append(name)
         selected = filtered
 

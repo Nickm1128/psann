@@ -6,11 +6,15 @@ from psann.lm import psannLM, psannLMDataPrep
 
 
 SAMPLE_TEXTS = Path(__file__).resolve().parents[2] / "examples" / "lm" / "sample_texts.txt"
-TOKENIZER_MODEL = Path(__file__).resolve().parents[2] / "examples" / "lm" / "tokenizer" / "sample_texts.model"
+TOKENIZER_MODEL = (
+    Path(__file__).resolve().parents[2] / "examples" / "lm" / "tokenizer" / "sample_texts.model"
+)
 
 
 def _load_texts() -> list[str]:
-    return [ln.strip() for ln in SAMPLE_TEXTS.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    return [
+        ln.strip() for ln in SAMPLE_TEXTS.read_text(encoding="utf-8").splitlines() if ln.strip()
+    ]
 
 
 def test_minimal_end_to_end_flow(tmp_path) -> None:

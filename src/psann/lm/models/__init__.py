@@ -2,4 +2,3 @@
 
 Will contain transformer stacks adapted to ResPSANN/WaveResNet bases.
 """
-

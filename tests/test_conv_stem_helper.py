@@ -6,7 +6,9 @@ from psann import PSANNRegressor, ResPSANNRegressor
 from psann.conv import PSANNConv2dNet, ResidualPSANNConv2dNet
 
 
-def _make_image_data(seed: int, batch: int = 12, channels: int = 3, height: int = 8, width: int = 8):
+def _make_image_data(
+    seed: int, batch: int = 12, channels: int = 3, height: int = 8, width: int = 8
+):
     rng = np.random.default_rng(seed)
     X = rng.standard_normal((batch, channels, height, width)).astype(np.float32)
     y = rng.standard_normal((batch, 1)).astype(np.float32)

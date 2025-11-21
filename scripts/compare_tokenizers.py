@@ -89,9 +89,7 @@ def measure_sentencepiece(
         except OSError:
             pass
 
-    tokens_per_second = (
-        total_tokens / encode_seconds if encode_seconds > 0 else float("inf")
-    )
+    tokens_per_second = total_tokens / encode_seconds if encode_seconds > 0 else float("inf")
     tokens_per_char = total_tokens / max(total_chars, 1)
     chars_per_token = total_chars / max(total_tokens, 1)
 
@@ -141,9 +139,7 @@ def measure_hf_tokenizers(
         total_tokens += len(encoded.ids) + 2  # add BOS/EOS
     encode_seconds = time.perf_counter() - encode_start
 
-    tokens_per_second = (
-        total_tokens / encode_seconds if encode_seconds > 0 else float("inf")
-    )
+    tokens_per_second = total_tokens / encode_seconds if encode_seconds > 0 else float("inf")
     tokens_per_char = total_tokens / max(total_chars, 1)
     chars_per_token = total_chars / max(total_tokens, 1)
 
@@ -246,9 +242,7 @@ def main() -> None:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     out_dir = (
-        args.out_dir
-        if args.out_dir is not None
-        else Path("reports") / "tokenizers" / timestamp
+        args.out_dir if args.out_dir is not None else Path("reports") / "tokenizers" / timestamp
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     payload = {

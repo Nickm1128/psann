@@ -193,11 +193,14 @@ class Tokenizer:
     def save(self, path: str, *, special_tokens_map_path: Optional[str] = None) -> None:
         save_fn = getattr(self._impl, "save", None)
         if save_fn is None:
-            raise NotImplementedError(f"save() not implemented for backend '{self._selected_backend}'")
+            raise NotImplementedError(
+                f"save() not implemented for backend '{self._selected_backend}'"
+            )
         save_fn(path, special_tokens_map_path=special_tokens_map_path)
 
 
 # ----------------------- SentencePiece backend -----------------------
+
 
 def _make_sentencepiece_tokenizer(cfg: TokenizerConfig):
     try:
@@ -313,6 +316,7 @@ def _make_sentencepiece_tokenizer(cfg: TokenizerConfig):
 
 # --------------------- HuggingFace tokenizers backend ---------------------
 
+
 def _make_hf_tokenizers(cfg: TokenizerConfig):
     try:
         from tokenizers import Tokenizer as HFTokenizer  # type: ignore
@@ -406,14 +410,18 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
 
         def _configure_special_ids(self, tk: HFTokenizer) -> None:
             provided = self._load_special_token_strings()
-            pad_src = self._resolve_special_id(tk, "pad_token", provided, ["[PAD]", "<pad>", "<PAD>", "pad"], self.PAD)
+            pad_src = self._resolve_special_id(
+                tk, "pad_token", provided, ["[PAD]", "<pad>", "<PAD>", "pad"], self.PAD
+            )
             bos_src = self._resolve_special_id(
                 tk, "bos_token", provided, ["[BOS]", "<s>", "<BOS>", "bos", "<bos>"], self.BOS
             )
             eos_src = self._resolve_special_id(
                 tk, "eos_token", provided, ["[EOS]", "</s>", "<EOS>", "eos", "<eos>"], self.EOS
             )
-            unk_src = self._resolve_special_id(tk, "unk_token", provided, ["[UNK]", "<unk>", "<UNK>", "unk"], self.UNK)
+            unk_src = self._resolve_special_id(
+                tk, "unk_token", provided, ["[UNK]", "<unk>", "<UNK>", "unk"], self.UNK
+            )
             self._ids = {
                 "[PAD]": pad_src,
                 "[BOS]": bos_src,
@@ -479,7 +487,11 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                 if add_specials:
                     bos = self._src_special_ids.get("bos", self.BOS)
                     eos = self._src_special_ids.get("eos", self.EOS)
-                    ids = ([bos] if bos is not None else []) + ids + ([eos] if eos is not None else [])
+                    ids = (
+                        ([bos] if bos is not None else [])
+                        + ids
+                        + ([eos] if eos is not None else [])
+                    )
                 return ids
 
             # Remapped fixed ids path
@@ -509,9 +521,7 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
             if self.cfg.hf_passthrough_ids:
                 # Remove actual special ids if requested
                 if skip_specials:
-                    specials = {
-                        v for v in self._src_special_ids.values() if v is not None
-                    }
+                    specials = {v for v in self._src_special_ids.values() if v is not None}
                     out_ids = [int(i) for i in ids if int(i) not in specials]
                 else:
                     out_ids = [int(i) for i in ids]
@@ -552,5 +562,3 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                     json.dump(mapping, fh, indent=2)
 
     return HFTokenizersWrapper(cfg)
-
-

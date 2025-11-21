@@ -5,6 +5,21 @@ PSANN-LM packages a production-ready language-modeling stack on top of PSANN bas
 and WaveResNet). The public API keeps a minimal surface while still exposing tokenizer,
 data, training, and inference utilities.
 
+Installation
+------------
+
+From PyPI, install the core library plus the LM add-on:
+
+```bash
+pip install psann psannlm
+```
+
+For development from this repository (including GPU validation scripts), install with extras:
+
+```bash
+pip install -e .[dev,lm]
+```
+
 Quickstart
 ----------
 

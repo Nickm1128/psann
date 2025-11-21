@@ -6,8 +6,12 @@ from psann.lm import psannLM, psannLMDataPrep
 
 def test_save_load_roundtrip_and_seeded_generation(tmp_path):
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
-    dp = psannLMDataPrep(texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0)
-    lm = psannLM(base="respsann", d_model=64, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True)
+    dp = psannLMDataPrep(
+        texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0
+    )
+    lm = psannLM(
+        base="respsann", d_model=64, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    )
     lm.fit(dp, epochs=1, batch_tokens=256, lr=1e-3)
 
     ckpt = os.path.join(tmp_path, "lm.pt")
@@ -17,7 +21,9 @@ def test_save_load_roundtrip_and_seeded_generation(tmp_path):
     loaded = psannLM.load(ckpt)
     # Compare parameters equal after roundtrip
     assert lm._model is not None and loaded._model is not None
-    for (n1, p1), (n2, p2) in zip(lm._model.state_dict().items(), loaded._model.state_dict().items()):
+    for (n1, p1), (n2, p2) in zip(
+        lm._model.state_dict().items(), loaded._model.state_dict().items()
+    ):
         assert n1 == n2
         torch.testing.assert_close(p1, p2)
 
@@ -34,4 +40,3 @@ def test_save_load_roundtrip_and_seeded_generation(tmp_path):
 
     assert isinstance(out1, str) and isinstance(out2, str)
     assert out1 == out2
-

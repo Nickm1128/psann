@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psann"
-version = "0.10.19"
+version = "0.12.0"
 description = "PSANN: Parameterized Sine-Activated Neural Networks (primary-output, sklearn-style, PyTorch backend)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,7 +26,6 @@ classifiers = [
 dependencies = [
   "numpy>=1.23",
   "torch>=2.1",
-  "pyyaml>=6.0",
 ]
 
 [project.urls]
@@ -38,7 +37,7 @@ Changelog = "https://github.com/psann-project/psann/blob/main/docs/migration.md"
 Contributing = "https://github.com/psann-project/psann/blob/main/docs/CONTRIBUTING.md"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/psann", "psannlm"]
+packages = ["src/psann"]
 
 [tool.hatch.build]
 exclude = [
@@ -48,6 +47,9 @@ exclude = [
   ".pip_inspect",
   ".venv*",
   "benchmarks",
+  "scripts",
+  "bench_psann_lm.py",
+  "psann_adapter.py",
   "datasets",
   "docs",
   "downloads_tmp",
@@ -60,7 +62,6 @@ exclude = [
 [tool.hatch.build.targets.sdist]
 include = [
   "src/psann/**",
-  "psannlm/**",
   "pyproject.toml",
   "README.md",
   "LICENSE",
@@ -72,6 +73,9 @@ exclude = [
   ".pip_inspect",
   ".venv*",
   "benchmarks",
+   "scripts",
+   "bench_psann_lm.py",
+   "psann_adapter.py",
   "datasets",
   "docs",
   "downloads_tmp",
@@ -87,6 +91,7 @@ dev = [
   "pytest-json-report>=1.5",
   "ruff>=0.5.0",
   "black>=24.0",
+  "mypy>=1.10",
   "pre-commit>=3.6",
   "coverage[toml]>=7.5",
   "build>=1.2",
@@ -100,6 +105,7 @@ sklearn = [
 lm = [
   "sentencepiece>=0.1.99",
   "tokenizers>=0.13",
+  "datasets>=2.14",
 ]
 compat = [
   "numpy==1.26.4",

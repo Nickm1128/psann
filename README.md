@@ -15,8 +15,25 @@ Quick links:
 - Results compendium: `docs/PSANN_Results_Compendium.md`
 - Contributor guide: `docs/CONTRIBUTING.md`
 - Technical design notes: `TECHNICAL_DETAILS.md`
+ - Utility scripts overview: `scripts/README.md`
 
 ## Installation
+
+### From PyPI (recommended)
+
+- Core estimators and HISSO:
+
+  ```bash
+  pip install psann
+  ```
+
+- Language modeling add-on (training/CLI utilities):
+
+  ```bash
+  pip install psann psannlm
+  ```
+
+### From source (this repository)
 
 ```bash
 python -m venv .venv
@@ -29,7 +46,8 @@ pip install -e .                # editable install from source
 Optional extras in `pyproject.toml`:
 - `psann[sklearn]`: adds scikit-learn conveniences for estimator mixins and metrics.
 - `psann[viz]`: plotting helpers used in benchmarks and notebooks.
-- `psann[dev]`: pytest, ruff, black, coverage, build, pre-commit tooling.
+- `psann[dev]`: pytest, ruff, black, coverage, build, pre-commit tooling, and mypy.
+- `psann[lm]`: pulls in LM-related dependencies (`sentencepiece`, `tokenizers`, `datasets`) for working with `psann.lm` and the `psannlm` package from source.
 
 Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibility extra:
 
@@ -69,6 +87,30 @@ Set up local hooks (formatting, linting, notebook output stripping) with `pre-co
 pre-commit install
 pre-commit run --all-files  # optional one-time sweep
 ```
+
+## Public API (top-level imports)
+
+At a glance, the main things you import from `psann` are:
+
+- Estimators:
+  - `from psann import PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor, WaveResNetRegressor`
+- HISSO and episodic training:
+  - `from psann import HISSOOptions, hisso_infer_series, hisso_evaluate_reward`
+  - `from psann import EpisodeTrainer, EpisodeConfig, get_reward_strategy, RewardStrategyBundle`
+- Diagnostics and utilities:
+  - `from psann import jacobian_spectrum, ntk_eigens, participation_ratio, mutual_info_proxy`
+  - `from psann import encode_and_probe, fit_linear_probe`
+  - `from psann import make_drift_series, make_shock_series, make_regime_switch_ts, make_context_rotating_moons`
+- Token and embedding helpers:
+  - `from psann import SimpleWordTokenizer, SineTokenEmbedder`
+- Wave backbones (for direct PyTorch usage):
+  - `from psann import WaveResNet, WaveEncoder, WaveRNNCell, scan_regimes`
+
+Language modeling entry points live under `psann.lm`:
+
+- `from psann.lm import psannLM, psannLMDataPrep`
+
+The `psannlm` package provides the LM training CLI (`python -m psannlm.train`) used by scripts such as `scripts/train_psann_lm.py`.
 
 ## Quick Start
 
@@ -146,11 +188,15 @@ print("Residual R^2:", est.score(X, y))
 
 ### Language modeling (PSANN-LM)
 
-Install the language-modeling extras to pull in the tokenizer stack:
+Install the core estimators plus the LM add-on from PyPI:
 
 ```bash
-pip install -e .[lm]
+pip install psann psannlm
 ```
+
+Use the `psann.lm` module for in-code training and generation, and the `psannlm` package for one-command training/CLI workflows:
+- High-level APIs: `from psann.lm import psannLM, psannLMDataPrep`
+- CLI entrypoint: `python scripts/train_psann_lm.py` (thin wrapper around `python -m psannlm.train`)
 
 Then spin up a minimal CPU demo:
 
@@ -336,6 +382,15 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 - **HISSO** (`psann.HISSOOptions`, `psann.hisso_infer_series`, `psann.hisso_evaluate_reward`) offers declarative reward configuration, supervised warm starts, episode construction, and inference helpers that reuse the cached configuration.
 - **Utilities** (`psann.jacobian_spectrum`, `psann.ntk_eigens`, `psann.participation_ratio`, `psann.mutual_info_proxy`, `psann.encode_and_probe`, `psann.fit_linear_probe`, `psann.make_context_rotating_moons`, `psann.make_drift_series`, `psann.make_shock_series`, `psann.make_regime_switch_ts`) cover diagnostics and synthetic regimes.
 - **Token helpers** (`SimpleWordTokenizer`, `SineTokenEmbedder`) remain for experiments that need sine embeddings, but no language-model trainer ships in this release.
+
+## Package layout and tooling
+
+- `src/psann/` – core PSANN library (estimators, HISSO, wave backbones, diagnostics, token helpers).
+- `src/psann/lm/` – language modeling module (`psann.lm`) with public APIs `psannLM` and `psannLMDataPrep`.
+- `psannlm/` – standalone PSANN-LM training/CLI package published as `psannlm` on PyPI; drives `psann.lm` models via `psannlm.train`.
+- `scripts/` – utility scripts for benchmarks, GPU validation, language modeling, and releases. See `scripts/README.md` for a categorized overview.
+- `benchmarks/` – benchmark plans and result summaries for PSANN and PSANN-LM.
+- `notebooks/` – Colab-friendly analysis notebooks (HISSO logging, parity/probes, sine comparisons, context demos); these are example/analysis artifacts and are not imported as modules.
 
 ## HISSO at a glance
 

@@ -41,4 +41,3 @@ def write_json(path: Path, data: dict):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, sort_keys=True)
-

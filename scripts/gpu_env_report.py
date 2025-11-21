@@ -11,9 +11,7 @@ from pathlib import Path
 
 def _run(cmd):
     try:
-        out = subprocess.run(
-            cmd, check=False, capture_output=True, text=True, env=os.environ
-        )
+        out = subprocess.run(cmd, check=False, capture_output=True, text=True, env=os.environ)
         return out.returncode, out.stdout.strip(), out.stderr.strip()
     except Exception as e:
         return 1, "", str(e)
@@ -32,7 +30,13 @@ def gather_env_info():
 
     # Executable versions
     for exe, args in (
-        ("nvidia-smi", ["--query-gpu=name,driver_version,temperature.gpu,memory.total,memory.free", "--format=csv,noheader,nounits"]),
+        (
+            "nvidia-smi",
+            [
+                "--query-gpu=name,driver_version,temperature.gpu,memory.total,memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+        ),
         ("nvcc", ["--version"]),
     ):
         code, out, err = _run([exe, *args])
@@ -82,9 +86,7 @@ def gather_env_info():
     try:
         import transformers  # type: ignore
 
-        info["libraries"]["transformers"] = {
-            "version": getattr(transformers, "__version__", None)
-        }
+        info["libraries"]["transformers"] = {"version": getattr(transformers, "__version__", None)}
     except Exception as e:  # pragma: no cover - optional
         info["libraries"]["transformers"] = {"import_error": str(e)}
 
@@ -92,9 +94,7 @@ def gather_env_info():
     try:
         import bitsandbytes as bnb  # type: ignore
 
-        info["libraries"]["bitsandbytes"] = {
-            "version": getattr(bnb, "__version__", None)
-        }
+        info["libraries"]["bitsandbytes"] = {"version": getattr(bnb, "__version__", None)}
     except Exception as e:  # pragma: no cover - optional
         info["libraries"]["bitsandbytes"] = {"import_error": str(e)}
 
@@ -112,11 +112,7 @@ def main():
     args = parser.parse_args()
 
     ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    outdir = (
-        Path(args.outdir)
-        if args.outdir
-        else Path("outputs") / "gpu_tests" / ts
-    )
+    outdir = Path(args.outdir) if args.outdir else Path("outputs") / "gpu_tests" / ts
     outdir.mkdir(parents=True, exist_ok=True)
 
     info = gather_env_info()
@@ -156,4 +152,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

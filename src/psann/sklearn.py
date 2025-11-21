@@ -868,7 +868,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             flat_for_context = X2d
             inputs_np = X2d
         else:
-            X_cf = np.moveaxis(X_arr, -1, 1) if self.data_format == "channels_last" else X_arr.copy()
+            X_cf = (
+                np.moveaxis(X_arr, -1, 1) if self.data_format == "channels_last" else X_arr.copy()
+            )
             meta["cf_shape"] = tuple(X_cf.shape[1:])
             N, C = X_cf.shape[0], int(X_cf.shape[1])
             X2d = X_cf.reshape(N, C, -1).transpose(0, 2, 1).reshape(-1, C)
@@ -902,7 +904,10 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                         setattr(self, "context_dim", int(self._context_dim_))
                     except Exception:
                         pass
-            if self._context_dim_ is not None and self._context_dim_ not in (0, context_np.shape[1]):
+            if self._context_dim_ is not None and self._context_dim_ not in (
+                0,
+                context_np.shape[1],
+            ):
                 raise ValueError(
                     f"Expected context feature dimension {self._context_dim_}; received {context_np.shape[1]}."
                 )
@@ -968,7 +973,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
 
             with torch.no_grad():
                 inputs_arr = (
-                    inputs_np if inputs_np.dtype == np.float32 else inputs_np.astype(np.float32, copy=False)
+                    inputs_np
+                    if inputs_np.dtype == np.float32
+                    else inputs_np.astype(np.float32, copy=False)
                 )
                 tensor = torch.from_numpy(inputs_arr)
                 if device.type != "cpu":
@@ -983,7 +990,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                     context_tensor = torch.from_numpy(ctx_arr)
                     if device.type != "cpu":
                         context_tensor = context_tensor.to(device=device, dtype=torch.float32)
-                outputs = model(tensor, context_tensor) if context_tensor is not None else model(tensor)
+                outputs = (
+                    model(tensor, context_tensor) if context_tensor is not None else model(tensor)
+                )
                 return outputs.detach().cpu().numpy()
         finally:
             model.train(prev_training)
@@ -1203,7 +1212,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             segmentation_head=bool(segmentation_head),
         )
         if self._attention_enabled():
-            return self._wrap_with_attention_conv(core, spatial_shape, segmentation_head=segmentation_head)
+            return self._wrap_with_attention_conv(
+                core, spatial_shape, segmentation_head=segmentation_head
+            )
         return core
 
     def _make_optimizer(self, model: torch.nn.Module, lr: Optional[float] = None):
@@ -2119,7 +2130,9 @@ class WaveResNetRegressor(PSANNRegressor):
                     stacklevel=2,
                 )
         if preserve_shape and lsm is not None:
-            raise ValueError("WaveResNetRegressor does not support lsm preprocessors when preserve_shape=True.")
+            raise ValueError(
+                "WaveResNetRegressor does not support lsm preprocessors when preserve_shape=True."
+            )
 
         norm_value = str(norm).lower()
         if norm_value not in {"none", "weight", "rms"}:
@@ -2365,7 +2378,9 @@ class WaveResNetRegressor(PSANNRegressor):
         state_cfg: Optional[Dict[str, Any]] = None,
     ) -> nn.Module:
         if segmentation_head:
-            raise ValueError("WaveResNetRegressor does not support per_element=True in convolutional mode.")
+            raise ValueError(
+                "WaveResNetRegressor does not support per_element=True in convolutional mode."
+            )
         if spatial_shape is None:
             raise ValueError(
                 "WaveResNetRegressor requires known spatial dimensions for preserve_shape inputs."
@@ -2377,7 +2392,9 @@ class WaveResNetRegressor(PSANNRegressor):
         }
         conv_cls = conv_map.get(int(spatial_ndim))
         if conv_cls is None:
-            raise ValueError(f"Unsupported spatial dimensionality {spatial_ndim}; expected 1, 2, or 3.")
+            raise ValueError(
+                f"Unsupported spatial dimensionality {spatial_ndim}; expected 1, 2, or 3."
+            )
         conv_channels = int(self.conv_channels)
         conv_core = conv_cls(
             int(in_channels),

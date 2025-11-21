@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
-import os
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -48,7 +46,7 @@ def _force_device(mode: str):
 
 def _build_training_texts() -> List[str]:
     base = "abcdefghijklmnopqrstuvwxyz"
-    extra = base.upper() + "0123456789.,;:!?-"+"/\\ \n"
+    extra = base.upper() + "0123456789.,;:!?-" + "/\\ \n"
     samples = [
         (base + extra) * 4,
         "psann kv cache benchmarking corpus for tokenizer coverage",
@@ -84,7 +82,9 @@ class BenchmarkConfig:
     device_mode: str
 
 
-def _run_generate_batch(model: psannLM, prompts: Sequence[str], cfg: BenchmarkConfig) -> Tuple[float, List[str]]:
+def _run_generate_batch(
+    model: psannLM, prompts: Sequence[str], cfg: BenchmarkConfig
+) -> Tuple[float, List[str]]:
     start = time.perf_counter()
     outputs = model.generate_batch(
         prompts,
@@ -170,14 +170,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--prompt-length", type=int, default=96)
     parser.add_argument("--max-new-tokens", type=int, default=64)
-    parser.add_argument("--base", type=str, default="waveresnet", choices=["waveresnet", "respsann"])
+    parser.add_argument(
+        "--base", type=str, default="waveresnet", choices=["waveresnet", "respsann"]
+    )
     parser.add_argument("--d-model", type=int, default=512)
     parser.add_argument("--n-layers", type=int, default=8)
     parser.add_argument("--n-heads", type=int, default=8)
     parser.add_argument("--tokenizer", type=str, default="simple")
-    parser.add_argument("--positional-encoding", type=str, default="rope", choices=["rope", "alibi", "sinusoidal"])
+    parser.add_argument(
+        "--positional-encoding", type=str, default="rope", choices=["rope", "alibi", "sinusoidal"]
+    )
     parser.add_argument("--device", type=str, default="auto", choices=["auto", "cpu"])
-    parser.add_argument("--out", type=Path, default=None, help="Optional JSON path for benchmark metrics.")
+    parser.add_argument(
+        "--out", type=Path, default=None, help="Optional JSON path for benchmark metrics."
+    )
     return parser.parse_args()
 
 

@@ -6,7 +6,9 @@ from psann.lm.models.registry import get_base
 
 def _tiny_model(base: str, vocab_size: int = 64):
     factory = get_base(base)
-    return factory(vocab_size=vocab_size, d_model=64, n_layers=2, n_heads=4, d_mlp=128, dropout=0.0, rope=True)
+    return factory(
+        vocab_size=vocab_size, d_model=64, n_layers=2, n_heads=4, d_mlp=128, dropout=0.0, rope=True
+    )
 
 
 def _loss(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
@@ -37,4 +39,3 @@ def test_gradient_checkpointing_forward_backward_waveresnet():
     loss = _loss(logits, x)
     loss.backward()
     assert any((p.grad is not None) for p in model.parameters() if p.requires_grad)
-

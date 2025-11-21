@@ -24,7 +24,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", type=str, required=True)
     ap.add_argument("--out", type=str, required=True)
-    ap.add_argument("--plot", action="store_true", help="Also write loss_curve.png if matplotlib is available")
+    ap.add_argument(
+        "--plot", action="store_true", help="Also write loss_curve.png if matplotlib is available"
+    )
     args = ap.parse_args()
 
     logp = Path(args.log)
@@ -35,7 +37,9 @@ def main() -> None:
     except Exception:
         # If log missing, produce empty metrics.csv and exit
         outdir.mkdir(parents=True, exist_ok=True)
-        (outdir / "metrics.csv").write_text("epoch,step,loss,ppl,lr,grad_norm,toks\n", encoding="utf-8")
+        (outdir / "metrics.csv").write_text(
+            "epoch,step,loss,ppl,lr,grad_norm,toks\n", encoding="utf-8"
+        )
         return
 
     rows: List[str] = ["epoch,step,loss,ppl,lr,grad_norm,toks"]
@@ -78,4 +82,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

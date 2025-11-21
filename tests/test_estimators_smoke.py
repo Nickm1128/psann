@@ -26,5 +26,10 @@ def test_public_estimators_instantiate(estimator_cls, kwargs):
     estimator = estimator_cls(**kwargs)
     params = estimator.get_params()
     assert isinstance(params, dict)
-    assert estimator.__class__.__name__ in {"PSANNRegressor", "ResPSANNRegressor", "ResConvPSANNRegressor", "WaveResNetRegressor"}
+    assert estimator.__class__.__name__ in {
+        "PSANNRegressor",
+        "ResPSANNRegressor",
+        "ResConvPSANNRegressor",
+        "WaveResNetRegressor",
+    }
     assert params["hidden_layers"] == kwargs["hidden_layers"]
