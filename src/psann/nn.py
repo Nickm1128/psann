@@ -6,7 +6,8 @@ import torch
 import torch.nn as nn
 
 from ._aliases import resolve_int_alias
-from .activations import SineParam
+from .activations import PhaseSineParam, SineParam
+from .layers.spectral import SpectralGate1D
 from .state import StateConfig, StateController, ensure_state_config
 from .utils import init_siren_linear_
 
@@ -281,6 +282,167 @@ class PSANNNet(nn.Module):
         for m in self.modules():
             if isinstance(m, PSANNBlock):
                 m.enable_state_updates = bool(enabled)
+
+
+class SGRPSANNBlock(nn.Module):
+    """PSANN block with per-channel phase shift and optional spectral gate."""
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        *,
+        act_kw: Optional[Dict] = None,
+        activation_type: str = "psann",
+        phase_init: float = 0.0,
+        phase_trainable: bool = True,
+        use_spectral_gate: bool = True,
+        k_fft: int = 64,
+        gate_type: str = "rfft",
+        gate_groups: str = "depthwise",
+        gate_init: float = 0.0,
+        gate_strength: float = 1.0,
+    ) -> None:
+        super().__init__()
+        act_kw = dict(act_kw or {})
+        act_kw.pop("phase_init", None)
+        act_kw.pop("phase_trainable", None)
+        self.linear = nn.Linear(in_features, out_features)
+        activation_type = activation_type.lower()
+        if activation_type != "psann":
+            raise ValueError("SGRPSANNBlock requires activation_type='psann'.")
+        self.act = PhaseSineParam(
+            out_features,
+            phase_init=phase_init,
+            phase_trainable=phase_trainable,
+            **act_kw,
+        )
+        self.spectral = (
+            SpectralGate1D(
+                out_features,
+                k_fft=k_fft,
+                gate_type=gate_type,
+                gate_groups=gate_groups,
+                gate_init=gate_init,
+                gate_strength=gate_strength,
+            )
+            if use_spectral_gate
+            else None
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.linear(x)
+        h = self.act(h)
+        if self.spectral is not None:
+            h = h + self.spectral(h)
+        return h
+
+
+class SGRPSANNSequenceNet(nn.Module):
+    """Sequence-aware PSANN core with phase shifts and spectral gating."""
+
+    def __init__(
+        self,
+        seq_len: int,
+        token_dim: int,
+        output_dim: int,
+        *,
+        hidden_layers: int = 2,
+        hidden_units: Optional[int] = None,
+        hidden_width: Optional[int] = 64,
+        act_kw: Optional[Dict] = None,
+        activation_type: str = "psann",
+        w0: float = 30.0,
+        phase_init: float = 0.0,
+        phase_trainable: bool = True,
+        use_spectral_gate: bool = True,
+        k_fft: int = 64,
+        gate_type: str = "rfft",
+        gate_groups: str = "depthwise",
+        gate_init: float = 0.0,
+        gate_strength: float = 1.0,
+        pool: str = "last",
+    ) -> None:
+        super().__init__()
+        if seq_len <= 0:
+            raise ValueError("seq_len must be positive")
+        if token_dim <= 0:
+            raise ValueError("token_dim must be positive")
+        act_kw = act_kw or {}
+        activation_type = activation_type.lower()
+        if activation_type != "psann":
+            raise ValueError("SGRPSANNSequenceNet requires activation_type='psann'.")
+        pool = str(pool).lower()
+        if pool not in {"mean", "last"}:
+            raise ValueError("pool must be 'mean' or 'last'")
+        alias = resolve_int_alias(
+            primary_value=hidden_units,
+            alias_value=hidden_width,
+            primary_name="hidden_units",
+            alias_name="hidden_width",
+            context="SGRPSANNSequenceNet",
+            default=64,
+            mismatch_strategy="error",
+            mismatch_message=(
+                "SGRPSANNSequenceNet: `hidden_units` and `hidden_width` must agree when both provided."
+            ),
+        )
+        units = alias.value if alias.value is not None else 64
+
+        self.seq_len = int(seq_len)
+        self.token_dim = int(token_dim)
+        self.hidden_units = units
+        self.hidden_width = units
+        self.pool = pool
+
+        layers = []
+        prev = int(token_dim)
+        for _ in range(int(hidden_layers)):
+            block = SGRPSANNBlock(
+                prev,
+                units,
+                act_kw=act_kw,
+                activation_type=activation_type,
+                phase_init=phase_init,
+                phase_trainable=phase_trainable,
+                use_spectral_gate=use_spectral_gate,
+                k_fft=k_fft,
+                gate_type=gate_type,
+                gate_groups=gate_groups,
+                gate_init=gate_init,
+                gate_strength=gate_strength,
+            )
+            layers.append(block)
+            prev = units
+        self.body = nn.Sequential(*layers)
+        self.head = nn.Linear(prev, output_dim)
+
+        if hidden_layers > 0:
+            init_siren_linear_(self.body[0].linear, is_first=True, w0=w0)
+            for block in list(self.body)[1:]:
+                init_siren_linear_(block.linear, is_first=False, w0=w0)
+        init_siren_linear_(self.head, is_first=False, w0=w0)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.ndim == 2:
+            expected = self.seq_len * self.token_dim
+            if x.shape[1] != expected:
+                raise ValueError(
+                    f"Expected input with {expected} features, received {x.shape[1]}."
+                )
+            x = x.reshape(x.shape[0], self.seq_len, self.token_dim)
+        elif x.ndim == 3:
+            if x.shape[1] != self.seq_len or x.shape[2] != self.token_dim:
+                raise ValueError(
+                    f"Expected input shaped (B, {self.seq_len}, {self.token_dim}); received {tuple(x.shape)}."
+                )
+        else:
+            raise ValueError("SGRPSANNSequenceNet expects 2D or 3D inputs.")
+
+        if len(self.body) > 0:
+            x = self.body(x)
+        pooled = x[:, -1, :] if self.pool == "last" else x.mean(dim=1)
+        return self.head(pooled)
 
 
 class WithPreprocessor(nn.Module):

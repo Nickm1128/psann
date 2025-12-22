@@ -7,10 +7,12 @@ hold options that also maps cleanly to CLI/YAML.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
 POS_ENCODING_CHOICES = ("rope", "alibi", "sinusoidal")
+_DEFAULT_NUM_WORKERS = 0 if os.name == "nt" else 8
 
 
 def normalize_positional_encoding(value: Optional[str]) -> str:
@@ -91,7 +93,7 @@ class TrainConfig:
     # Memory/perf knobs
     grad_checkpoint: bool = False
     log_gpu_mem: bool = False
-    dataloader_num_workers: int = 8
+    dataloader_num_workers: int = _DEFAULT_NUM_WORKERS
     dataloader_prefetch_factor: int = 2
     dataloader_persistent_workers: bool = True
     hf_cache_limit_gb: float | None = None

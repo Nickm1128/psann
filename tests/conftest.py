@@ -1,9 +1,15 @@
 import json
 import os
+import sys
 from datetime import datetime
 from pathlib import Path
 
 import pytest
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC_ROOT = _REPO_ROOT / "src"
+if _SRC_ROOT.exists():
+    sys.path.insert(0, str(_SRC_ROOT))
 
 
 def _default_outdir() -> Path:

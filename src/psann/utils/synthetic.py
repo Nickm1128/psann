@@ -78,7 +78,9 @@ def make_regime_switch_ts(
         context[idx] = 1.0
         for _ in range(steps):
             contexts.append(context.clone())
-            state = func(state) + 0.05 * torch.randn_like(state, generator=generator)
+            state = func(state) + 0.05 * torch.randn(
+                state.shape, generator=generator, device=state.device, dtype=state.dtype
+            )
             series.append(state.clone())
 
     return torch.stack(series, dim=0).squeeze(-1), torch.stack(contexts, dim=0)

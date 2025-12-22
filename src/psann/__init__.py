@@ -32,7 +32,13 @@ from .rewards import (
     register_reward_strategy,
 )
 from .attention import AttentionConfig
-from .sklearn import PSANNRegressor, ResConvPSANNRegressor, ResPSANNRegressor, WaveResNetRegressor
+from .sklearn import (
+    PSANNRegressor,
+    ResConvPSANNRegressor,
+    ResPSANNRegressor,
+    SGRPSANNRegressor,
+    WaveResNetRegressor,
+)
 from .state import StateConfig, StateController, ensure_state_config
 
 # Token utilities
@@ -57,6 +63,7 @@ __all__ = [
     "PSANNRegressor",
     "ResPSANNRegressor",
     "ResConvPSANNRegressor",
+    "SGRPSANNRegressor",
     "WaveResNetRegressor",
     # Expanders / activation configs
     "LSM",
@@ -106,4 +113,4 @@ __all__ = [
     "make_regime_switch_ts",
 ]
 
-__version__ = "0.12.0"
+__version__ = "0.12.1"

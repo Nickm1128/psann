@@ -93,7 +93,7 @@ pre-commit run --all-files  # optional one-time sweep
 At a glance, the main things you import from `psann` are:
 
 - Estimators:
-  - `from psann import PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor, WaveResNetRegressor`
+  - `from psann import PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor, SGRPSANNRegressor, WaveResNetRegressor`
 - HISSO and episodic training:
   - `from psann import HISSOOptions, hisso_infer_series, hisso_evaluate_reward`
   - `from psann import EpisodeTrainer, EpisodeConfig, get_reward_strategy, RewardStrategyBundle`
@@ -185,6 +185,30 @@ print("Residual R^2:", est.score(X, y))
 ```
 
 `ResPSANNRegressor` keeps the same `.fit`/`.predict` interface but routes training through the residual backbone with DropPath, RMSNorm, and optional HISSO hooks enabled.
+
+### Spectral-gated regression with `SGRPSANNRegressor`
+
+```python
+import numpy as np
+from psann import SGRPSANNRegressor
+
+rng = np.random.default_rng(7)
+X = rng.standard_normal((256, 32, 3)).astype(np.float32)  # (batch, timesteps, features)
+y = (X[:, -1:, :1].sum(axis=1) + 0.1 * X.mean(axis=(1, 2), keepdims=True)).astype(np.float32)
+
+est = SGRPSANNRegressor(
+    hidden_layers=3,
+    hidden_units=32,
+    epochs=40,
+    k_fft=64,
+    gate_type="rfft",
+    pool="last",
+)
+est.fit(X, y, verbose=0)
+print("SGR R^2:", est.score(X, y))
+```
+
+`SGRPSANNRegressor` adds per-channel phase shifts plus a lightweight spectral gate over the sequence axis. It expects `(N, T, F)` inputs and keeps the rest of the sklearn API identical.
 
 ### Language modeling (PSANN-LM)
 
@@ -287,6 +311,8 @@ print("WaveResNet R^2:", wave.score(X, y, context=context))
 
 `WaveResNetRegressor` applies SIREN-style initialisation with optional `w0` warmup and progressive depth expansion. Providing explicit `float32` context arrays keeps inference aligned with the estimator's cached `context_dim`.
 Tip: Specify `device="cuda"` for GPU runs; use `np.float32` inputs (including `context`) to stay on the fast path without extra dtype casts.
+
+For sequence-shaped inputs `(N, T, F)`, `WaveResNetRegressor` can optionally apply a lightweight spectral gate over the inferred sequence axis before the WaveResNet readout. Enable it with `use_spectral_gate=True` and configure `k_fft`, `gate_type`, `gate_groups`, `gate_init`, and `gate_strength`.
 
 ### Convolutional WaveResNet with attention
 

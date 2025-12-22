@@ -118,6 +118,27 @@ When HISSO is enabled and no targets are provided the primary dimension defaults
 3. Use `predict_sequence(...)` for open-loop rollouts, or `predict_sequence_online(...)` when teacher forcing and online adaptation are required.
 4. Utilities such as `psann.make_drift_series`, `psann.make_shock_series`, and `psann.make_regime_switch_ts` provide quick regression regimes for exercising the streaming APIs.
 
+## psann.SGRPSANNRegressor
+
+Spectral-gated PSANN variant for sequence inputs. It adds per-channel phase shifts and a lightweight spectral gate over the sequence axis while keeping the sklearn-style API.
+
+**Key parameters**
+- `phase_init: float = 0.0` - initial phase offset for each hidden channel.
+- `phase_trainable: bool = True` - toggles phase learning.
+- `use_spectral_gate: bool = True` - enable the FFT/Fourier feature gate.
+- `k_fft: int = 64` - window length for spectral gating.
+- `gate_type: "rfft" | "fourier_features"` - FFT-based or fixed Fourier features.
+- `gate_groups: "depthwise" | "full"` - depthwise (per-channel) or full 1x1 mixing.
+- `gate_init: float = 0.0` - initial gate logits (sigmoid ~0.5).
+- `gate_strength: float = 1.0` - residual scale for the gated branch.
+- `pool: "last" | "mean"` - reduce token outputs to a fixed vector for the head.
+
+**Notes**
+- Expects `(N, T, F)` inputs (sequence length `T`, feature width `F`).
+- Does not support `preserve_shape=True` or `per_element=True`.
+- LSM preprocessors and stateful settings are ignored with warnings.
+- Attention configs are ignored; the spectral gate operates on the inferred sequence axis.
+
 ## psann.SineParam
 
 Learnable sine activation with per-feature amplitude, frequency, and decay.

@@ -104,3 +104,60 @@ class SineParam(nn.Module):
         d = d.view(*shape)
 
         return A * torch.exp(-d * g) * torch.sin(f * z)
+
+
+class PhaseSineParam(SineParam):
+    """Sine activation with learnable amplitude, frequency, decay, and phase."""
+
+    def __init__(
+        self,
+        out_features: int,
+        *,
+        amplitude_init: float = 1.0,
+        frequency_init: float = 1.0,
+        decay_init: float = 0.1,
+        phase_init: float = 0.0,
+        learnable: Iterable[str] | str = ("amplitude", "frequency", "decay"),
+        phase_trainable: bool = True,
+        decay_mode: str = "abs",
+        bounds: Optional[Dict[str, Tuple[Optional[float], Optional[float]]]] = None,
+        feature_dim: int = -1,
+    ) -> None:
+        super().__init__(
+            out_features,
+            amplitude_init=amplitude_init,
+            frequency_init=frequency_init,
+            decay_init=decay_init,
+            learnable=learnable,
+            decay_mode=decay_mode,
+            bounds=bounds,
+            feature_dim=feature_dim,
+        )
+        self._phi = nn.Parameter(torch.full((self.out_features,), float(phase_init)))
+        self._phi.requires_grad = bool(phase_trainable)
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        A = F.softplus(self._A)
+        f = F.softplus(self._f) + 1e-6
+        d = F.softplus(self._d)
+
+        A = self._apply_bounds(A, "amplitude")
+        f = self._apply_bounds(f, "frequency")
+        d = self._apply_bounds(d, "decay")
+
+        if self.decay_mode == "abs":
+            g = z.abs()
+        elif self.decay_mode == "relu":
+            g = F.relu(z)
+        else:
+            g = 0.0
+
+        fd = self.feature_dim if self.feature_dim >= 0 else (z.ndim + self.feature_dim)
+        shape = [1] * z.ndim
+        shape[fd] = self.out_features
+        A = A.view(*shape)
+        f = f.view(*shape)
+        d = d.view(*shape)
+        phi = self._phi.view(*shape)
+
+        return A * torch.exp(-d * g) * torch.sin(f * z + phi)

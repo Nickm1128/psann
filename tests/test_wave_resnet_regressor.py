@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from psann.sklearn import WaveResNetRegressor
 
@@ -146,3 +147,54 @@ def test_wave_resnet_progressive_depth_adds_blocks_and_optimizer_group() -> None
 
     expected_hidden = estimator._current_w0_values()[1]
     assert core.blocks[-1].w0 == pytest.approx(expected_hidden)
+
+
+def test_wave_resnet_regressor_spectral_gate_dense_sequence_forward() -> None:
+    estimator = WaveResNetRegressor(
+        hidden_layers=2,
+        hidden_width=12,
+        epochs=1,
+        use_spectral_gate=True,
+        k_fft=8,
+    )
+    core = estimator._build_dense_core(input_dim=12, output_dim=1, input_shape=(4, 3))
+    assert getattr(core, "spectral", None) is not None
+    x = torch.randn(3, 12)
+    out = core(x)
+    assert out.shape == (3, 1)
+
+
+def test_wave_resnet_regressor_spectral_gate_conv_mode_forward() -> None:
+    estimator = WaveResNetRegressor(
+        hidden_layers=2,
+        hidden_width=12,
+        epochs=1,
+        preserve_shape=True,
+        conv_channels=12,
+        use_spectral_gate=True,
+        k_fft=8,
+    )
+    core = estimator._build_conv_core(
+        spatial_ndim=1,
+        in_channels=3,
+        output_dim=1,
+        segmentation_head=False,
+        spatial_shape=(16,),
+    )
+    assert getattr(core, "spectral", None) is not None
+    x = torch.randn(4, 3, 16)
+    out = core(x)
+    assert out.shape == (4, 1)
+
+
+def test_wave_resnet_regressor_wave_core_unwraps_spectral_gate_model() -> None:
+    estimator = WaveResNetRegressor(
+        hidden_layers=2,
+        hidden_width=12,
+        epochs=1,
+        use_spectral_gate=True,
+        k_fft=8,
+    )
+    core = estimator._build_dense_core(input_dim=12, output_dim=1, input_shape=(4, 3))
+    estimator.model_ = core
+    assert estimator._wave_core() is not None

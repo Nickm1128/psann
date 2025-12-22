@@ -1,0 +1,22 @@
+{
+  "batch_size": 64,
+  "datasets": [
+    "ts_periodic"
+  ],
+  "device": "cpu",
+  "epochs": 3,
+  "lr": 0.001,
+  "models": [
+    "wrn_base",
+    "wrn_spec_gate_rfft"
+  ],
+  "numpy_version": "1.26.4",
+  "resume": false,
+  "save_models": false,
+  "save_preds": true,
+  "seeds": [
+    0
+  ],
+  "timestamp": "2025-12-22 10:32:28",
+  "torch_version": "2.7.1+cu118"
+}

@@ -60,6 +60,9 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 
 - `aggregate_benchmarks.py` - aggregates GPU validation outputs into
   `throughput.csv` and `memory.json` under a benchmark directory.
+- `benchmark_regressor_ablations.py` - runs small ablations of ResPSANN,
+  WaveResNet, and SGR-PSANN regressors across diverse synthetic datasets, writing
+  JSONL/CSV summaries under `reports/ablations/`.
 - `finalize_bmrk01.py` - builds `metrics.json` for the tiny-corpus benchmark by
   parsing training metrics and computing validation loss/perplexity.
 - `parse_trainer_log.py` - parses trainer stdout to `metrics.csv` and, if

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psannlm"
-version = "0.12.0"
+version = "0.12.1"
 description = "PSANN-LM: language modeling and training utilities for PSANN"
 readme = "README.md"
 requires-python = ">=3.9"
