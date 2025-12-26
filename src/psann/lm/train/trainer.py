@@ -177,6 +177,7 @@ class Trainer:
         max_length: int,
         val_dataset: Optional[Any] = None,
         data_loader: Optional[DataLoader] = None,
+        resume_checkpoint: Optional[str] = None,
     ) -> None:
         import math as _math
 
@@ -324,7 +325,10 @@ class Trainer:
         criterion = nn.CrossEntropyLoss(label_smoothing=float(self.cfg.label_smoothing))
 
         # LR scheduler (cosine with warmup)
-        # Estimate total optimizer steps (with grad accumulation)
+        # Estimate total optimizer steps (scheduler steps).
+        # Note: In this trainer, `global_step` increments once per *optimizer* step
+        # (after `grad_accum_steps` micro-batches), and `scheduler.step()` is called
+        # at the same cadence.
         steps_per_epoch_cfg = getattr(self.cfg, "steps_per_epoch", None)
         if steps_per_epoch_cfg is not None:
             steps_per_epoch = max(1, int(steps_per_epoch_cfg))
@@ -339,9 +343,17 @@ class Trainer:
                     steps_per_epoch = len(dl)
                 except Exception:
                     steps_per_epoch = 1000  # conservative default when unknown
-        total_optimizer_steps = (
-            int(self.cfg.epochs) * max(1, steps_per_epoch) // max(1, int(self.cfg.grad_accum_steps))
-        )
+        accum = max(1, int(self.cfg.grad_accum_steps))
+        if steps_per_epoch_cfg is not None:
+            # When provided explicitly (e.g., streaming runs), interpret steps_per_epoch
+            # as optimizer steps (matching checkpoint/log `step=` counters).
+            total_optimizer_steps = int(self.cfg.epochs) * max(1, steps_per_epoch)
+        else:
+            # When derived from dataset/loader length, `steps_per_epoch` is in dataloader
+            # batches; convert to optimizer steps under gradient accumulation.
+            total_optimizer_steps = int(self.cfg.epochs) * max(
+                1, int(_math.ceil(float(steps_per_epoch) / float(accum)))
+            )
         scheduler = self._build_scheduler(optim, total_optimizer_steps)
 
         # ---- AMP setup ----
@@ -355,10 +367,39 @@ class Trainer:
             "cuda", enabled=(device.type == "cuda" and amp_mode == "fp16")
         )
 
+        # Optional resume: load model/optimizer state and position counters
+        start_epoch = 0
+        start_step = 0
+        if resume_checkpoint:
+            try:
+                payload = torch.load(resume_checkpoint, map_location="cpu")
+                state_dict = payload.get("model", payload)
+                wrapped.load_state_dict(state_dict)
+                if isinstance(payload, dict) and "optim" in payload:
+                    try:
+                        optim.load_state_dict(payload["optim"])
+                    except Exception as exc:  # pragma: no cover - best effort
+                        print(f"[trainer] Warning: could not load optimizer state: {exc}")
+                ckpt_state = payload.get("state", {}) if isinstance(payload, dict) else {}
+                start_step = int(ckpt_state.get("step", 0) or 0)
+                start_epoch = max(0, int(ckpt_state.get("epoch", 1) or 1) - 1)
+                self.state.step = start_step
+                self.state.epoch = start_epoch
+                try:
+                    scheduler.last_epoch = max(start_step - 1, -1)
+                except Exception:
+                    pass
+                print(
+                    f"[trainer] Resumed from {resume_checkpoint} "
+                    f"(step={start_step}, epoch={start_epoch + 1})"
+                )
+            except Exception as exc:
+                print(f"[trainer] Warning: failed to resume from {resume_checkpoint}: {exc}")
+
         micro = 0
-        global_step = 0  # optimizer steps
+        global_step = start_step  # optimizer steps
         accum = max(1, int(self.cfg.grad_accum_steps))
-        for epoch in range(self.cfg.epochs):
+        for epoch in range(start_epoch, self.cfg.epochs):
             self.state.epoch = epoch + 1
             steps_this_epoch = 0
             # Set epoch for distributed sampler to reshuffle deterministically

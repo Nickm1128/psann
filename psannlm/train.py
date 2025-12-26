@@ -176,7 +176,17 @@ def _prepare_tokenizer(
         done_flag = save_dir / ".done"
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        if is_rank0:
+        already_trained = tok_json.exists() and special_map.exists() and done_flag.exists()
+        if already_trained:
+            artifacts["model"] = str(tok_json)
+            artifacts["special_map"] = str(special_map)
+            artifacts["dir"] = str(save_dir)
+            cfg_path = _ensure_tokenizer_config(artifacts["special_map"], args.max_length)
+            if cfg_path:
+                artifacts["config"] = cfg_path
+            if is_rank0:
+                print(f"[tokenizer] Reusing existing tokenizer at {tok_json}")
+        elif is_rank0:
             train_cfg = TokenizerConfig(
                 backend=backend,
                 model_path=None,
@@ -468,6 +478,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-tokens", type=int, default=131072)
     p.add_argument("--grad-accum-steps", type=int, default=1)
     p.add_argument("--lr", type=float, default=2e-4)
+    p.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=2000,
+        help="Number of optimizer steps to linearly warm up the learning rate.",
+    )
     p.add_argument("--weight-decay", type=float, default=0.01)
     p.add_argument(
         "--optimizer", type=str, default="adamw", choices=["adamw", "adamw8bit", "adafactor"]
@@ -525,6 +541,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Optional directory to gather model+tokenizer artifacts for Hugging Face upload",
+    )
+    p.add_argument(
+        "--resume-ckpt",
+        type=str,
+        default=None,
+        help="Optional path to a checkpoint to resume training (loads model + optimizer state)",
     )
 
     return p
@@ -697,6 +719,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         epochs=int(args.epochs),
         batch_tokens=int(args.batch_tokens),
         lr=float(args.lr),
+        warmup_steps=int(args.warmup_steps),
         weight_decay=float(args.weight_decay),
         optimizer=str(args.optimizer),
         betas=betas,
@@ -723,7 +746,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         ),
     )
     trainer = Trainer(tcfg)
-    trainer.train(model, dataset, max_length=seq_len, val_dataset=None, data_loader=stream_loader)
+    trainer.train(
+        model,
+        dataset,
+        max_length=seq_len,
+        val_dataset=None,
+        data_loader=stream_loader,
+        resume_checkpoint=args.resume_ckpt,
+    )
 
     # Copy final artifact if requested
     final_ckpt = Path(tcfg.checkpoint_dir) / "final.pt"

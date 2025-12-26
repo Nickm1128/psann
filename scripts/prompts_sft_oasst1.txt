@@ -1,0 +1,10 @@
+User: Summarize PSANN-LM in one paragraph.\nAssistant:
+User: Explain what supervised fine-tuning (SFT) is in two sentences.\nAssistant:
+User: What is perplexity in language modeling, and how do you interpret it?\nAssistant:
+User: Write a short Python function `is_prime(n)`.\nAssistant:
+User: Draft a polite email to reschedule a meeting from Friday to Monday.\nAssistant:
+User: Give me 5 practical tips for training a 300M-parameter LM efficiently.\nAssistant:
+User: Explain gradient checkpointing and why it reduces VRAM usage.\nAssistant:
+User: Write a haiku about GPUs and long context windows.\nAssistant:
+User: Provide a compact JSON schema for a user profile (name, email, created_at).\nAssistant:
+User: Tell a short story (6-10 sentences) about a robot learning to write.\nAssistant:

@@ -59,6 +59,7 @@ def streamed_token_iterator(
     shuffle_seed: int = 42,
     shuffle_buffer: int = 10_000,
     pack_buffer_tokens: int = 2_000_000,
+    skip_sequences: int = 0,
     worker_id: Optional[int] = None,
     num_workers: Optional[int] = None,
     process_rank: Optional[int] = None,
@@ -116,6 +117,7 @@ def streamed_token_iterator(
     seq_len = int(seq_len)
     pack_cap = max(int(pack_buffer_tokens), seq_len * 2)
     buffer: List[int] = []
+    remaining_skip = max(0, int(skip_sequences))
 
     for row in ds:
         try:
@@ -136,9 +138,12 @@ def streamed_token_iterator(
 
         while len(buffer) >= seq_len + 1:
             chunk = buffer[: seq_len + 1]
-            input_ids = torch.tensor(chunk[:-1], dtype=torch.long)
-            labels = torch.tensor(chunk[1:], dtype=torch.long)
-            yield {"input_ids": input_ids, "labels": labels}
+            if remaining_skip > 0:
+                remaining_skip -= 1
+            else:
+                input_ids = torch.tensor(chunk[:-1], dtype=torch.long)
+                labels = torch.tensor(chunk[1:], dtype=torch.long)
+                yield {"input_ids": input_ids, "labels": labels}
             del buffer[:seq_len]
 
         if len(buffer) > pack_cap:

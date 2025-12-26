@@ -82,6 +82,7 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 - `bench_lm_bases.py` - quick WikiText-103 base-estimator shootout with loss/perplexity/throughput summaries.
 - `benchmark_kv_cache.py` / `compare_tokenizers.py` / `count_psannlm_params.py` / `ppl_wikitext_psann.py` - focused LM utilities for KV-cache, tokenizer benchmarks, parameter counting, and perplexity; mainly used in docs and internal benchmarks.
 - `runpod_psannlm.sh`, `runpod_smoke_train.sh`, `runpod_train_1b.sh`, `runpod_train_300m.sh` - RunPod / multi-GPU orchestration scripts for LM training at different scales.
+- `runpod_sft_300m.sh` - RunPod/local wrapper to supervised fine-tune (SFT) a pretrained 300M checkpoint on prompt/response pairs.
 
 ### Release tooling
 
@@ -91,6 +92,9 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 
 - Train (streaming, tokenizer-in-loop, FSDP-ready):
   - `python scripts/train_psann_lm.py --hf-dataset allenai/c4 --hf-name en --hf-split train --hf-text-key text --hf-keep-ascii-only --hf-lang en --base waveresnet --d-model 3072 --n-layers 30 --n-heads 24 --tokenizer-backend tokenizers --train-tokenizer --tokenizer-save-dir runs/tokenizer_3b --batch-tokens 65536 --grad-accum-steps 8 --amp bf16 --grad-checkpoint --fsdp full_shard --checkpoint-dir runs/lm/3b_en --export-dir artifacts/psannlm_3b_bundle`
+
+- SFT (instruction tuning, prompt masked; example uses OpenAssistant/oasst1):
+  - `PYTHONPATH=src python3 -m psannlm.sft --init-ckpt runs/lm/300m_en/ckpt_step078000.pt --tokenizer-dir runs/tokenizer_300m_shuffle_v4 --sft-source oasst1 --checkpoint-dir runs/lm/300m_en_sft_oasst1 --seq-len 2048 --batch-tokens 65536 --grad-accum-steps 2 --lr 5e-5 --warmup-steps 200 --max-steps 2000 --add-bos --add-eos --ascii-only --lang en --lang-threshold 0.85`
 
 - Evaluate with lm-eval (chat template on MC):
   - `python scripts/run_lm_eval_psann.py --hf-repo <user>/<repo> --hf-filename psannlm_chat_final.pt --tokenizer-backend tokenizers --hf-tokenizer-repo <user>/<repo> --hf-tokenizer-filename tokenizer_final/tokenizer.json --tasks hellaswag,piqa,winogrande --device cuda --num-fewshot 5 --apply-chat-template --fewshot-as-multiturn --output eval_out/mc_chat.json`

@@ -8,6 +8,12 @@ set -euo pipefail
 REPO=${REPO:-/workspace/psann}
 cd "$REPO"
 
+PYTHON_BIN=${PYTHON_BIN:-python3}
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+  echo "[error] Could not find Python interpreter '$PYTHON_BIN'." >&2
+  exit 1
+fi
+
 ATTN_FLAGS="${ATTN_FLAGS:---attn-impl sdpa}"
 DATA_FLAGS="${DATA_FLAGS:-}"
 AMP_FLAGS="${AMP_FLAGS:-}"
@@ -23,10 +29,12 @@ SEQ_LEN=${SEQ_LEN:-2048}
 TOKENS_TARGET_OVERRIDDEN="${TOKENS_TARGET:-}"
 TOKENS_TARGET_GB=${TOKENS_TARGET_GB:-50}
 if [ -n "$TOKENS_TARGET_OVERRIDDEN" ]; then
-  TOKENS_TARGET=$TOKENS_TARGET_OVERRIDDEN
+  TOKENS_TARGET_VALUE=$TOKENS_TARGET_OVERRIDDEN
 else
-  TOKENS_TARGET=$(( TOKENS_TARGET_GB * 1000000000 ))
+  TOKENS_TARGET_VALUE=$(( TOKENS_TARGET_GB * 1000000000 ))
 fi
+TOKENS_TARGET_VALUE=${TOKENS_TARGET_VALUE:-0}
+TOKENS_TARGET=${TOKENS_TARGET_VALUE}
 TOKENS_PER_STEP_HINT=${TOKENS_PER_STEP_HINT:-0}
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
@@ -36,11 +44,35 @@ export TOKENIZERS_PARALLELISM=true
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
-python -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -e .[lm]
-pip install hf_transfer langdetect datasets tokenizers accelerate
+SKIP_VENV=${SKIP_VENV:-0}
+VENV_FLAGS=${VENV_FLAGS:-}
+if [ "$SKIP_VENV" -eq 0 ]; then
+  $PYTHON_BIN -m venv ${VENV_FLAGS} .venv
+  # shellcheck source=/dev/null
+  source .venv/bin/activate
+else
+  echo "[env] SKIP_VENV=1; using existing Python environment."
+fi
+$PYTHON_BIN -m pip install --upgrade pip
+$PYTHON_BIN -m pip install -e .[lm]
+$PYTHON_BIN -m pip install hf_transfer langdetect datasets tokenizers accelerate
+$PYTHON_BIN - <<'PY'
+import torch
+
+if not torch.cuda.is_available():
+    raise SystemExit(
+        "CUDA is not available in this environment. Install a GPU-enabled PyTorch "
+        "(cu13.0+ for Blackwell) or set SKIP_VENV=1 with a container that already "
+        "has PyTorch configured."
+    )
+
+props = torch.cuda.get_device_properties(0)
+total_gb = props.total_memory / float(1024**3)
+print(
+    f"[gpu] detected device={props.name} capability={props.major}.{props.minor} "
+    f"total_mem_gb={total_gb:.2f} torch={torch.__version__}"
+)
+PY
 
 case "$AMP_MODE" in
   bf16|fp16|fp32|none) ;;
@@ -77,7 +109,7 @@ TOKENS_PER_STEP_ACTUAL=$(( BATCH_TOKENS * GRAD_ACCUM * NUM_GPUS ))
 if [ "$TOKENS_PER_STEP_ACTUAL" -le 0 ]; then
   TOKENS_PER_STEP_ACTUAL=$SEQ_LEN
 fi
-MAX_STEPS=$(( TOKENS_TARGET / TOKENS_PER_STEP_ACTUAL ))
+MAX_STEPS=$(( TOKENS_TARGET_VALUE / TOKENS_PER_STEP_ACTUAL ))
 if [ "$MAX_STEPS" -le 0 ]; then
   MAX_STEPS=1
 fi
@@ -95,7 +127,7 @@ OPT_FLAGS="--optimizer adamw"
 if [ "$NUM_GPUS" -gt 1 ]; then
   LAUNCHER="torchrun --nproc_per_node=${NUM_GPUS} -m psannlm.train"
 else
-  LAUNCHER="python -u -m psannlm.train"
+  LAUNCHER="$PYTHON_BIN -u -m psannlm.train"
 fi
 
 CMD="${LAUNCHER} \
@@ -109,7 +141,7 @@ CMD="${LAUNCHER} \
   --tokens_target ${TOKENS_TARGET} \
   --dataloader_num_workers 2 \
   --batch-tokens ${BATCH_TOKENS} --grad-accum-steps ${GRAD_ACCUM} \
-  --lr 3e-4 --weight-decay 0.01 \
+  --lr 1e-3 --warmup-steps 500 --weight-decay 0.01 \
   --amp ${AMP_MODE} ${FSDP_FLAGS} ${OPT_FLAGS} \
   --grad-checkpoint \
   --log-interval-steps 25 \

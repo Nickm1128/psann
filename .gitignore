@@ -43,7 +43,13 @@ tmp_extract/
 tmp_outputs/
 .pip_inspect/
 runs/
+artifacts/
+eval_data/
 
 # Examples artifacts
 examples/logs/
 examples/results_*.csv
+
+# Office/editor scratch
+*.odt
+.~lock.*#
