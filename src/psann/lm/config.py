@@ -40,8 +40,8 @@ class ModelConfig:
     sine_trainable: bool = True
 
     def __post_init__(self) -> None:
-        if self.base.lower() not in {"waveresnet", "respsann"}:
-            raise ValueError("base must be 'waveresnet' or 'respsann'")
+        if self.base.lower() not in {"waveresnet", "respsann", "sgrpsann"}:
+            raise ValueError("base must be 'waveresnet', 'respsann', or 'sgrpsann'")
         if self.d_model <= 0 or self.n_layers <= 0 or self.n_heads <= 0:
             raise ValueError("d_model, n_layers, n_heads must be positive")
         if self.d_mlp is not None and self.d_mlp <= 0:

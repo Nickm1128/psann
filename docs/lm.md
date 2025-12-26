@@ -195,7 +195,7 @@ Configuration
 -------------
 
 **Model (`psann.lm.config.ModelConfig`)**
-- `base`: `waveresnet` | `respsann`
+- `base`: `waveresnet` | `respsann` | `sgrpsann`
 - `d_model`, `n_layers`, `n_heads`, `d_mlp`
 - `vocab_size`: override (defaults to data prep vocab)
 - `positional_encoding`: `rope` (default) | `alibi` | `sinusoidal`
@@ -234,6 +234,9 @@ Benchmarks & Reporting
   - **BMRK-03** (memory snapshot): run with `grad_checkpoint=True`, capture
     `torch.cuda.max_memory_allocated()` + wall time, and store in
     `reports/benchmarks/<timestamp>/memory.json`.
+  - **BMRK-04** (base estimator shootout): quick WikiText-103 run comparing
+    `respsann`, `sgrpsann`, and `waveresnet` with loss/ppl/top-1 accuracy + throughput;
+    emits `summary.json`/`summary.csv` and `leaderboard.md`.
 - `scripts/next_gpu_batch.sh` queues the full validation suite, throughput-only, checkpoint-only,
   and tiny-corpus benchmark runs in one go once GPUs are available.
 - Tiny corpus YAML config lives at `examples/lm/configs/tiny_corpus_benchmark.yaml`.

@@ -79,6 +79,7 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 - `train_psann_lm.py` - shim around `psannlm.train` for one-command LM training (see `docs/lm.md`).
 - `train_psannlm_chat.py` / `gen_psannlm_chat.py` - helpers for chat-style PSANN-LM runs and interactive generation.
 - `run_lm_eval_psann.py` - ties PSANN-LM checkpoints into `lm-eval-harness` via a small adapter.
+- `bench_lm_bases.py` - quick WikiText-103 base-estimator shootout with loss/perplexity/throughput summaries.
 - `benchmark_kv_cache.py` / `compare_tokenizers.py` / `count_psannlm_params.py` / `ppl_wikitext_psann.py` - focused LM utilities for KV-cache, tokenizer benchmarks, parameter counting, and perplexity; mainly used in docs and internal benchmarks.
 - `runpod_psannlm.sh`, `runpod_smoke_train.sh`, `runpod_train_1b.sh`, `runpod_train_300m.sh` - RunPod / multi-GPU orchestration scripts for LM training at different scales.
 

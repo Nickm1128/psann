@@ -70,6 +70,23 @@ BMRK-03 – Memory Snapshot
   ```
 - **Comparison:** Include both checkpointed and non-checkpointed entries whenever possible.
 
+BMRK-04 ƒ?" Base Estimator Shootout
+---------------------------------
+- **Goal:** Compare PSANN-LM base estimators (e.g., `respsann`, `sgrpsann`, `waveresnet`) on a small but
+  representative WikiText-103 budget.
+- **Command:** Use the quick baseline YAML to keep runs consistent:
+  ```
+  python scripts/bench_lm_bases.py --config examples/lm/configs/base_compare_quick.yaml
+  ```
+- **Metrics:** `val_loss`, `val_ppl`, `val_top1_acc`, `train_tokens_per_s`,
+  `peak_cuda_mem_gb` (CUDA only).
+- **Optional:** Add `--with-lm-eval --lm-eval-tasks lambada_openai,hellaswag --lm-eval-limit 256`
+  when lm-eval is available and extra runtime is acceptable.
+- **Artifacts:** Stored under `reports/benchmarks/<timestamp>_base_shootout/`:
+  - `summary.json` + `summary.csv`
+  - `leaderboard.md`
+  - `runs/<base>_seed<seed>/metrics.json` (per-base details)
+
 Artifact Layout Summary
 -----------------------
 ```

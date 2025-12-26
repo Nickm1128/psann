@@ -18,6 +18,7 @@ import torch.nn.functional as F
 import math
 
 from ...layers.sine_residual import RMSNorm
+from ...layers.spectral import SpectralGate1D
 from .sine import SineConfig, build_sine
 from ..config import normalize_positional_encoding
 
@@ -272,6 +273,12 @@ class TransformerBlock(nn.Module):
         mlp_activation: str = "sine",
         positional_encoding: str = "rope",
         attn_impl: str = "math",
+        use_spectral_gate: bool = False,
+        k_fft: int = 64,
+        gate_type: str = "rfft",
+        gate_groups: str = "depthwise",
+        gate_init: float = 0.0,
+        gate_strength: float = 1.0,
     ) -> None:
         super().__init__()
         self.attn = SelfAttention(
@@ -283,6 +290,18 @@ class TransformerBlock(nn.Module):
         )
         self.mlp = PSANNMLP(
             d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout
+        )
+        self.spectral = (
+            SpectralGate1D(
+                d_model,
+                k_fft=int(k_fft),
+                gate_type=str(gate_type),
+                gate_groups=str(gate_groups),
+                gate_init=float(gate_init),
+                gate_strength=float(gate_strength),
+            )
+            if use_spectral_gate
+            else None
         )
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         # Optional residual scaling (learnable), default 1.0 (shape 1 for FSDP)
@@ -309,7 +328,10 @@ class TransformerBlock(nn.Module):
             attn_y, present = attn_out, None
         x = x + attn_y
         h2 = self.norm2(x)
-        x = x + self.alpha * self.mlp(h2)
+        mlp_out = self.alpha * self.mlp(h2)
+        if self.spectral is not None:
+            mlp_out = mlp_out + self.spectral(mlp_out)
+        x = x + mlp_out
         if use_cache or past_kv is not None:
             assert present is not None
             return x, present
@@ -329,12 +351,23 @@ class ResPSANNTransformerConfig:
     mlp_activation: str = "sine"  # "sine" | "gelu"
     sine: Optional[SineConfig] = None
     attn_impl: str = "math"  # "math" | "sdpa" | "auto"
+    # Spectral gate (SGR) options
+    use_spectral_gate: bool = False
+    k_fft: int = 64
+    gate_type: str = "rfft"
+    gate_groups: str = "depthwise"
+    gate_init: float = 0.0
+    gate_strength: float = 1.0
 
     def __post_init__(self) -> None:
         if self.rope is not None:
             self.positional_encoding = "rope" if self.rope else "sinusoidal"
         self.positional_encoding = normalize_positional_encoding(self.positional_encoding)
         self.rope = self.positional_encoding == "rope"
+        if self.k_fft <= 0:
+            raise ValueError("k_fft must be positive")
+        if self.gate_strength < 0:
+            raise ValueError("gate_strength must be >= 0")
 
 
 class ResPSANNTransformer(nn.Module):
@@ -356,6 +389,12 @@ class ResPSANNTransformer(nn.Module):
                     mlp_activation=cfg.mlp_activation,
                     positional_encoding=cfg.positional_encoding,
                     attn_impl=cfg.attn_impl,
+                    use_spectral_gate=bool(cfg.use_spectral_gate),
+                    k_fft=int(cfg.k_fft),
+                    gate_type=str(cfg.gate_type),
+                    gate_groups=str(cfg.gate_groups),
+                    gate_init=float(cfg.gate_init),
+                    gate_strength=float(cfg.gate_strength),
                 )
                 for _ in range(cfg.n_layers)
             ]
@@ -416,4 +455,9 @@ class ResPSANNTransformer(nn.Module):
 
 
 def build_respsann_transformer(**kwargs) -> ResPSANNTransformer:
+    return ResPSANNTransformer(ResPSANNTransformerConfig(**kwargs))
+
+
+def build_sgrpsann_transformer(**kwargs) -> ResPSANNTransformer:
+    kwargs.setdefault("use_spectral_gate", True)
     return ResPSANNTransformer(ResPSANNTransformerConfig(**kwargs))

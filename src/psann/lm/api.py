@@ -179,7 +179,7 @@ class psannLM:
 
     Parameters map 1:1 with the public spec and are persisted for save/load:
 
-    - base: `"waveresnet"` (default) or `"respsann"`
+    - base: `"waveresnet"` (default), `"respsann"`, or `"sgrpsann"`
     - d_model / n_layers / n_heads / d_mlp: transformer dimensions
     - vocab_size: optional override (defaults to psannLMDataPrep vocab)
     - positional_encoding: `"rope"`, `"alibi"`, or `"sinusoidal"`
