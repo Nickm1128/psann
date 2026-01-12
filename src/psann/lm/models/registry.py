@@ -37,10 +37,12 @@ def list_bases() -> list[str]:  # pragma: no cover - trivial
 # Pre-register default bases once modules are importable.
 try:  # pragma: no cover - import side-effect wiring
     from .transformer_respsann import build_respsann_transformer, build_sgrpsann_transformer
+    from .transformer_vanilla import build_vanilla_transformer
     from .transformer_waveresnet import build_waveresnet_transformer
 
     register_base("respsann", build_respsann_transformer)
     register_base("sgrpsann", build_sgrpsann_transformer)
+    register_base("transformer", build_vanilla_transformer)
     register_base("waveresnet", build_waveresnet_transformer)
 except Exception:
     # Allow import during partial scaffolding

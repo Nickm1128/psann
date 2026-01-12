@@ -14,6 +14,7 @@ Use this guide to locate the right document and to see which notes are still act
 | `examples/README.md` | Active | CPU runtimes and usage notes for scripts in `examples/`. |
 | `benchmarks/hisso_variants.md` | Active | Benchmark description; accompanying JSON captures reproducible config. |
 | `benchmarks/README.md` | Active | Data provenance, size, and regeneration instructions for HISSO benchmarks. |
+| `benchmarks/lm_base_sweeps.md` | Active | Summary of recent PSANN-LM base sweeps + recommendations for the next full-scale run. |
 | `PSANN_Results_Compendium.md` | Active | Curated experiment results and interpretation tips. |
 | `diagnostics.md` | Active | Quick reference for feature quality diagnostics; see revision history for recent notation fixes. |
 | `wave_resnet.md` | Active | Background and design rationale for the WaveResNet backbone. |

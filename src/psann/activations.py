@@ -27,9 +27,9 @@ class SineParam(nn.Module):
         self,
         out_features: int,
         *,
-        amplitude_init: float = 1.0,
-        frequency_init: float = 1.0,
-        decay_init: float = 0.1,
+        amplitude_init: float | torch.Tensor = 1.0,
+        frequency_init: float | torch.Tensor = 1.0,
+        decay_init: float | torch.Tensor = 0.1,
         learnable: Iterable[str] | str = ("amplitude", "frequency", "decay"),
         decay_mode: str = "abs",
         bounds: Optional[Dict[str, Tuple[Optional[float], Optional[float]]]] = None,
@@ -53,10 +53,30 @@ class SineParam(nn.Module):
         self.bounds = bounds or {}
         self.feature_dim = int(feature_dim)
 
+        def _as_init_vector(value: float | torch.Tensor, *, name: str) -> torch.Tensor:
+            if isinstance(value, torch.Tensor):
+                t = value.detach().to(device="cpu", dtype=torch.float32).flatten()
+            else:
+                t = torch.as_tensor(value, dtype=torch.float32).flatten()
+
+            if t.numel() == 0:
+                raise ValueError(f"{name}_init must be a scalar or a tensor with {self.out_features} elements")
+            if t.numel() == 1:
+                t = torch.full((self.out_features,), float(t.item()), dtype=torch.float32)
+            elif t.numel() != self.out_features:
+                raise ValueError(
+                    f"{name}_init must be a scalar or have shape ({self.out_features},); got {tuple(t.shape)}"
+                )
+            else:
+                t = t.reshape(self.out_features)
+
+            eps = torch.finfo(t.dtype).eps
+            return t.clamp_min(eps)
+
         # Store raw parameters as vectors (out_features,); broadcast in forward
-        A0 = torch.full((self.out_features,), float(amplitude_init))
-        f0 = torch.full((self.out_features,), float(frequency_init))
-        d0 = torch.full((self.out_features,), float(decay_init))
+        A0 = _as_init_vector(amplitude_init, name="amplitude")
+        f0 = _as_init_vector(frequency_init, name="frequency")
+        d0 = _as_init_vector(decay_init, name="decay")
 
         # Use softplus inverse for a stable starting point
         self._A = nn.Parameter(_softplus_inverse(A0))
@@ -113,9 +133,9 @@ class PhaseSineParam(SineParam):
         self,
         out_features: int,
         *,
-        amplitude_init: float = 1.0,
-        frequency_init: float = 1.0,
-        decay_init: float = 0.1,
+        amplitude_init: float | torch.Tensor = 1.0,
+        frequency_init: float | torch.Tensor = 1.0,
+        decay_init: float | torch.Tensor = 0.1,
         phase_init: float = 0.0,
         learnable: Iterable[str] | str = ("amplitude", "frequency", "decay"),
         phase_trainable: bool = True,

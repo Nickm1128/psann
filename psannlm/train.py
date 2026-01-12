@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import time
 from pathlib import Path
@@ -348,6 +349,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["math", "sdpa", "auto"],
         help="Attention implementation: 'math' = explicit matmul+softmax, 'sdpa'/'auto' use torch.scaled_dot_product_attention when available.",
     )
+    p.add_argument("--sine-amp-init", type=float, default=None)
+    p.add_argument("--sine-amp-init-std", type=float, default=None)
+    p.add_argument("--sine-freq-init", type=float, default=None)
+    p.add_argument("--sine-freq-init-std", type=float, default=None)
+    p.add_argument("--sine-damp-init", type=float, default=None)
+    p.add_argument("--sine-damp-init-std", type=float, default=None)
+    p.add_argument(
+        "--sine-trainable",
+        type=str2bool,
+        default=True,
+        help="Whether sine parameters are trainable (default: true).",
+    )
 
     # Tokenizer
     p.add_argument(
@@ -494,6 +507,81 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--grad-checkpoint", action="store_true")
     p.add_argument(
+        "--cuda-memory-fraction",
+        type=float,
+        default=None,
+        help="If set (0-1], caps this process to a fraction of total VRAM (leaves headroom for other processes).",
+    )
+    p.add_argument(
+        "--cuda-empty-cache-after-init",
+        action="store_true",
+        help="Call torch.cuda.empty_cache() once after init/compile (reduces reserved VRAM; may reduce performance).",
+    )
+    p.add_argument(
+        "--cuda-empty-cache-interval-steps",
+        type=int,
+        default=0,
+        help="If >0, call torch.cuda.empty_cache() every N optimizer steps (reduces reserved VRAM; may reduce performance).",
+    )
+    p.add_argument(
+        "--eval-data-files",
+        type=str,
+        default=None,
+        help="Local JSONL file used for periodic held-out perplexity evaluation (expects a 'text' field by default).",
+    )
+    p.add_argument("--eval-text-key", type=str, default="text")
+    p.add_argument(
+        "--eval-interval-steps",
+        type=int,
+        default=0,
+        help="If >0, run eval every N optimizer steps (in addition to eval at checkpoint saves).",
+    )
+    p.add_argument(
+        "--eval-max-batches",
+        type=int,
+        default=512,
+        help="Maximum eval batches per evaluation run (0 = default cap).",
+    )
+    p.add_argument(
+        "--eval-create-shard",
+        action="store_true",
+        help="If set and --eval-data-files does not exist, create it by sampling from the training HF dataset.",
+    )
+    p.add_argument(
+        "--eval-target-tokens",
+        type=int,
+        default=10_000_000,
+        help="When creating an eval shard, target this many tokens (approx; uses the active tokenizer).",
+    )
+    p.add_argument(
+        "--eval-hf-split",
+        type=str,
+        default=None,
+        help="HF split used when creating eval shard (default: same as --hf-split).",
+    )
+    p.add_argument(
+        "--torch-compile",
+        action="store_true",
+        help="Enable torch.compile for the model (single GPU only; skipped under DDP/FSDP).",
+    )
+    p.add_argument(
+        "--torch-compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help="torch.compile mode.",
+    )
+    p.add_argument(
+        "--torch-compile-fullgraph",
+        action="store_true",
+        help="Pass fullgraph=True to torch.compile (can be more brittle).",
+    )
+    p.add_argument(
+        "--torch-compile-dynamic",
+        action="store_true",
+        help="Pass dynamic=True to torch.compile (for dynamic shapes; can reduce performance).",
+    )
+    p.add_argument(
         "--log-gpu-mem",
         action="store_true",
         help="Log basic GPU memory stats (allocated/reserved/max, in GB) at each log interval on the main rank.",
@@ -583,6 +671,21 @@ def main(argv: Optional[list[str]] = None) -> int:
             f"tokens_per_step_global≈{global_tokens_per_step:,} target_tokens≈{target_msg} max_steps={max_steps_msg}"
         )
 
+    if args.cuda_memory_fraction is not None:
+        frac = float(args.cuda_memory_fraction)
+        if not (0.0 < frac <= 1.0):
+            raise SystemExit("--cuda-memory-fraction must be in (0, 1].")
+        try:
+            import torch
+
+            if torch.cuda.is_available():
+                torch.cuda.set_per_process_memory_fraction(frac)
+                if rank == 0:
+                    print(f"[gpu] set_per_process_memory_fraction={frac:.3f}")
+        except Exception as exc:
+            if rank == 0:
+                print(f"[warn] Failed to set CUDA memory fraction: {exc}")
+
     # Resolve tokenizer assets (optionally from HF Hub)
     tok_model = args.tokenizer_model_path
     tok_special = args.tokenizer_special_map_path
@@ -622,6 +725,72 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     tokenizer, tokenizer_artifacts = _prepare_tokenizer(args, shard_paths)
 
+    # Optional: create a held-out eval shard (JSONL with a 'text' field) so eval can be reused.
+    if args.eval_data_files:
+        eval_path = Path(str(args.eval_data_files))
+        if args.eval_create_shard and not eval_path.exists():
+            if not args.hf_dataset:
+                raise SystemExit("--eval-create-shard requires --hf-dataset (HF source).")
+            tmp_path = eval_path.with_suffix(eval_path.suffix + ".tmp")
+            done_path = eval_path.with_suffix(eval_path.suffix + ".done")
+            if rank == 0:
+                from datasets import load_dataset  # type: ignore
+
+                eval_path.parent.mkdir(parents=True, exist_ok=True)
+                eval_split = str(args.eval_hf_split or args.hf_split or "train")
+                eval_seed = int(args.seed) + 1009
+                eval_buffer = int(args.hf_shuffle_buffer) if bool(args.hf_shuffle) else 0
+                text_filter = build_text_filter(
+                    ascii_only=bool(args.hf_keep_ascii_only),
+                    languages=[s for s in (args.hf_lang or [])],
+                    lang_threshold=float(args.hf_lang_threshold),
+                )
+                ds = load_dataset(
+                    str(args.hf_dataset),
+                    name=(str(args.hf_name) if args.hf_name else None),
+                    split=eval_split,
+                    streaming=True,
+                    revision=(str(args.hf_revision) if args.hf_revision else None),
+                )
+                if eval_buffer > 0:
+                    try:
+                        ds = ds.shuffle(seed=eval_seed, buffer_size=eval_buffer)
+                    except Exception:
+                        pass
+
+                target_tokens = max(1, int(args.eval_target_tokens))
+                total_tokens = 0
+                docs = 0
+                with tmp_path.open("w", encoding="utf-8") as f:
+                    for row in ds:
+                        try:
+                            text = str(row.get(str(args.hf_text_key or "text"), "")).strip()
+                        except Exception:
+                            text = ""
+                        if not text:
+                            continue
+                        if not text_filter(text):
+                            continue
+                        try:
+                            ids = tokenizer.encode(text, add_specials=True)
+                        except Exception:
+                            continue
+                        if not ids:
+                            continue
+                        f.write(json.dumps({"text": text}, ensure_ascii=False) + "\n")
+                        total_tokens += len(ids)
+                        docs += 1
+                        if total_tokens >= target_tokens:
+                            break
+                tmp_path.replace(eval_path)
+                done_path.write_text("ok", encoding="utf-8")
+                print(f"[eval] Wrote {docs} docs, {total_tokens:,} tokens -> {eval_path}")
+            else:
+                while not eval_path.exists():
+                    if done_path.exists():
+                        break
+                    time.sleep(1.0)
+
     # Data
     pack = PackingConfig(max_length=seq_len, pack_sequences=True)
     stream_loader = None
@@ -637,6 +806,32 @@ def main(argv: Optional[list[str]] = None) -> int:
             lang_threshold=float(args.hf_lang_threshold),
         )
 
+        resume_step = 0
+        if args.resume_ckpt:
+            m = re.search(r"ckpt_step(\\d+)", os.path.basename(str(args.resume_ckpt)))
+            if m:
+                try:
+                    resume_step = int(m.group(1))
+                except Exception:
+                    resume_step = 0
+            if resume_step <= 0:
+                try:
+                    import torch
+
+                    payload = torch.load(str(args.resume_ckpt), map_location="cpu")
+                    ckpt_state = payload.get("state", {}) if isinstance(payload, dict) else {}
+                    resume_step = int(ckpt_state.get("step", 0) or 0)
+                except Exception:
+                    resume_step = 0
+
+        skip_sequences = 0
+        if resume_step > 0:
+            skip_sequences = int(resume_step) * int(micro_batch) * max(1, int(args.grad_accum_steps))
+            if rank == 0:
+                print(
+                    f"[resume] step={resume_step} -> skip_sequences={skip_sequences:,} (seq_len={seq_len})"
+                )
+
         def _iterator(worker_info: Optional[Any] = None):
             worker_id = getattr(worker_info, "id", None) if worker_info else None
             num_workers = getattr(worker_info, "num_workers", None) if worker_info else None
@@ -645,20 +840,29 @@ def main(argv: Optional[list[str]] = None) -> int:
                 split=str(args.hf_split or "train"),
                 tokenizer=tokenizer,
                 dataset_config=(str(args.hf_name) if args.hf_name else None),
+                dataset_revision=(str(args.hf_revision) if args.hf_revision else None),
                 text_field=str(args.hf_text_key or "text"),
                 seq_len=seq_len,
                 shuffle_seed=int(args.seed),
-                shuffle_buffer=int(args.hf_shuffle_buffer),
+                shuffle_buffer=(int(args.hf_shuffle_buffer) if bool(args.hf_shuffle) else 0),
                 pack_buffer_tokens=int(args.pack_buffer_tokens),
+                skip_sequences=int(skip_sequences),
                 worker_id=worker_id,
                 num_workers=num_workers,
                 text_filter=text_filter,
             )
 
+        num_workers = int(args.num_workers)
+        if skip_sequences > 0 and num_workers > 0:
+            raise SystemExit(
+                "--resume-ckpt in streaming mode requires --num-workers 0 for deterministic shuffling/skip. "
+                "Set --num-workers 0 from the start (initial run and every resume) to avoid repeating data."
+            )
+
         stream_loader = build_stream_loader(
             _iterator,
             batch_size=micro_batch,
-            num_workers=int(args.num_workers),
+            num_workers=num_workers,
         )
         dataset = stream_loader.dataset  # type: ignore[assignment]
         effective_steps_per_epoch = int(args.max_steps)
@@ -694,6 +898,19 @@ def main(argv: Optional[list[str]] = None) -> int:
     d_mlp = int(args.d_mlp) if args.d_mlp is not None else 4 * int(args.d_model)
     factory = get_base(str(args.base))
     sine = SineConfig()
+    if args.sine_amp_init is not None:
+        sine.amp_init = float(args.sine_amp_init)
+    if args.sine_amp_init_std is not None:
+        sine.amp_init_std = float(args.sine_amp_init_std)
+    if args.sine_freq_init is not None:
+        sine.freq_init = float(args.sine_freq_init)
+    if args.sine_freq_init_std is not None:
+        sine.freq_init_std = float(args.sine_freq_init_std)
+    if args.sine_damp_init is not None:
+        sine.damp_init = float(args.sine_damp_init)
+    if args.sine_damp_init_std is not None:
+        sine.damp_init_std = float(args.sine_damp_init_std)
+    sine.trainable = bool(args.sine_trainable)
     model = factory(
         vocab_size=vocab_size,
         d_model=int(args.d_model),
@@ -737,7 +954,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         log_interval_steps=int(args.log_interval_steps),
         save_interval_steps=int(args.save_interval_steps),
         grad_checkpoint=bool(args.grad_checkpoint),
+        eval_interval_steps=int(args.eval_interval_steps),
+        eval_max_batches=int(args.eval_max_batches),
+        torch_compile=bool(getattr(args, "torch_compile", False)),
+        torch_compile_mode=str(getattr(args, "torch_compile_mode", "default")),
+        torch_compile_fullgraph=bool(getattr(args, "torch_compile_fullgraph", False)),
+        torch_compile_dynamic=bool(getattr(args, "torch_compile_dynamic", False)),
         log_gpu_mem=bool(getattr(args, "log_gpu_mem", False)),
+        cuda_empty_cache_after_init=bool(getattr(args, "cuda_empty_cache_after_init", False)),
+        cuda_empty_cache_interval_steps=int(getattr(args, "cuda_empty_cache_interval_steps", 0)),
         dataloader_num_workers=int(args.num_workers),
         dataloader_prefetch_factor=int(args.prefetch_factor),
         dataloader_persistent_workers=not bool(args.no_persistent_workers),
@@ -746,14 +971,46 @@ def main(argv: Optional[list[str]] = None) -> int:
         ),
     )
     trainer = Trainer(tcfg)
+
+    val_dataset = None
+    if args.eval_data_files:
+        eval_path = Path(str(args.eval_data_files))
+        if eval_path.exists():
+            val_dataset = HFTextStreamingLMDataset(
+                dataset="json",
+                data_files=str(eval_path),
+                tokenizer=tokenizer,
+                cfg=pack,
+                split="train",
+                text_key=str(args.eval_text_key or "text"),
+                shuffle=False,
+                seed=int(args.seed),
+                shuffle_buffer=0,
+            )
+        elif rank == 0:
+            print(f"[warn] --eval-data-files set but file not found: {eval_path}")
+
     trainer.train(
         model,
         dataset,
         max_length=seq_len,
-        val_dataset=None,
+        val_dataset=val_dataset,
         data_loader=stream_loader,
         resume_checkpoint=args.resume_ckpt,
     )
+
+    stream_exhausted_early = (
+        use_streaming and int(args.max_steps) > 0 and int(trainer.state.step) < int(args.max_steps)
+    )
+    if stream_exhausted_early and rank == 0:
+        global_tokens_per_step = tokens_per_step * world_size
+        trained_tokens = int(trainer.state.step) * int(global_tokens_per_step)
+        target_msg = f"{tokens_target:,}" if tokens_target > 0 else "n/a"
+        print(
+            "[warn] Streaming dataset exhausted early "
+            f"(step={trainer.state.step} < max_steps={int(args.max_steps):,}; "
+            f"trained_tokens≈{trained_tokens:,} vs target_tokens≈{target_msg})."
+        )
 
     # Copy final artifact if requested
     final_ckpt = Path(tcfg.checkpoint_dir) / "final.pt"
@@ -773,7 +1030,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         shard_paths=shard_paths,
     )
 
-    return 0
+    return 2 if stream_exhausted_early else 0
 
 
 if __name__ == "__main__":

@@ -54,6 +54,8 @@ def streamed_token_iterator(
     split: str,
     tokenizer,
     dataset_config: Optional[str] = None,
+    dataset_revision: Optional[str] = None,
+    data_files: Any = None,
     text_field: str = "text",
     seq_len: int = 2048,
     shuffle_seed: int = 42,
@@ -72,12 +74,22 @@ def streamed_token_iterator(
     """
 
     encode = _build_encode_fn(tokenizer)
-    ds = load_dataset(
-        dataset_name,
-        name=dataset_config,
-        split=split,
-        streaming=True,
-    )
+    if data_files:
+        ds = load_dataset(
+            dataset_name,
+            data_files=data_files,
+            split=split,
+            streaming=True,
+            revision=dataset_revision,
+        )
+    else:
+        ds = load_dataset(
+            dataset_name,
+            name=dataset_config,
+            split=split,
+            streaming=True,
+            revision=dataset_revision,
+        )
 
     if process_rank is None or process_world_size is None:
         try:

@@ -237,6 +237,7 @@ Benchmarks & Reporting
   - **BMRK-04** (base estimator shootout): quick WikiText-103 run comparing
     `respsann`, `sgrpsann`, and `waveresnet` with loss/ppl/top-1 accuracy + throughput;
     emits `summary.json`/`summary.csv` and `leaderboard.md`.
+- Recent sweep findings + recommendations for the next full-scale LM run: `docs/benchmarks/lm_base_sweeps.md`.
 - `scripts/next_gpu_batch.sh` queues the full validation suite, throughput-only, checkpoint-only,
   and tiny-corpus benchmark runs in one go once GPUs are available.
 - Tiny corpus YAML config lives at `examples/lm/configs/tiny_corpus_benchmark.yaml`.

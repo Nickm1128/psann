@@ -35,8 +35,11 @@ class SineParams:
     """
 
     amp_init: float = 1.0
+    amp_init_std: float = 0.0
     freq_init: float = 1.0
+    freq_init_std: float = 0.0
     damp_init: float = 0.01
+    damp_init_std: float = 0.0
     trainable: bool = True
 
 
@@ -221,8 +224,11 @@ class psannLM:
             d = sine_params or {}
             self.sine = SineParams(
                 amp_init=float(d.get("amp_init", 1.0)),
+                amp_init_std=float(d.get("amp_init_std", 0.0)),
                 freq_init=float(d.get("freq_init", 1.0)),
+                freq_init_std=float(d.get("freq_init_std", 0.0)),
                 damp_init=float(d.get("damp_init", 0.01)),
+                damp_init_std=float(d.get("damp_init_std", 0.0)),
                 trainable=bool(d.get("trainable", True)),
             )
         else:
@@ -241,8 +247,11 @@ class psannLM:
         factory = get_base(self.base)
         sine_cfg = SineConfig(
             amp_init=float(self.sine.amp_init),
+            amp_init_std=float(getattr(self.sine, "amp_init_std", 0.0)),
             freq_init=float(self.sine.freq_init),
+            freq_init_std=float(getattr(self.sine, "freq_init_std", 0.0)),
             damp_init=float(self.sine.damp_init),
+            damp_init_std=float(getattr(self.sine, "damp_init_std", 0.0)),
             trainable=bool(self.sine.trainable),
         )
         self._model = factory(
@@ -541,8 +550,11 @@ class psannLM:
                 "positional_encoding": self.positional_encoding,
                 "sine": {
                     "amp_init": self.sine.amp_init,
+                    "amp_init_std": getattr(self.sine, "amp_init_std", 0.0),
                     "freq_init": self.sine.freq_init,
+                    "freq_init_std": getattr(self.sine, "freq_init_std", 0.0),
                     "damp_init": self.sine.damp_init,
+                    "damp_init_std": getattr(self.sine, "damp_init_std", 0.0),
                     "trainable": self.sine.trainable,
                 },
                 "overrides": self.config_overrides,

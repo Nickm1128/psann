@@ -16,8 +16,11 @@ from ...activations import SineParam
 @dataclass
 class SineConfig:
     amp_init: float = 1.0
+    amp_init_std: float = 0.0
     freq_init: float = 1.0
+    freq_init_std: float = 0.0
     damp_init: float = 0.01
+    damp_init_std: float = 0.0
     trainable: bool = True
     decay_mode: str = "abs"  # "abs" | "relu" | "none"
     learnable: Optional[Iterable[str]] = None  # overrides trainable if provided
@@ -50,9 +53,30 @@ def build_sine(out_features: int, cfg: SineConfig | None = None) -> SineParam:
             lo, hi = hi, lo
         return float(_random.uniform(lo, hi))
 
-    amp_init = _sample_or(cfg.amp_init, cfg.amp_range)
-    freq_init = _sample_or(cfg.freq_init, cfg.freq_range)
-    damp_init = _sample_or(cfg.damp_init, cfg.damp_range)
+    import torch
+
+    def _normal_vector(mean: float, std: float) -> torch.Tensor:
+        vals = torch.randn(out_features, dtype=torch.float32) * float(std) + float(mean)
+        eps = torch.finfo(vals.dtype).eps
+        return vals.clamp_min(eps)
+
+    amp_std = float(getattr(cfg, "amp_init_std", 0.0))
+    if amp_std > 0:
+        amp_init: float | torch.Tensor = _normal_vector(cfg.amp_init, amp_std)
+    else:
+        amp_init = _sample_or(cfg.amp_init, cfg.amp_range)
+
+    freq_std = float(getattr(cfg, "freq_init_std", 0.0))
+    if freq_std > 0:
+        freq_init: float | torch.Tensor = _normal_vector(cfg.freq_init, freq_std)
+    else:
+        freq_init = _sample_or(cfg.freq_init, cfg.freq_range)
+
+    damp_std = float(getattr(cfg, "damp_init_std", 0.0))
+    if damp_std > 0:
+        damp_init: float | torch.Tensor = _normal_vector(cfg.damp_init, damp_std)
+    else:
+        damp_init = _sample_or(cfg.damp_init, cfg.damp_range)
 
     bounds: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
     if cfg.amp_bounds is not None:
@@ -64,9 +88,9 @@ def build_sine(out_features: int, cfg: SineConfig | None = None) -> SineParam:
 
     return SineParam(
         out_features,
-        amplitude_init=float(amp_init),
-        frequency_init=float(freq_init),
-        decay_init=float(damp_init),
+        amplitude_init=amp_init,
+        frequency_init=freq_init,
+        decay_init=damp_init,
         learnable=learnable,
         decay_mode=str(cfg.decay_mode),
         bounds=bounds if bounds else None,

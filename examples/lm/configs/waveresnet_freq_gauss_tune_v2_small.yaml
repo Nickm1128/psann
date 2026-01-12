@@ -1,0 +1,85 @@
+bench:
+  run_name: waveresnet_freq_gauss_tune_v2_small
+  out_dir: reports/benchmarks
+  bases: [waveresnet]
+  # Use 2 seeds to confirm the transformer-beating result isn't seed luck.
+  seeds: [1337, 1338]
+  reuse_tokenizer: true
+  with_lm_eval: false
+  save_run_logs: true
+
+data:
+  dataset: iohadrubin/wikitext-103-raw-v1
+  name: null
+  data_files: null
+  revision: null
+  train_split: train
+  val_split: validation
+  text_key: text
+  streaming: true
+  shuffle: true
+  shuffle_buffer: 10000
+  ascii_only: false
+  languages: []
+  lang_threshold: 0.8
+  max_length: 1024
+
+tokenizer:
+  backend: tokenizers
+  vocab_size: 16384
+  min_frequency: 2
+  sample_limit: 20000
+  # Reuse the same tokenizer for apples-to-apples comparisons.
+  save_dir: runs/tokenizers/base_param_sweep_hypotheses_v1_small
+  model_path: null
+  special_tokens_map_path: null
+
+train:
+  # Match the ~13M proxy used in the waveresnet & transformer sweeps.
+  d_model: 256
+  n_layers: 6
+  n_heads: 4
+  d_mlp: 1024
+  dropout: 0.0
+  positional_encoding: rope
+  attn_impl: auto
+  batch_tokens: 32768
+  grad_accum_steps: 1
+  lr: 0.002
+  weight_decay: 0.01
+  warmup_steps: 100
+  optimizer: adamw
+  betas: [0.9, 0.95]
+  eps: 1.0e-8
+  label_smoothing: 0.0
+  grad_clip: 1.0
+  amp: bf16
+  grad_checkpoint: false
+  log_gpu_mem: false
+  ddp: "off"
+  max_steps: 500
+  log_interval_steps: 25
+  save_interval_steps: 1000000
+  mlp_activation: sine
+  sine_params:
+    amp_init: 1.0
+    freq_init: 2.0
+    # Per-feature Gaussian init; this is the new knob (std=0 disables noise).
+    freq_init_std: 0.25
+    damp_init: 0.001
+    trainable: true
+
+eval:
+  batch_tokens: 32768
+  max_tokens: 1000000
+  max_batches: 0
+
+sweep:
+  train:
+    # Hypothesis 1: the sweet spot is near freq_init≈2 (not 1 or 4).
+    sine_params:
+      freq_init: [1.75, 2.0, 2.25]
+      # Hypothesis 2: small per-feature noise improves optimization; too much hurts.
+      freq_init_std: [0.0, 0.25, 0.5]
+    # Hypothesis 3: the best LR is around 2e-3 for this proxy.
+    lr: [0.0018, 0.002, 0.0022]

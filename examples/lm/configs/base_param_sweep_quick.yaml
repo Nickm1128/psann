@@ -1,7 +1,7 @@
 bench:
-  run_name: base_shootout
+  run_name: base_param_sweep_quick
   out_dir: reports/benchmarks
-  bases: [respsann, sgrpsann, waveresnet]
+  bases: [respsann, waveresnet]
   seeds: [1337]
   reuse_tokenizer: true
   with_lm_eval: false
@@ -12,6 +12,7 @@ bench:
 data:
   dataset: iohadrubin/wikitext-103-raw-v1
   name: null
+  data_files: null
   revision: null
   train_split: train
   val_split: validation
@@ -29,7 +30,7 @@ tokenizer:
   vocab_size: 16384
   min_frequency: 2
   sample_limit: 20000
-  save_dir: runs/tokenizers/base_compare_quick
+  save_dir: runs/tokenizers/base_param_sweep_quick
   model_path: null
   special_tokens_map_path: null
 
@@ -62,3 +63,8 @@ eval:
   batch_tokens: 32768
   max_tokens: 200000
   max_batches: 0
+
+sweep:
+  train:
+    lr: [0.0002, 0.0004, 0.0006]
+    warmup_steps: [100, 200]

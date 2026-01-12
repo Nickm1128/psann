@@ -230,6 +230,7 @@ class HFTextStreamingLMDataset(IterableDataset):
         split: str = "train",
         text_key: str = "text",
         name: str | None = None,
+        data_files: Any = None,
         revision: str | None = None,
         shuffle: bool = False,
         seed: int = 1337,
@@ -243,6 +244,7 @@ class HFTextStreamingLMDataset(IterableDataset):
         self.split = str(split)
         self.text_key = str(text_key)
         self.name = name
+        self.data_files = data_files
         self.revision = revision
         self.shuffle = bool(shuffle)
         self.seed = int(seed)
@@ -258,13 +260,30 @@ class HFTextStreamingLMDataset(IterableDataset):
     def __iter__(self):
         from datasets import load_dataset  # type: ignore
 
-        stream = load_dataset(
-            self.dataset,
-            name=self.name,
-            split=self.split,
-            streaming=True,
-            revision=self.revision,
-        )
+        data_files = self.data_files
+        if isinstance(data_files, str):
+            df = data_files.strip()
+            if "," in df:
+                data_files = [s.strip() for s in df.split(",") if s.strip()]
+            else:
+                data_files = df
+
+        if data_files:
+            stream = load_dataset(
+                self.dataset,
+                data_files=data_files,
+                split=self.split,
+                streaming=True,
+                revision=self.revision,
+            )
+        else:
+            stream = load_dataset(
+                self.dataset,
+                name=self.name,
+                split=self.split,
+                streaming=True,
+                revision=self.revision,
+            )
         try:
             import torch.distributed as dist
 

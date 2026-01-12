@@ -97,6 +97,17 @@ class TrainConfig:
     dataloader_prefetch_factor: int = 2
     dataloader_persistent_workers: bool = True
     hf_cache_limit_gb: float | None = None
+    # Eval (optional). When val_dataset is provided, trainer can periodically report ppl.
+    eval_interval_steps: int = 0
+    eval_max_batches: int = 0
+    # torch.compile (PyTorch 2.x). Only enabled when explicitly requested.
+    torch_compile: bool = False
+    torch_compile_mode: str = "default"  # default | reduce-overhead | max-autotune
+    torch_compile_fullgraph: bool = False
+    torch_compile_dynamic: bool = False
+    # CUDA memory QoL (optional)
+    cuda_empty_cache_after_init: bool = False
+    cuda_empty_cache_interval_steps: int = 0
 
     def __post_init__(self) -> None:
         if self.epochs <= 0:
@@ -129,3 +140,10 @@ class TrainConfig:
             raise ValueError("dataloader_prefetch_factor must be >= 1")
         if self.hf_cache_limit_gb is not None and self.hf_cache_limit_gb <= 0:
             raise ValueError("hf_cache_limit_gb must be positive when provided")
+        if self.eval_interval_steps < 0:
+            raise ValueError("eval_interval_steps must be >= 0")
+        if self.eval_max_batches < 0:
+            raise ValueError("eval_max_batches must be >= 0")
+        if self.cuda_empty_cache_interval_steps < 0:
+            raise ValueError("cuda_empty_cache_interval_steps must be >= 0")
+        self.torch_compile_mode = str(getattr(self, "torch_compile_mode", "default") or "default").strip()

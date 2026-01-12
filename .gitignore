@@ -46,6 +46,9 @@ runs/
 artifacts/
 eval_data/
 
+# Benchmark sweep artifacts (can be huge)
+reports/benchmarks/
+
 # Examples artifacts
 examples/logs/
 examples/results_*.csv

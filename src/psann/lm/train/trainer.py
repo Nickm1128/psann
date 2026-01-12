@@ -22,6 +22,7 @@ from typing import Any, Optional, Dict
 import os
 import time
 from functools import partial
+from collections import deque
 
 import torch
 from torch import nn
@@ -50,7 +51,14 @@ class Trainer:
         self._last_cache_cleanup: float = 0.0
         self._last_cache_warn: float = 0.0
 
-    def _save_checkpoint(self, model: nn.Module, optim: torch.optim.Optimizer, tag: str) -> None:
+    def _save_checkpoint(
+        self,
+        model: nn.Module,
+        optim: torch.optim.Optimizer,
+        tag: str,
+        *,
+        data_state: Optional[Dict[str, Any]] = None,
+    ) -> None:
         ckpt_dir = self.cfg.checkpoint_dir
         try:
             os.makedirs(ckpt_dir, exist_ok=True)
@@ -77,6 +85,8 @@ class Trainer:
             "optim": optim.state_dict(),
             "cfg": self.cfg.__dict__,
         }
+        if data_state:
+            payload["data_state"] = dict(data_state)
         path = os.path.join(ckpt_dir, f"{tag}.pt")
         torch.save(payload, path)
 
@@ -355,6 +365,11 @@ class Trainer:
                 1, int(_math.ceil(float(steps_per_epoch) / float(accum)))
             )
         scheduler = self._build_scheduler(optim, total_optimizer_steps)
+        steps_per_epoch_optimizer = (
+            int(steps_per_epoch)
+            if steps_per_epoch_cfg is not None
+            else max(1, int(_math.ceil(float(steps_per_epoch) / float(accum))))
+        )
 
         # ---- AMP setup ----
         amp_mode = str(self.cfg.amp).lower()
@@ -396,9 +411,117 @@ class Trainer:
             except Exception as exc:
                 print(f"[trainer] Warning: failed to resume from {resume_checkpoint}: {exc}")
 
+        # Optional torch.compile. Keep it opt-in and avoid DDP/FSDP for now.
+        # Note: compile happens after resume loading so we don't have to deal with
+        # load_state_dict/optimizer edge-cases on compiled wrappers.
+        compiled_enabled = False
+        if bool(getattr(self.cfg, "torch_compile", False)):
+            if ddp_enabled or use_fsdp:
+                if is_main:
+                    print("[trainer] torch.compile requested but DDP/FSDP is enabled; skipping.")
+            elif not hasattr(torch, "compile"):
+                if is_main:
+                    print("[trainer] torch.compile requested but torch.compile is unavailable; skipping.")
+            else:
+                mode = str(getattr(self.cfg, "torch_compile_mode", "default") or "default").strip()
+                fullgraph = bool(getattr(self.cfg, "torch_compile_fullgraph", False))
+                dynamic = bool(getattr(self.cfg, "torch_compile_dynamic", False))
+                try:
+                    t0_compile = time.time()
+                    wrapped = torch.compile(
+                        wrapped, mode=mode, fullgraph=fullgraph, dynamic=dynamic
+                    )
+                    if is_main:
+                        dt = time.time() - t0_compile
+                        print(
+                            f"[trainer] torch.compile enabled (mode={mode}, fullgraph={fullgraph}, dynamic={dynamic}) "
+                            f"in {dt:.1f}s"
+                        )
+                    compiled_enabled = True
+                except Exception as exc:
+                    if is_main:
+                        print(f"[trainer] torch.compile failed ({exc}); continuing without compile.")
+                    compiled_enabled = False
+
+        # Optional: free unused cached memory after init/compile so other processes
+        # have VRAM headroom. This trades some performance for lower reserved VRAM.
+        if (
+            device.type == "cuda"
+            and bool(getattr(self.cfg, "cuda_empty_cache_after_init", False))
+            and hasattr(torch.cuda, "empty_cache")
+        ):
+            try:
+                torch.cuda.empty_cache()
+                if is_main:
+                    print("[trainer] torch.cuda.empty_cache() after init/compile")
+            except Exception:
+                pass
+
         micro = 0
         global_step = start_step  # optimizer steps
-        accum = max(1, int(self.cfg.grad_accum_steps))
+        log_interval = max(1, int(self.cfg.log_interval_steps))
+        ppl_window = deque(maxlen=log_interval)
+        eval_interval = max(0, int(getattr(self.cfg, "eval_interval_steps", 0) or 0))
+        eval_max_batches = max(0, int(getattr(self.cfg, "eval_max_batches", 0) or 0))
+        empty_cache_interval = max(
+            0, int(getattr(self.cfg, "cuda_empty_cache_interval_steps", 0) or 0)
+        )
+        data_state = {
+            "seq_len": int(max_length),
+            "micro_batch": int(batch_size),
+            "grad_accum_steps": int(accum),
+            "sequences_per_step": int(batch_size * accum),
+            "tokens_per_step": int(batch_size * max_length * accum),
+        }
+        last_eval_step = -1
+
+        def _eval_once(step: int) -> float:
+            nonlocal last_eval_step
+            if val_dataset is None or step == last_eval_step:
+                return float("nan")
+            last_eval_step = step
+            limit_batches = eval_max_batches if eval_max_batches > 0 else 128
+            vdl = DataLoader(
+                val_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                collate_fn=collate_batch,
+                pin_memory=(device.type == "cuda"),
+                num_workers=0,
+            )
+            wrapped.eval()
+            criterion_eval = nn.CrossEntropyLoss()
+            vloss_sum = 0.0
+            vtoks = 0
+            t0 = time.time()
+            with torch.no_grad():
+                for i, vbatch in enumerate(vdl):
+                    if i >= limit_batches:
+                        break
+                    vinput = vbatch["input_ids"].to(device)
+                    vlabels = vbatch["labels"].to(device)
+                    with autocast_ctx:
+                        vlogits = wrapped(vinput)  # type: ignore[operator]
+                        bsz, seqlen, vocab = vlogits.shape
+                        vloss = criterion_eval(
+                            vlogits.view(bsz * seqlen, vocab), vlabels.view(bsz * seqlen)
+                        )
+                    vloss_sum += float(vloss.item()) * float(bsz * seqlen)
+                    vtoks += int(bsz * seqlen)
+            wrapped.train()
+            avg_loss = vloss_sum / max(1, vtoks)
+            try:
+                vppl = float(_math.exp(avg_loss))
+            except Exception:
+                vppl = float("nan")
+            dt = time.time() - t0
+            print(
+                f"[eval] step={step} tokens={vtoks} loss={avg_loss:.4f} ppl={vppl:.3f} dt={dt:.1f}s"
+            )
+            return float(avg_loss)
+
+        micro_loss_sum = 0.0
+        micro_loss_count = 0
         for epoch in range(start_epoch, self.cfg.epochs):
             self.state.epoch = epoch + 1
             steps_this_epoch = 0
@@ -416,48 +539,108 @@ class Trainer:
                 sync_ctx = (
                     nullcontext() if (micro + 1) == accum or no_sync_ctx is None else no_sync_ctx()
                 )
-                with sync_ctx:
-                    with autocast_ctx:
-                        logits = wrapped(input_ids)  # type: ignore[operator]
-                        B, T, V = logits.shape
-                        loss = criterion(logits.view(B * T, V), labels.view(B * T))
-                        loss = loss / float(accum)
-                    if scaler.is_enabled():
-                        scaler.scale(loss).backward()
-                    else:
-                        loss.backward()
-                micro += 1
-
-                # Logging on micro-steps if requested
-                if (
-                    is_main
-                    and (global_step + 1) % max(1, self.cfg.log_interval_steps) == 0
-                    and micro == accum
-                ):
+                for attempt in range(2):
                     try:
-                        ppl = float(_math.exp(loss.detach().float().item() * accum))
-                    except Exception:
-                        ppl = float("nan")
-                    lr = optim.param_groups[0]["lr"]
-                    grad_norm = self._grad_global_norm(model)
-                    toks = int(B * T * accum)
-                    print(
-                        f"rank={rank} epoch={epoch+1} step={global_step+1} loss={loss.detach().float().item()*accum:.4f} "
-                        f"ppl={ppl:.3f} lr={lr:.6g} grad_norm={grad_norm:.3f} toks/step~{toks}"
-                    )
-                    if bool(getattr(self.cfg, "log_gpu_mem", False)) and device.type == "cuda":
+                        with sync_ctx:
+                            with autocast_ctx:
+                                logits = wrapped(input_ids)  # type: ignore[operator]
+                                B, T, V = logits.shape
+                                loss = criterion(logits.view(B * T, V), labels.view(B * T))
+                                loss = loss / float(accum)
+                            if scaler.is_enabled():
+                                scaler.scale(loss).backward()
+                            else:
+                                loss.backward()
+                        # Track per-micro loss for rolling averages (unscale back to per-step units).
                         try:
-                            alloc = torch.cuda.memory_allocated(device) / float(1024**3)
-                            reserved = torch.cuda.memory_reserved(device) / float(1024**3)
-                            max_alloc = torch.cuda.max_memory_allocated(device) / float(1024**3)
+                            micro_loss_sum += float(loss.detach().float().item()) * float(accum)
+                            micro_loss_count += 1
+                        except Exception:
+                            pass
+                        break
+                    except BaseException as exc:
+                        msg = str(exc).lower()
+                        is_oom = ("out of memory" in msg) or isinstance(
+                            exc, getattr(torch, "OutOfMemoryError", RuntimeError)
+                        )
+                        if not (device.type == "cuda" and is_oom):
+                            raise
+
+                        if is_main:
                             print(
-                                f"[gpu-mem] rank={rank} step={global_step+1} "
-                                f"alloc_gb={alloc:.3f} reserved_gb={reserved:.3f} max_alloc_gb={max_alloc:.3f}"
+                                f"[trainer] CUDA OOM during backward (step={global_step+1} micro={micro+1}/{accum})."
                             )
+
+                        # Best-effort cleanup.
+                        try:
+                            optim.zero_grad(set_to_none=True)
+                        except Exception:
+                            pass
+                        try:
+                            torch.cuda.empty_cache()
                         except Exception:
                             pass
 
+                        # If torch.compile was enabled, fall back to eager and retry once.
+                        if compiled_enabled and attempt == 0:
+                            if is_main:
+                                print("[trainer] Disabling torch.compile and retrying in eager mode.")
+                            try:
+                                import torch._dynamo as dynamo  # type: ignore
+
+                                dynamo.reset()
+                            except Exception:
+                                pass
+                            wrapped = model
+                            compiled_enabled = False
+                            micro = 0
+                            micro_loss_sum = 0.0
+                            micro_loss_count = 0
+                            continue
+
+                        raise
+                micro += 1
+
+                # Logging on micro-steps if requested
                 if micro == accum:
+                    # Compute end-of-step metrics (pre-optimizer step) so logging uses a consistent
+                    # per-optimizer-step loss/ppl even under gradient accumulation.
+                    step_loss = float("nan")
+                    if micro_loss_count > 0:
+                        step_loss = micro_loss_sum / float(micro_loss_count)
+                    try:
+                        step_ppl = float(_math.exp(step_loss))
+                    except Exception:
+                        step_ppl = float("nan")
+                    ppl_window.append(step_ppl)
+                    try:
+                        ppl_avg = float(sum(ppl_window) / float(len(ppl_window))) if ppl_window else float("nan")
+                    except Exception:
+                        ppl_avg = float("nan")
+                    micro_loss_sum = 0.0
+                    micro_loss_count = 0
+
+                    if is_main and (global_step + 1) % log_interval == 0:
+                        lr = optim.param_groups[0]["lr"]
+                        grad_norm = self._grad_global_norm(model)
+                        toks = int(B * T * accum)
+                        print(
+                            f"rank={rank} epoch={epoch+1} step={global_step+1} "
+                            f"loss={step_loss:.4f} ppl={step_ppl:.3f} lr={lr:.6g} "
+                            f"grad_norm={grad_norm:.3f} toks/step~{toks} ppl_avg{log_interval}={ppl_avg:.3f}"
+                        )
+                        if bool(getattr(self.cfg, "log_gpu_mem", False)) and device.type == "cuda":
+                            try:
+                                alloc = torch.cuda.memory_allocated(device) / float(1024**3)
+                                reserved = torch.cuda.memory_reserved(device) / float(1024**3)
+                                max_alloc = torch.cuda.max_memory_allocated(device) / float(1024**3)
+                                print(
+                                    f"[gpu-mem] rank={rank} step={global_step+1} "
+                                    f"alloc_gb={alloc:.3f} reserved_gb={reserved:.3f} max_alloc_gb={max_alloc:.3f}"
+                                )
+                            except Exception:
+                                pass
+
                     # Optional grad clipping
                     if self.cfg.grad_clip > 0:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), self.cfg.grad_clip)
@@ -474,24 +657,60 @@ class Trainer:
                     steps_this_epoch += 1
                     self._maybe_cleanup_cache()
 
+                    if empty_cache_interval and device.type == "cuda":
+                        if global_step % max(1, empty_cache_interval) == 0:
+                            try:
+                                torch.cuda.empty_cache()
+                            except Exception:
+                                pass
+
+                    if eval_interval and is_main and val_dataset is not None:
+                        if global_step % max(1, eval_interval) == 0:
+                            _eval_once(global_step)
+
                     # Periodic checkpointing and optional validation
                     if is_main and global_step % max(1, self.cfg.save_interval_steps) == 0:
                         # Save via wrapper to support FSDP full state dict
-                        self._save_checkpoint(wrapped, optim, tag=f"ckpt_step{global_step:06d}")
+                        self._save_checkpoint(
+                            wrapped,
+                            optim,
+                            tag=f"ckpt_step{global_step:06d}",
+                            data_state=data_state,
+                        )
                         if val_dataset is not None:
-                            vloss = self.validate(model, val_dataset)
+                            vloss = _eval_once(global_step)
                             if vloss < self.best_val_loss:
                                 self.best_val_loss = float(vloss)
-                                self._save_checkpoint(wrapped, optim, tag="best")
+                                self._save_checkpoint(
+                                    wrapped, optim, tag="best", data_state=data_state
+                                )
 
-                    if steps_this_epoch >= max(1, steps_per_epoch):
+                    if steps_per_epoch_cfg is not None:
+                        if global_step >= steps_per_epoch_optimizer:
+                            break
+                    elif steps_this_epoch >= steps_per_epoch_optimizer:
                         break
-            if steps_this_epoch >= max(1, steps_per_epoch):
+            if steps_per_epoch_cfg is not None:
+                if global_step >= steps_per_epoch_optimizer:
+                    break
+            elif steps_this_epoch >= steps_per_epoch_optimizer:
                 continue
+
+        # If we were asked to run a fixed number of optimizer steps (streaming-style),
+        # but the dataloader ended early, warn loudly. This typically means the
+        # underlying dataset (after filtering) was smaller than expected.
+        if steps_per_epoch_cfg is not None and global_step < steps_per_epoch_optimizer:
+            if is_main:
+                print(
+                    "[trainer] WARNING: DataLoader exhausted early "
+                    f"(step={global_step} < max_steps={steps_per_epoch_optimizer}). "
+                    "This usually means your dataset/config/filtering ran out of samples. "
+                    "Relax filters or use a larger dataset/config to reach the intended token budget."
+                )
 
         # Final save (main rank only)
         if is_main:
-            self._save_checkpoint(wrapped, optim, tag="final")
+            self._save_checkpoint(wrapped, optim, tag="final", data_state=data_state)
 
     def validate(self, model: nn.Module, dataset) -> float:
         model.eval()

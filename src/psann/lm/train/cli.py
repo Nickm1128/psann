@@ -91,8 +91,11 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - CLI wiring
         vocab_size=vocab_size,
         sine_params=dict(
             amp_init=float(sp.get("amp_init", 1.0)),
+            amp_init_std=float(sp.get("amp_init_std", 0.0)),
             freq_init=float(sp.get("freq_init", 1.0)),
+            freq_init_std=float(sp.get("freq_init_std", 0.0)),
             damp_init=float(sp.get("damp_init", 0.01)),
+            damp_init_std=float(sp.get("damp_init_std", 0.0)),
             trainable=bool(sp.get("trainable", True)),
         ),
         rope=bool(True if rope_flag is None else rope_flag),

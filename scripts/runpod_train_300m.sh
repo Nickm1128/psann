@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RunPod training script for ~300M PSANN-LM (63B tokens target)
+# RunPod training script for ~300M PSANN-LM (6B tokens target, Chinchilla-style)
 # Prereqs (PyPI-style): `pip install psann psannlm` and CUDA-ready PyTorch.
 # For local development from this repo: `pip install -e .[dev,lm]`.
 
@@ -15,7 +15,7 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
 fi
 
 ATTN_FLAGS="${ATTN_FLAGS:---attn-impl sdpa}"
-DATA_FLAGS="${DATA_FLAGS:-}"
+DATA_FLAGS="${DATA_FLAGS:---hf-shuffle --hf-shuffle-buffer 10000}"
 AMP_FLAGS="${AMP_FLAGS:-}"
 EXTRA_FLAGS="${EXTRA_FLAGS:-}"
 AMP_MODE="${AMP_MODE:-bf16}"
@@ -27,7 +27,7 @@ LOG_FILE="$LOG_DIR/${RUN_NAME}.log"
 
 SEQ_LEN=${SEQ_LEN:-2048}
 TOKENS_TARGET_OVERRIDDEN="${TOKENS_TARGET:-}"
-TOKENS_TARGET_GB=${TOKENS_TARGET_GB:-50}
+TOKENS_TARGET_GB=${TOKENS_TARGET_GB:-6}
 if [ -n "$TOKENS_TARGET_OVERRIDDEN" ]; then
   TOKENS_TARGET_VALUE=$TOKENS_TARGET_OVERRIDDEN
 else
@@ -42,10 +42,16 @@ export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-/workspace/.hf_cache}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-/workspace/.hf_cache}"
 export TOKENIZERS_PARALLELISM=true
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# Prefer the modern allocator knob. This helps reduce fragmentation on long runs.
+# Override or unset externally if you want different behavior.
+export PYTORCH_ALLOC_CONF="${PYTORCH_ALLOC_CONF:-expandable_segments:True}"
+# Clear the deprecated knob if it was set by the environment.
+unset PYTORCH_CUDA_ALLOC_CONF
 
 SKIP_VENV=${SKIP_VENV:-0}
-VENV_FLAGS=${VENV_FLAGS:-}
+# Default to reusing the container's CUDA-enabled PyTorch via system-site-packages.
+# (Set VENV_FLAGS="" to force an isolated venv.)
+VENV_FLAGS=${VENV_FLAGS-"--system-site-packages"}
 if [ "$SKIP_VENV" -eq 0 ]; then
   $PYTHON_BIN -m venv ${VENV_FLAGS} .venv
   # shellcheck source=/dev/null
@@ -130,23 +136,76 @@ else
   LAUNCHER="$PYTHON_BIN -u -m psannlm.train"
 fi
 
+HF_DATASET=${HF_DATASET:-HuggingFaceFW/fineweb-edu}
+HF_NAME=${HF_NAME:-sample-10BT}
+HF_SPLIT=${HF_SPLIT:-train}
+HF_TEXT_KEY=${HF_TEXT_KEY:-text}
+HF_KEEP_ASCII_ONLY=${HF_KEEP_ASCII_ONLY:-0}
+
+# Tokenizer + eval shard (saved on disk so we can reuse across checkpoints)
+TOKENIZER_DIR=${TOKENIZER_DIR:-runs/tokenizer_300m_fineweb_edu_sample10BT}
+EVAL_DATA_FILES=${EVAL_DATA_FILES:-eval_data/fineweb_edu_sample10BT_eval.jsonl}
+EVAL_TARGET_TOKENS=${EVAL_TARGET_TOKENS:-10000000}
+EVAL_MAX_BATCHES=${EVAL_MAX_BATCHES:-512}
+
+# Sweep-inspired sine init defaults (per-feature gaussian on freq)
+SINE_AMP_INIT=${SINE_AMP_INIT:-1.0}
+SINE_DAMP_INIT=${SINE_DAMP_INIT:-0.001}
+SINE_FREQ_INIT=${SINE_FREQ_INIT:-2.25}
+SINE_FREQ_INIT_STD=${SINE_FREQ_INIT_STD:-0.25}
+
+# Sweep-inspired LR (tune as needed; recommended to run a short pilot sweep at full scale)
+LR=${LR:-0.0025}
+WARMUP_STEPS=${WARMUP_STEPS:-500}
+WEIGHT_DECAY=${WEIGHT_DECAY:-0.01}
+
+# Leave some VRAM headroom for system/processes.
+# Note: too low of a fraction can trip PyTorch's internal cap if the caching allocator
+# reserves a lot of memory; bump this up if you see OOM with lots of "reserved but unallocated".
+CUDA_MEMORY_FRACTION=${CUDA_MEMORY_FRACTION:-0.90}
+CUDA_EMPTY_CACHE_AFTER_INIT=${CUDA_EMPTY_CACHE_AFTER_INIT:-1}
+
+# torch.compile is a major speed win on GB10 for WaveResNet; set TORCH_COMPILE=0 to disable.
+TORCH_COMPILE=${TORCH_COMPILE:-1}
+TORCH_COMPILE_MODE=${TORCH_COMPILE_MODE:-default}
+
+CUDA_EMPTY_CACHE_FLAGS=""
+if [ "${CUDA_EMPTY_CACHE_AFTER_INIT}" != "0" ]; then
+  CUDA_EMPTY_CACHE_FLAGS="--cuda-empty-cache-after-init"
+fi
+
+TORCH_COMPILE_FLAGS=""
+if [ "${TORCH_COMPILE}" != "0" ]; then
+  TORCH_COMPILE_FLAGS="--torch-compile --torch-compile-mode ${TORCH_COMPILE_MODE}"
+fi
+
+HF_TEXT_FILTER_FLAGS=""
+if [ "${HF_KEEP_ASCII_ONLY}" != "0" ]; then
+  HF_TEXT_FILTER_FLAGS="--hf-keep-ascii-only"
+fi
+
 CMD="${LAUNCHER} \
-  --hf-dataset allenai/c4 --hf-name en --hf-text-key text \
-  --hf-keep-ascii-only --hf-lang en --hf-lang-threshold 0.85 \
+  --hf-dataset ${HF_DATASET} --hf-name ${HF_NAME} --hf-split ${HF_SPLIT} --hf-text-key ${HF_TEXT_KEY} \
+  ${HF_TEXT_FILTER_FLAGS} \
+  --eval-data-files ${EVAL_DATA_FILES} --eval-create-shard --eval-target-tokens ${EVAL_TARGET_TOKENS} --eval-max-batches ${EVAL_MAX_BATCHES} \
   --tokenizer-backend tokenizers --train-tokenizer \
-  --tokenizer-save-dir runs/tokenizer_300m --tokenizer-sample-limit 150000 \
+  --tokenizer-save-dir ${TOKENIZER_DIR} --tokenizer-sample-limit 150000 \
   --hf-cache-limit-gb 40 \
   --base waveresnet --d-model 1024 --n-layers 16 --n-heads 16 --d-mlp 4096 \
+  --sine-amp-init ${SINE_AMP_INIT} --sine-damp-init ${SINE_DAMP_INIT} --sine-freq-init ${SINE_FREQ_INIT} --sine-freq-init-std ${SINE_FREQ_INIT_STD} \
   --seq_len ${SEQ_LEN} --dataset_streaming true --max_steps ${MAX_STEPS} \
   --tokens_target ${TOKENS_TARGET} \
-  --dataloader_num_workers 2 \
+  --dataloader_num_workers 0 \
   --batch-tokens ${BATCH_TOKENS} --grad-accum-steps ${GRAD_ACCUM} \
-  --lr 1e-3 --warmup-steps 500 --weight-decay 0.01 \
+  --lr ${LR} --warmup-steps ${WARMUP_STEPS} --weight-decay ${WEIGHT_DECAY} \
+  --cuda-memory-fraction ${CUDA_MEMORY_FRACTION} \
+  ${CUDA_EMPTY_CACHE_FLAGS} \
+  ${TORCH_COMPILE_FLAGS} \
   --amp ${AMP_MODE} ${FSDP_FLAGS} ${OPT_FLAGS} \
   --grad-checkpoint \
   --log-interval-steps 25 \
-  --checkpoint-dir runs/lm/300m_en \
-  --export-dir artifacts/psannlm_300m_bundle \
+  --checkpoint-dir runs/lm/300m_fineweb_edu_sample10BT_6b \
+  --export-dir artifacts/psannlm_300m_fineweb_edu_bundle \
   ${ATTN_FLAGS:+$ATTN_FLAGS} \
   ${DATA_FLAGS:+$DATA_FLAGS} \
   ${AMP_FLAGS:+$AMP_FLAGS} \

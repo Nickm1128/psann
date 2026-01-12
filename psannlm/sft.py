@@ -415,6 +415,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable gradient checkpointing (can OOM at long seq_len).",
     )
     p.set_defaults(grad_checkpoint=True)
+    p.add_argument(
+        "--torch-compile",
+        action="store_true",
+        help="Enable torch.compile for the model (single GPU only; skipped under DDP/FSDP).",
+    )
+    p.add_argument(
+        "--torch-compile-mode",
+        type=str,
+        default="default",
+        choices=["default", "reduce-overhead", "max-autotune"],
+        help="torch.compile mode.",
+    )
+    p.add_argument(
+        "--torch-compile-fullgraph",
+        action="store_true",
+        help="Pass fullgraph=True to torch.compile (can be more brittle).",
+    )
+    p.add_argument(
+        "--torch-compile-dynamic",
+        action="store_true",
+        help="Pass dynamic=True to torch.compile (for dynamic shapes; can reduce performance).",
+    )
     p.add_argument("--log-interval-steps", type=int, default=25)
     p.add_argument("--save-interval-steps", type=int, default=500)
     p.add_argument("--max-steps", type=int, default=0)
@@ -616,6 +638,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         log_interval_steps=int(args.log_interval_steps),
         save_interval_steps=int(args.save_interval_steps),
         grad_checkpoint=bool(args.grad_checkpoint),
+        torch_compile=bool(getattr(args, "torch_compile", False)),
+        torch_compile_mode=str(getattr(args, "torch_compile_mode", "default")),
+        torch_compile_fullgraph=bool(getattr(args, "torch_compile_fullgraph", False)),
+        torch_compile_dynamic=bool(getattr(args, "torch_compile_dynamic", False)),
         dataloader_num_workers=int(args.num_workers),
     )
 
