@@ -48,6 +48,9 @@ eval_data/
 
 # Benchmark sweep artifacts (can be huge)
 reports/benchmarks/
+reports/geo_sparse/
+reports/geo_sparse_micro/
+reports/geo_sparse_sweep/
 
 # Examples artifacts
 examples/logs/

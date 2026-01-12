@@ -15,6 +15,7 @@ __all__ = [
     "ResConvPSANNRegressor",
     "SGRPSANNRegressor",
     "WaveResNetRegressor",
+    "GeoSparseRegressor",
     # Expanders / activation configs
     "LSM",
     "LSMExpander",
@@ -61,6 +62,11 @@ __all__ = [
     "make_drift_series",
     "make_shock_series",
     "make_regime_switch_ts",
+    # Param utilities
+    "count_params",
+    "dense_mlp_params",
+    "geo_sparse_net_params",
+    "match_dense_width",
 ]
 
 _LAZY_ATTRS = {
@@ -71,6 +77,7 @@ _LAZY_ATTRS = {
     "ResConvPSANNRegressor": ".sklearn",
     "SGRPSANNRegressor": ".sklearn",
     "WaveResNetRegressor": ".sklearn",
+    "GeoSparseRegressor": ".sklearn",
     # Expanders / activation configs
     "LSM": ".lsm",
     "LSMExpander": ".lsm",
@@ -117,6 +124,11 @@ _LAZY_ATTRS = {
     "make_drift_series": ".utils",
     "make_shock_series": ".utils",
     "make_regime_switch_ts": ".utils",
+    # Param utilities
+    "count_params": ".params",
+    "dense_mlp_params": ".params",
+    "geo_sparse_net_params": ".params",
+    "match_dense_width": ".params",
 }
 
 
