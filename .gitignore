@@ -19,6 +19,7 @@ __pycache__/
 coverage/
 htmlcov/
 .ruff_cache/
+.mypy_cache/
 
 # Temporary scratch files
 temp_psann/
@@ -26,31 +27,55 @@ temp_patch.diff
 tmp_patch.txt
 *.log
 
+# Editor/IDE
+.vscode/
+.idea/
+
 # Notebook artifacts
 .ipynb_checkpoints/
 *.nbconvert.ipynb
 **/outputs/*.ipynb
 
+# Local caches and run artifacts (do not commit)
+.cache/
+.hf_cache/
+**/.cache/huggingface/
+**/.cache/torch/
+wandb/
+mlruns/
+lightning_logs/
+tb_logs/
+tensorboard/
+
 # Local testing datasets and outputs
-datasets/
+datasets/*
+!datasets/README.md
+!datasets/wave_resnet_small.npz
 datasets.zip
 colab_results_light/
 colab_tests_light/
 downloads_tmp/
-outputs/
+outputs/*
+!outputs/README.md
 outputs_non_visual_data.zip
 tmp_extract/
 tmp_outputs/
 .pip_inspect/
-runs/
-artifacts/
+eval_out/
 eval_data/
+artifacts/
+logs/*
+!logs/README.md
+runs/*
+!runs/README.md
+reports/*
+!reports/README.md
 
-# Benchmark sweep artifacts (can be huge)
-reports/benchmarks/
-reports/geo_sparse/
-reports/geo_sparse_micro/
-reports/geo_sparse_sweep/
+# Common model / checkpoint artifacts
+*.pt
+*.pth
+*.ckpt
+*.safetensors
 
 # Examples artifacts
 examples/logs/

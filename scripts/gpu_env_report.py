@@ -1,3 +1,14 @@
+"""Write a compact GPU/CUDA environment report for bug reports and benchmarks.
+
+Writes a JSON payload plus a short text summary under an output directory.
+
+Usage:
+  python scripts/gpu_env_report.py
+  python scripts/gpu_env_report.py --outdir outputs/gpu_tests/<timestamp>
+"""
+
+from __future__ import annotations
+
 import argparse
 import json
 import os

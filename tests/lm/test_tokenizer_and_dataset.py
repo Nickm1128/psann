@@ -1,9 +1,10 @@
+import importlib.util
 import os
 import tempfile
 import pytest
 
-from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psann.lm.data.dataset import LMDataset, PackingConfig, StreamingLMDataset
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
+from psannlm.lm.data.dataset import LMDataset, PackingConfig, StreamingLMDataset
 
 
 def test_simple_tokenizer_roundtrip():
@@ -65,6 +66,10 @@ def test_streaming_lm_dataset(tmp_path: tempfile.TemporaryDirectory):
     assert tuple(ex["labels"].shape) == (6,)
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("sentencepiece") is None,
+    reason="sentencepiece not installed",
+)
 def test_tokenizer_auto_prefers_sentencepiece_when_available():
     texts = ["hello world", "goodnight moon"]
     cfg = TokenizerConfig(
@@ -84,7 +89,7 @@ def test_tokenizer_auto_falls_back_to_hf_when_sentencepiece_missing(monkeypatch)
     def _boom(*_, **__):
         raise ImportError("sentencepiece missing for test")
 
-    monkeypatch.setattr("psann.lm.data.tokenizer._make_sentencepiece_tokenizer", _boom)
+    monkeypatch.setattr("psannlm.lm.data.tokenizer._make_sentencepiece_tokenizer", _boom)
     texts = ["auto fallback is healthy"]
     tok = Tokenizer(TokenizerConfig(backend="auto", vocab_size=128, min_frequency=1))
     tok.fit(texts)
@@ -95,8 +100,8 @@ def test_tokenizer_auto_falls_back_to_simple_when_no_external(monkeypatch):
     def _boom(*_, **__):
         raise ImportError("missing dependency")
 
-    monkeypatch.setattr("psann.lm.data.tokenizer._make_sentencepiece_tokenizer", _boom)
-    monkeypatch.setattr("psann.lm.data.tokenizer._make_hf_tokenizers", _boom)
+    monkeypatch.setattr("psannlm.lm.data.tokenizer._make_sentencepiece_tokenizer", _boom)
+    monkeypatch.setattr("psannlm.lm.data.tokenizer._make_hf_tokenizers", _boom)
 
     tok = Tokenizer(TokenizerConfig(backend="auto"))
     tok.fit(["chars only"])
@@ -105,12 +110,11 @@ def test_tokenizer_auto_falls_back_to_simple_when_no_external(monkeypatch):
     assert len(ids) > 0
 
 
-@pytest.mark.skipif(pytest.importorskip, reason="conditional import check placeholder")
+@pytest.mark.skipif(
+    importlib.util.find_spec("tokenizers") is None,
+    reason="tokenizers not installed",
+)
 def test_hf_tokenizers_backend_import():
-    try:
-        import tokenizers  # noqa: F401
-    except Exception:
-        pytest.skip("tokenizers not installed")
     texts = ["hello tokenizers"]
     tok = Tokenizer(TokenizerConfig(backend="tokenizers", vocab_size=256, min_frequency=1))
     tok.fit(texts)

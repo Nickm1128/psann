@@ -1,3 +1,9 @@
+# Archived Note
+
+This document is historical and kept for reference. The active roadmap lives in
+`docs/project_cleanup_todo.md` and recent findings are summarised in
+`docs/PSANN_Results_Compendium.md`.
+
 # Research Findings and Next Steps
 
 This document summarizes what we learned from the current sklearn-style regressors and the latest ablation sweeps, plus a concrete set of follow-ups to investigate.
@@ -153,4 +159,3 @@ Improvements to increase confidence:
    - `gate_init=-4`, `gate_strength=0.1`, `k_fft=64`, `gate_type ∈ {rfft, fourier_features}`
 2. Add a context-aware dataset and rerun `wrn_*` ablations with context passed.
 3. If the above works, consider a simple `AutoPSANNRegressor` router to capture “tabular vs. sequence” best defaults in one estimator.
-

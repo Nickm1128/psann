@@ -32,10 +32,10 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from psann.lm.infer.generate import sample_next_token  # noqa: E402
-from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig  # noqa: E402
-from psann.lm.models.registry import get_base  # noqa: E402
-from psann.lm.models.sine import SineConfig  # noqa: E402
+from psannlm.lm.infer.generate import sample_next_token  # noqa: E402
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig  # noqa: E402
+from psannlm.lm.models.registry import get_base  # noqa: E402
+from psannlm.lm.models.sine import SineConfig  # noqa: E402
 
 
 def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:

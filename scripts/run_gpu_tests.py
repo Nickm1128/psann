@@ -1,3 +1,17 @@
+"""Run the GPU pytest suite and write artifacts to an output directory.
+
+This is a convenience wrapper around pytest that sets `PSANN_OUTPUT_DIR` so GPU
+tests can write structured artifacts (JSON/shape files) without polluting the
+repo root.
+
+Usage:
+  python scripts/run_gpu_tests.py
+  python scripts/run_gpu_tests.py --outdir outputs/gpu_tests/<timestamp>
+  python scripts/run_gpu_tests.py --markers "gpu and not slow" --testpaths "tests/gpu"
+"""
+
+from __future__ import annotations
+
 import argparse
 import os
 import sys

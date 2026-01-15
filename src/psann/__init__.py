@@ -139,7 +139,8 @@ def __getattr__(name: str):
             mod = importlib.import_module(module, __name__)
         except Exception as exc:  # pragma: no cover - import-time optional deps
             raise ImportError(
-                f"psann.{name} could not be imported from {module} (optional dependencies may be missing)."
+                f"psann.{name} could not be imported from {module} (optional dependencies may be missing). "
+                "Try installing extras like 'psann[sklearn]' or install 'psannlm' for LM tooling."
             ) from exc
         attr = getattr(mod, name)
         globals()[name] = attr

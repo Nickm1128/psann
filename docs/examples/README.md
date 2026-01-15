@@ -14,6 +14,7 @@ The curated set below replaces the legacy predictive-extras walkthroughs. Any re
 ## Core supervised and streaming workflows (≤ ~2 min CPU each)
 
 - **01_basic_regression.py** — minimal PSANNRegressor fit on a synthetic one-dimensional regression task (~15 s).
+- **03_custom_loss.py** — shows custom loss wiring plus save/load round-trip (~25 s).
 - **05_conv_preserve_shape_regression.py** — convolution-preserving variant that keeps spatial structure instead of flattening (~35 s).
 - **07_recurrent_forecasting.py** — stateful PSANN with a teacher-forced rollout for sequence prediction (~70 s).
 - **12_online_streaming_updates.py** — demonstrates streaming updates with `step(..., update_params=True)` and `stream_lr` enabled (~45 s).
@@ -21,6 +22,10 @@ The curated set below replaces the legacy predictive-extras walkthroughs. Any re
 - **14_psann_with_vs_without_lsm.py** — contrasts a baseline PSANN with a frozen LSM expander preprocessing stage (~90 s).
 
 These scripts share the refactored helper pipeline (`normalise_fit_args`, `prepare_inputs_and_scaler`) and stick to primary targets only.
+
+## GeoSparse (experimental)
+
+- **28_geosparse_regression.py** — minimal GeoSparseRegressor example on a small synthetic grid (~30 s).
 
 ## HISSO policies and episodic evaluation (≤ ~3 min CPU)
 
@@ -48,4 +53,3 @@ Run the benchmark scripts from the project root; outputs land under `docs/benchm
 ## Retired content
 
 Notebooks and scripts that targeted predictive extras or growth schedules were removed during the documentation refresh. If you need historic behaviour, consult the v0.9.18 tag in the repository history; new development should stay on the primary-output pipeline documented here.
-

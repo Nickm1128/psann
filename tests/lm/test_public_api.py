@@ -1,4 +1,4 @@
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm.lm import psannLM, psannLMDataPrep
 
 
 def test_public_api_fit_generate_and_checkpoint_roundtrip(tmp_path):

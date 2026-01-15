@@ -127,13 +127,13 @@ class PSANNLM(LM):
         assert ckpt is not None
 
         # Load PSANN-LM model
-        from psann.lm.api import psannLM  # type: ignore
+        from psannlm.lm.api import psannLM  # type: ignore
         inst = psannLM.load(ckpt)
         self.model = inst._ensure_model(int(inst.vocab_size or 32000))
         self.model.eval().to(self.device)
 
         # Build tokenizer facade; MUST match training to be meaningful
-        from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig  # type: ignore
+        from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig  # type: ignore
 
         cfg = TokenizerConfig(
             backend=str(tokenizer_backend or "auto"),

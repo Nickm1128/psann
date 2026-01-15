@@ -5,7 +5,7 @@ Minimal usage
 -------------
 
 ```
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm import psannLM, psannLMDataPrep
 
 texts = ["hello world", "goodnight moon"]
 data = psannLMDataPrep(

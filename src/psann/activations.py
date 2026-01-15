@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -181,3 +181,221 @@ class PhaseSineParam(SineParam):
         phi = self._phi.view(*shape)
 
         return A * torch.exp(-d * g) * torch.sin(f * z + phi)
+
+
+def _normalize_activation_name(name: str) -> str:
+    key = str(name).strip().lower()
+    aliases = {
+        "sine": "psann",
+        "respsann": "psann",
+    }
+    return aliases.get(key, key)
+
+
+def _normalize_ratios(
+    ratios: Optional[Sequence[float]],
+    n: int,
+    *,
+    ratio_sum_tol: float,
+) -> list[float]:
+    if n <= 0:
+        raise ValueError("activation_types must be non-empty")
+    if ratios is None:
+        return [1.0 / float(n)] * n
+    if len(ratios) != n:
+        raise ValueError("activation_ratios must have the same length as activation_types")
+    out: list[float] = []
+    for r in ratios:
+        rf = float(r)
+        if not math.isfinite(rf):
+            raise ValueError("activation_ratios must all be finite")
+        if rf < 0:
+            raise ValueError("activation_ratios must be >= 0")
+        out.append(rf)
+    s = float(sum(out))
+    if s <= 0:
+        raise ValueError("activation_ratios must have at least one positive value")
+    if abs(s - 1.0) > float(ratio_sum_tol):
+        raise ValueError(
+            f"activation_ratios must sum to 1 (within tol={float(ratio_sum_tol)}); got sum={s}"
+        )
+    # Renormalize so the sum is exactly 1.0 (within float error).
+    out = [r / s for r in out]
+    # Nudge last element to make the sum exactly 1.0 (deterministic).
+    drift = 1.0 - float(sum(out))
+    out[-1] = float(out[-1] + drift)
+    return out
+
+
+def _apportion_counts(total: int, ratios: Sequence[float]) -> list[int]:
+    """Convert ratios (sum=1) into integer counts summing to total."""
+    if total <= 0:
+        raise ValueError("total must be positive")
+    raw = [float(r) * float(total) for r in ratios]
+    base = [int(math.floor(x)) for x in raw]
+    remainders = [x - float(b) for x, b in zip(raw, base)]
+    remaining = int(total - sum(base))
+    if remaining < 0:
+        # Should not happen with floor, but guard.
+        raise ValueError("Internal error: apportioned counts exceeded total")
+    order = sorted(range(len(base)), key=lambda i: (remainders[i], -i), reverse=True)
+    for j in range(remaining):
+        base[order[j % len(base)]] += 1
+    # Safety: ensure exact sum.
+    if sum(base) != total:
+        raise ValueError("Internal error: apportioned counts do not sum to total")
+    return base
+
+
+BuilderFn = Callable[[int], nn.Module]
+
+
+class MixedActivation(nn.Module):
+    """Apply different activation modules to different feature indices.
+
+    This is designed for "per-neuron" activation heterogeneity: a fixed partition
+    of the feature dimension is assigned to each activation type.
+    """
+
+    def __init__(
+        self,
+        out_features: int,
+        *,
+        activation_types: Sequence[str],
+        activation_ratios: Optional[Sequence[float]] = None,
+        ratio_sum_tol: float = 1e-3,
+        seed: Optional[int] = None,
+        layout: str = "random",  # "random" | "contiguous"
+        feature_dim: int = -1,
+        builders: Optional[Mapping[str, BuilderFn]] = None,
+    ) -> None:
+        super().__init__()
+        if out_features <= 0:
+            raise ValueError("out_features must be positive")
+        self.out_features = int(out_features)
+        self.feature_dim = int(feature_dim)
+
+        norm_types = [_normalize_activation_name(t) for t in activation_types]
+        if not norm_types:
+            raise ValueError("activation_types must be non-empty")
+        if len(set(norm_types)) != len(norm_types):
+            raise ValueError("activation_types must be unique")
+
+        ratios = _normalize_ratios(
+            activation_ratios, len(norm_types), ratio_sum_tol=float(ratio_sum_tol)
+        )
+        counts = _apportion_counts(self.out_features, ratios)
+
+        key = str(layout or "random").lower()
+        if key not in {"random", "contiguous"}:
+            raise ValueError("layout must be 'random' or 'contiguous'")
+        self.layout = key
+        self.seed = seed
+
+        perm = torch.arange(self.out_features, dtype=torch.long)
+        if key == "random":
+            g = torch.Generator()
+            if seed is not None:
+                g.manual_seed(int(seed))
+            perm = torch.randperm(self.out_features, generator=g)
+
+        # Default builders (can be overridden by callers).
+        default_builders: dict[str, BuilderFn] = {
+            "relu": lambda n: nn.ReLU(),
+            "tanh": lambda n: nn.Tanh(),
+            "gelu": lambda n: nn.GELU(),
+            "psann": lambda n: SineParam(n),
+            "phase_psann": lambda n: PhaseSineParam(n),
+        }
+        merged_builders = dict(default_builders)
+        if builders:
+            merged_builders.update({str(k).lower(): v for k, v in builders.items()})
+
+        self.acts = nn.ModuleDict()
+        self._idx_attr: dict[str, str] = {}
+        self._slices: dict[str, tuple[int, int]] = {}
+
+        start = 0
+        seen = torch.zeros(self.out_features, dtype=torch.bool)
+        for t, c in zip(norm_types, counts):
+            end = start + int(c)
+            idx = perm[start:end]
+            start = end
+            if idx.numel() > 0:
+                seen[idx] = True
+            safe = "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in t)
+            attr = f"_idx_{safe}"
+            self.register_buffer(attr, idx.to(dtype=torch.long), persistent=False)
+            self._idx_attr[t] = attr
+            if idx.numel() > 0:
+                start_i = int(idx[0].item())
+                end_i = int(idx[-1].item())
+                if (end_i - start_i + 1) == int(idx.numel()):
+                    try:
+                        if bool(
+                            (
+                                idx
+                                == torch.arange(
+                                    start_i, start_i + int(idx.numel()), dtype=idx.dtype
+                                )
+                            ).all()
+                        ):
+                            self._slices[t] = (start_i, int(idx.numel()))
+                    except Exception:
+                        pass
+
+            if int(c) == 0:
+                continue
+            builder = merged_builders.get(str(t).lower())
+            if builder is None:
+                raise ValueError(f"Unsupported activation type in mix: {t}")
+            self.acts[t] = builder(int(c))
+
+        if not bool(seen.all().item()):
+            raise ValueError("Internal error: mixed activation indices do not cover all features")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        fd = self.feature_dim if self.feature_dim >= 0 else (x.ndim + self.feature_dim)
+        if fd < 0 or fd >= x.ndim:
+            raise ValueError("feature_dim is out of range for input tensor")
+        if fd != x.ndim - 1:
+            x_moved = x.movedim(fd, -1)
+            y = self._forward_last_dim(x_moved)
+            return y.movedim(-1, fd)
+        return self._forward_last_dim(x)
+
+    def _forward_last_dim(self, x: torch.Tensor) -> torch.Tensor:
+        if int(x.shape[-1]) != self.out_features:
+            raise ValueError("Input last dimension must match out_features.")
+        # Optimization: when a cheap, shape-agnostic activation is present (e.g. ReLU),
+        # apply it to the full tensor once, then override the remaining (typically
+        # parameterized) activations on their assigned indices.
+        default_type = None
+        for candidate in ("relu", "gelu", "tanh"):
+            if candidate in self.acts:
+                default_type = candidate
+                break
+
+        if default_type is None:
+            out = x.clone()
+        elif len(self.acts) == 1:
+            return self.acts[default_type](x)
+        else:
+            # We will mutate `out` in-place to override indices, so ensure it does
+            # not alias an autograd-saved tensor (e.g. output of ReLU).
+            out = self.acts[default_type](x).clone()
+        for t, act in self.acts.items():
+            if t == default_type:
+                continue
+            idx = getattr(self, self._idx_attr[t])
+            if idx.numel() == 0:
+                continue
+            sl = self._slices.get(t)
+            if sl is not None:
+                start, length = sl
+                out_slice = out.narrow(-1, start, length)
+                x_slice = x.narrow(-1, start, length)
+                out_slice.copy_(act(x_slice))
+                continue
+            out.index_copy_(-1, idx, act(x.index_select(-1, idx)))
+        return out

@@ -32,7 +32,7 @@ fi
 
 echo "[BMRK-01] Training via ${TINY_CONFIG} -> ${BENCH_DIR}"
 export PSANN_OUTPUT_DIR="${BENCH_DIR}"
-python -m psann.lm.train.cli --config "${TINY_CONFIG}" 2>&1 | tee "${BENCH_DIR}/tiny_benchmark.log"
+python -m psannlm.lm.train.cli --config "${TINY_CONFIG}" 2>&1 | tee "${BENCH_DIR}/tiny_benchmark.log"
 
 echo "[BMRK-01] Parsing trainer log"
 python scripts/parse_trainer_log.py --log "${BENCH_DIR}/tiny_benchmark.log" --out "${BENCH_DIR}" --plot || true
@@ -44,4 +44,3 @@ python scripts/finalize_bmrk01.py \
   --log "${BENCH_DIR}/tiny_benchmark.log" --plot || true
 
 echo "[BMRK-01] Done -> ${BENCH_DIR}"
-

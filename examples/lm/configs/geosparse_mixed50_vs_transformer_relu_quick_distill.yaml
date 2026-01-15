@@ -1,0 +1,88 @@
+bench:
+  run_name: geosparse_mixed50_vs_transformer_relu_distill
+  out_dir: reports/benchmarks
+  bases: [geosparse, transformer]
+  seeds: [1337, 1338]
+  reuse_tokenizer: true
+  with_lm_eval: false
+  save_run_logs: true
+
+data:
+  dataset: iohadrubin/wikitext-103-raw-v1
+  name: null
+  revision: null
+  train_split: train
+  val_split: validation
+  text_key: text
+  streaming: true
+  shuffle: true
+  shuffle_buffer: 10000
+  ascii_only: false
+  languages: []
+  lang_threshold: 0.8
+  max_length: 512
+
+tokenizer:
+  backend: tokenizers
+  vocab_size: 16384
+  min_frequency: 2
+  sample_limit: 20000
+  save_dir: runs/tokenizers/geosparse_mixed50_vs_transformer_relu_quick
+  model_path: null
+  special_tokens_map_path: null
+
+train:
+  d_model: 256
+  n_layers: 4
+  n_heads: 4
+  d_mlp: 1024
+  dropout: 0.0
+  positional_encoding: rope
+  attn_impl: auto
+
+  # Global training hyperparams
+  batch_tokens: 32768
+  grad_accum_steps: 1
+  lr: 0.0002
+  weight_decay: 0.01
+  warmup_steps: 200
+  amp: bf16
+  grad_checkpoint: false
+  ddp: "off"
+  max_steps: 300
+  log_interval_steps: 25
+  save_interval_steps: 500
+  torch_compile: false
+
+  # Baseline transformer MLP activation (VanillaTransformer)
+  mlp_activation: relu
+
+  # GeoSparse MLP activation mixture (GeoSparseTransformer)
+  geosparse_activation: mixed
+  geosparse_activation_types: [psann, relu]
+  geosparse_activation_ratios: [0.5, 0.5]
+  geosparse_activation_ratio_sum_tol: 0.001
+  geosparse_activation_layout: random
+
+  sine_params:
+    amp_init: 1.0
+    amp_init_std: 0.0
+    freq_init: 1.0
+    freq_init_std: 0.0
+    damp_init: 0.01
+    damp_init_std: 0.0
+    trainable: true
+
+distill:
+  enabled: true
+  teacher_base: transformer
+  teacher_ckpt: null
+  teacher_max_steps: 0
+  alpha: 0.5
+  temperature: 2.0
+
+eval:
+  batch_tokens: 32768
+  max_tokens: 200000
+  max_batches: 0
+

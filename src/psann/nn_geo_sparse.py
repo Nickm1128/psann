@@ -6,7 +6,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 import torch
 from torch import nn
 
-from .activations import PhaseSineParam, SineParam
+from .activations import MixedActivation, PhaseSineParam, SineParam
 from .layers.geo_sparse import GeoSparseLinear, build_geo_connectivity
 from .layers.sine_residual import RMSNorm
 from .nn import DropPath
@@ -113,6 +113,10 @@ class GeoSparseNet(nn.Module):
                 wrap_mode=self.wrap_mode,
                 seed=block_seed,
             )
+            block_activation_config = deepcopy(activation_config) if activation_config else None
+            if isinstance(block_activation_config, Mapping):
+                block_activation_config = dict(block_activation_config)
+                block_activation_config.setdefault("mix_seed", block_seed)
             drop_path = (
                 float(drop_path_max) * (idx / max(1, self.depth - 1))
                 if self.depth > 1
@@ -122,7 +126,7 @@ class GeoSparseNet(nn.Module):
                 self.features,
                 indices,
                 activation_type=self.activation_type,
-                activation_config=self.activation_config,
+                activation_config=block_activation_config,
                 norm=norm,
                 drop_path=drop_path,
                 residual_alpha_init=residual_alpha_init,
@@ -147,6 +151,54 @@ def _build_activation(
 ) -> nn.Module:
     act = activation_type.lower()
     cfg, phase_cfg = _normalize_activation_config(out_features, activation_config)
+    if act == "mixed":
+        raw = _as_mapping(activation_config)
+        types_raw = raw.get("activation_types", raw.get("types"))
+        if not isinstance(types_raw, (list, tuple)) or not types_raw:
+            raise ValueError(
+                "activation_type='mixed' requires activation_config['activation_types'] "
+                "(a non-empty list of activation names)"
+            )
+        ratios_raw = raw.get("activation_ratios", raw.get("ratios"))
+        ratios = None
+        if ratios_raw is not None:
+            if not isinstance(ratios_raw, (list, tuple)):
+                raise ValueError("activation_ratios must be a list of floats when provided")
+            ratios = [float(x) for x in ratios_raw]
+        ratio_sum_tol = float(raw.get("ratio_sum_tol", 1e-3))
+        layout = str(raw.get("mix_layout", raw.get("layout", "random")))
+        seed = raw.get("mix_seed", None)
+        if seed is None:
+            seed = raw.get("seed", None)
+        seed_int = None if seed is None else int(seed)
+
+        def _build_psann(n: int) -> nn.Module:
+            cfg_n, _ = _normalize_activation_config(n, activation_config)
+            return SineParam(n, **cfg_n)
+
+        def _build_phase_psann(n: int) -> nn.Module:
+            cfg_n, phase_n = _normalize_activation_config(n, activation_config)
+            return PhaseSineParam(
+                n,
+                phase_init=phase_n["phase_init"],
+                phase_trainable=phase_n["phase_trainable"],
+                **cfg_n,
+            )
+
+        builders = {
+            "psann": _build_psann,
+            "phase_psann": _build_phase_psann,
+        }
+        return MixedActivation(
+            out_features,
+            activation_types=[str(t) for t in types_raw],
+            activation_ratios=ratios,
+            ratio_sum_tol=ratio_sum_tol,
+            seed=seed_int,
+            layout=layout,
+            feature_dim=int(raw.get("feature_dim", -1)),
+            builders=builders,
+        )
     if act == "psann":
         return SineParam(out_features, **cfg)
     if act == "phase_psann":
@@ -160,7 +212,9 @@ def _build_activation(
         return nn.ReLU()
     if act == "tanh":
         return nn.Tanh()
-    raise ValueError("activation_type must be one of: 'psann', 'phase_psann', 'relu', 'tanh'")
+    raise ValueError(
+        "activation_type must be one of: 'psann', 'phase_psann', 'mixed', 'relu', 'tanh'"
+    )
 
 
 def _build_norm(norm: str, features: int) -> nn.Module:

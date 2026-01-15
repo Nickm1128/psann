@@ -1,6 +1,6 @@
 import torch
 
-from psann.lm.models.registry import get_base
+from psannlm.lm.models.registry import get_base
 
 
 def _tiny_model(base: str, vocab_size: int = 64, positional_encoding: str = "rope"):
@@ -41,7 +41,7 @@ def test_kv_cache_step_waveresnet():
 
 
 def test_waveresnet_wave_interleave_forward():
-    from psann.lm.models.transformer_waveresnet import build_waveresnet_transformer
+    from psannlm.lm.models.transformer_waveresnet import build_waveresnet_transformer
 
     model = build_waveresnet_transformer(
         vocab_size=64,
@@ -60,7 +60,7 @@ def test_waveresnet_wave_interleave_forward():
 
 
 def test_waveresnet_wave_replace_forward():
-    from psann.lm.models.transformer_waveresnet import build_waveresnet_transformer
+    from psannlm.lm.models.transformer_waveresnet import build_waveresnet_transformer
 
     model = build_waveresnet_transformer(
         vocab_size=64,
@@ -79,7 +79,7 @@ def test_waveresnet_wave_replace_forward():
 
 
 def test_kv_cache_step_waveresnet_with_wave():
-    from psann.lm.models.transformer_waveresnet import build_waveresnet_transformer
+    from psannlm.lm.models.transformer_waveresnet import build_waveresnet_transformer
 
     model = build_waveresnet_transformer(
         vocab_size=64,

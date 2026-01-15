@@ -14,17 +14,19 @@ From PyPI, install the core library plus the LM add-on:
 pip install psann psannlm
 ```
 
-For development from this repository (including GPU validation scripts), install with extras:
+For development from this repository (including GPU validation scripts), install the core
+package plus the LM package:
 
 ```bash
-pip install -e .[dev,lm]
+pip install -e .[dev]
+pip install -e ./psannlm
 ```
 
 Quickstart
 ----------
 
 ```python
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm import psannLM, psannLMDataPrep
 
 texts = ["hello world", "goodnight moon"]
 dp = psannLMDataPrep(
@@ -49,6 +51,34 @@ model.fit(dp, epochs=1, batch_tokens=65_536, lr=2e-4, amp="bf16")
 print(model.generate("Once upon a time", top_p=0.9, max_new_tokens=64))
 print(model.generate_batch(["hello", "goodnight"], max_new_tokens=32))
 ```
+
+Canonical CLI
+-------------
+
+Use the unified CLI (`python -m psannlm`) for train, eval, and generation:
+
+```
+# Train or resume (full streaming CLI)
+python -m psannlm train --hf-dataset allenai/c4 --hf-name en --hf-split train \
+  --hf-text-key text --hf-shuffle --hf-shuffle-buffer 10000 \
+  --tokenizer-backend tokenizers --train-tokenizer --tokenizer-save-dir runs/tokenizer_300m \
+  --base waveresnet --d-model 1024 --n-layers 16 --n-heads 16 --d-mlp 4096 \
+  --seq-len 2048 --dataset-streaming true --tokens-target 1000000000 \
+  --batch-tokens 131072 --grad-accum-steps 1 --amp bf16 \
+  --checkpoint-dir runs/lm/300m_en
+
+# Evaluate perplexity (held-out JSONL or HF dataset)
+python -m psannlm eval --ckpt runs/lm/300m_en/ckpt_step010000.pt \
+  --tokenizer-dir runs/tokenizer_300m --dataset json --data-files eval_data/c4_eval.jsonl \
+  --seq-len 2048 --max-batches 128
+
+# Generate from a trainer checkpoint
+python -m psannlm generate --ckpt runs/lm/300m_en/ckpt_step010000.pt \
+  --tokenizer-dir runs/tokenizer_300m --prompt "The future of PSANN-LM is"
+```
+
+The YAML helper (`python -m psannlm.lm.train.cli --config ...`) remains for tiny CPU
+sanity checks, but the canonical entrypoint for production runs is `python -m psannlm`.
 
 Minimal End-to-End Example
 --------------------------
@@ -80,7 +110,7 @@ Public API Reference
 --------------------
 
 The Python surface intentionally mirrors the minimal example above. Everything lives under
-`psann.lm` so imports stay stable across releases.
+`psannlm` so imports stay stable across releases.
 
 **`psannLMDataPrep`**
 - Inputs: iterable of texts or file paths plus tokenizer options (`tokenizer="auto"` resolves in the documented order with `tokenizer_model_path` opt-in).
@@ -167,10 +197,64 @@ Quickstart (CLI, CPU)
 Run a minimal end-to-end training on CPU with a tiny sample corpus:
 
 ```
-python -m psann.lm.train.cli --config examples/lm/configs/waveresnet_cpu.yaml
+python -m psannlm.lm.train.cli --config examples/lm/configs/waveresnet_cpu.yaml
 ```
 
 This uses `examples/lm/sample_texts.txt` and disables AMP/DDP for a fast local sanity check.
+
+Reproducible training (streaming)
+--------------------------------
+
+For long runs, prefer the streaming CLI (`python -m psannlm train ...`). The key knobs for
+reproducibility and resume safety are:
+
+- `--seed`: controls dataset shuffle and tokenizer sampling.
+- `--hf-shuffle --hf-shuffle-buffer`: deterministic shuffle when streaming from HF.
+- `--dataset-streaming true`: enforces streaming + packed sequences.
+- `--resume-ckpt`: resumes from a trainer checkpoint and skips the appropriate number of sequences.
+  When resuming with streaming, use `--num-workers 0` (both initial run and resume) to avoid
+  worker-induced reordering.
+
+Output conventions (recommended):
+
+- `--checkpoint-dir runs/lm/<run_name>` for checkpoints and logs.
+- `--tokenizer-save-dir runs/tokenizer_<run_name>` for tokenizer artifacts.
+- `--eval-data-files eval_data/<run_name>_eval.jsonl` for a fixed eval shard.
+
+Eval shard generation (offline)
+-------------------------------
+
+To create a fixed, reusable eval shard (avoids redownloading and makes checkpoints comparable),
+use the built-in shard creator on the training CLI:
+
+```
+python -m psannlm train ... \
+  --eval-data-files eval_data/c4_eval.jsonl \
+  --eval-create-shard \
+  --eval-target-tokens 10000000 \
+  --eval-max-batches 128
+```
+
+This writes a JSONL shard with a `text` field and reuses it on subsequent runs.
+For multi-checkpoint evaluation, use `scripts/eval_ppl_sidecar.py` with a loop over
+checkpoint paths to keep comparisons deterministic.
+
+Tokenizer workflow (resume-safe)
+--------------------------------
+
+- First run: set `--train-tokenizer` and `--tokenizer-save-dir`.
+- Resume or rerun: keep the same `--tokenizer-save-dir` and the trainer will reuse the
+  existing tokenizer if `tokenizer.json`, `special_tokens_map.json`, and `.done` exist.
+
+Minimum hardware guidance
+-------------------------
+
+These are rough starting points (actual VRAM depends on batch size, seq length, and model size):
+
+- Tiny sanity checks (CPU): `d_model=256`, `n_layers=4`, `seq_len=512`, `batch_tokens=4096`.
+- Small GPU runs (24GB): start around `batch_tokens=32768` at `seq_len=2048`.
+- 300M-scale runs: expect tens of GB of VRAM; adjust `batch_tokens` or enable gradient
+  checkpointing (`--grad-checkpoint`) if you see OOMs.
 
 RunPod One-Sweep
 ----------------
@@ -178,7 +262,8 @@ RunPod One-Sweep
 After cloning on a GPU pod with CUDA-ready PyTorch installed:
 
 ```
-pip install -e .[dev,lm]
+pip install -e .[dev]
+pip install -e ./psannlm
 chmod +x scripts/next_gpu_batch.sh
 ./scripts/next_gpu_batch.sh
 ```
@@ -191,17 +276,32 @@ This will:
 - Aggregate into `reports/benchmarks/<ts>/` with `throughput.csv`, `memory.json`, parsed `metrics.csv` and `metrics.json`.
 - If `matplotlib` is installed (e.g., `pip install .[viz]`), a `loss_curve.png` will also be emitted.
 
+Docker / container notes
+------------------------
+
+When using GPU containers, prefer images that already include a CUDA-enabled PyTorch build.
+For example, on RunPod or other GPU hosts:
+
+```
+docker run --gpus all --rm -it --ipc=host --network host \
+  -v /path/to/psann:/workspace/psann \
+  nvcr.io/nvidia/pytorch:25.11-py3
+```
+
+Inside the container, avoid reinstalling PyTorch unless needed. If your tooling creates
+a venv, set `SKIP_VENV=1` (or use the system python) so you keep the container's GPU build.
+
 Configuration
 -------------
 
-**Model (`psann.lm.config.ModelConfig`)**
+**Model (`psannlm.lm.config.ModelConfig`)**
 - `base`: `waveresnet` | `respsann` | `sgrpsann`
 - `d_model`, `n_layers`, `n_heads`, `d_mlp`
 - `vocab_size`: override (defaults to data prep vocab)
 - `positional_encoding`: `rope` (default) | `alibi` | `sinusoidal`
 - `sine_params`: amplitude/frequency/damping settings
 
-**Data (`psann.lm.config.DataConfig`)**
+**Data (`psannlm.lm.config.DataConfig`)**
 - `tokenizer`: `auto` | `simple` | `sentencepiece` | `tokenizers`
 - `tokenizer_model_path`: optional SentencePiece `.model` or Hugging Face `.json`
 - `max_length`: chunk length
@@ -209,7 +309,7 @@ Configuration
 - `val_split`: float fraction for validation
 - `seed`: RNG for shuffling/splitting
 
-**Train (`psann.lm.config.TrainConfig`)**
+**Train (`psannlm.lm.config.TrainConfig`)**
 - `epochs`, `batch_tokens`, `lr`, `warmup_steps`
 - `weight_decay`, `label_smoothing`, `grad_clip`, `grad_accum_steps`
 - `amp`: `bf16` | `fp16` | `fp32`
@@ -291,7 +391,7 @@ To reproduce any row, set `model.sine_params.trainable: false` and pass the desi
 `model.sine_params.learnable`. When using the CLI you can override inline, e.g.:
 
 ```
-python -m psann.lm.train.cli \
+python -m psannlm.lm.train.cli \
   --config examples/lm/configs/waveresnet_small.yaml \
   --train.epochs 2 \
   --train.batch_tokens 131072 \

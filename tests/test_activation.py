@@ -21,7 +21,7 @@ def test_sineparam_vector_init_support():
 
 
 def test_build_sine_freq_init_std_is_per_feature_and_reproducible():
-    from psann.lm.models.sine import SineConfig, build_sine
+    from psannlm.lm.models.sine import SineConfig, build_sine
 
     torch.manual_seed(0)
     cfg = SineConfig(freq_init=1.0, freq_init_std=0.5, trainable=False)

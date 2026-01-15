@@ -31,17 +31,17 @@ from typing import Iterator, Optional, Any
 
 
 # Local imports from package
-from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psann.lm.data.dataset import (
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
+from psannlm.lm.data.dataset import (
     StreamingLMDataset,
     PackingConfig,
     HFTextStreamingLMDataset,
     build_text_filter,
 )
-from psann.lm.models.registry import get_base
-from psann.lm.train.trainer import Trainer
-from psann.lm.config import TrainConfig
-from psann.lm.models.sine import SineConfig
+from psannlm.lm.models.registry import get_base
+from psannlm.lm.train.trainer import Trainer
+from psannlm.lm.config import TrainConfig
+from psannlm.lm.models.sine import SineConfig
 from .data_stream import streamed_token_iterator
 from .data_loader import build_stream_loader
 

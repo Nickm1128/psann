@@ -1,6 +1,6 @@
 # PSANN API Reference
 
-Install the core library with `pip install psann`. When you need scikit-learn conveniences, use `pip install psann[sklearn]`; the base wheel only depends on NumPy and PyTorch. Language-modeling utilities live under `psann.lm` with additional dependencies pulled in via the `psann[lm]` extra or the separate `psannlm` package. For pinned environments use the compatibility extra (`pip install -e .[compat]`) as documented in the README. This document summarises the public, user-facing API of `psann` with parameter names, expected shapes, and behavioural notes.
+Install the core library with `pip install psann`. When you need scikit-learn conveniences, use `pip install psann[sklearn]`; the base wheel only depends on NumPy and PyTorch. Language-modeling utilities now live in the separate `psannlm` package (`pip install psannlm`). For pinned environments use the compatibility extra (`pip install -e .[compat]`) as documented in the README. This document summarises the public, user-facing API of `psann` with parameter names, expected shapes, and behavioural notes.
 
 ## psann.PSANNRegressor
 
@@ -166,4 +166,3 @@ Forward applies `A * exp(-d * g(z)) * sin(f * z)` with broadcast parameters.
 - `SineTokenEmbedder(embedding_dim, trainable=False, base=10000.0, scale=1.0, ...)` - sine-based token embeddings with optional learnable amplitude/phase/offset parameters and lazy table materialisation via `set_vocab_size`.
 
 These utilities are exposed for experiments that need sine embeddings or lightweight tokenisation; they do not ship a full language-model trainer in this release.
-

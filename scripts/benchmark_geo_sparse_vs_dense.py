@@ -1,15 +1,16 @@
 #!/usr/bin/env python
-"""Benchmark GeoSparseNet vs dense ReLU MLP with matched parameters."""
+"""Benchmark GeoSparseNet vs dense baselines with matched parameters."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -21,7 +22,8 @@ _SRC_ROOT = _REPO_ROOT / "src"
 if _SRC_ROOT.exists():
     sys.path.insert(0, str(_SRC_ROOT))
 
-from psann.nn_geo_sparse import GeoSparseNet
+from psann.layers.sine_residual import RMSNorm
+from psann.nn_geo_sparse import GeoSparseNet, _build_activation as _build_geo_activation
 from psann.params import count_params, dense_mlp_params, geo_sparse_net_params, match_dense_width
 from psann.utils import choose_device, seed_all
 
@@ -35,6 +37,26 @@ class DatasetBundle:
     meta: Dict[str, Any]
 
 
+@dataclass(frozen=True)
+class StandardScaler:
+    mean: np.ndarray
+    scale: np.ndarray
+    eps: float
+
+    def transform(self, x: np.ndarray) -> np.ndarray:
+        return ((x - self.mean) / self.scale).astype(np.float32)
+
+    def inverse_transform(self, x: np.ndarray) -> np.ndarray:
+        return (x * self.scale + self.mean).astype(np.float32)
+
+
+def _fit_standard_scaler(x: np.ndarray, *, eps: float = 1e-6) -> StandardScaler:
+    mean = x.mean(axis=0, keepdims=True).astype(np.float32)
+    scale = x.std(axis=0, keepdims=True).astype(np.float32)
+    scale = np.where(scale < float(eps), 1.0, scale).astype(np.float32)
+    return StandardScaler(mean=mean, scale=scale, eps=float(eps))
+
+
 def _parse_shape(text: str) -> Tuple[int, int]:
     for sep in ("x", "X", ","):
         if sep in text:
@@ -42,6 +64,26 @@ def _parse_shape(text: str) -> Tuple[int, int]:
             if len(parts) == 2:
                 return int(parts[0]), int(parts[1])
     raise ValueError("shape must be formatted as HxW or H,W")
+
+
+def _print_header(args: argparse.Namespace, out_dir: Path, device: torch.device) -> None:
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(
+        "[bench] start",
+        f"time={ts}",
+        f"device={device}",
+        f"seed={args.seed}",
+        f"shape={args.shape}",
+        f"depth={args.depth}",
+        f"k={args.k}",
+        f"task={args.task}",
+        f"out={out_dir}",
+        flush=True,
+    )
+    print(
+        f"[bench] torch={torch.__version__} numpy={np.__version__} tf32={args.tf32} amp={args.amp}",
+        flush=True,
+    )
 
 
 def _build_tabular_sine(
@@ -77,8 +119,151 @@ def _build_tabular_sine(
         y_train=y_train,
         X_test=X_test,
         y_test=y_test,
-        meta={"features": features, "train_size": n_train, "test_size": n_test},
+        meta={
+            "task": "sine",
+            "features": features,
+            "train_size": n_train,
+            "test_size": n_test,
+        },
     )
+
+
+def _build_tabular_mixed(
+    *,
+    seed: int,
+    n_train: int,
+    n_test: int,
+    features: int,
+) -> DatasetBundle:
+    rng = np.random.default_rng(seed)
+    total = n_train + n_test
+    X = rng.uniform(-2.0, 2.0, size=(total, features)).astype(np.float32)
+    noise = 0.05 * rng.standard_normal(size=(total,)).astype(np.float32)
+    y = np.zeros((total,), dtype=np.float32)
+    if features >= 1:
+        y += 0.35 * np.sin(2.0 * X[:, 0])
+    if features >= 2:
+        y += 0.25 * np.cos(1.5 * X[:, 1])
+    if features >= 4:
+        y += 0.25 * X[:, 2] * X[:, 3]
+    if features >= 5:
+        y += -0.10 * (X[:, 4] ** 2)
+    if features >= 6:
+        y += 0.20 * np.tanh(X[:, 5])
+    if features >= 7:
+        y += 0.15 * np.maximum(0.0, X[:, 6])
+    if features >= 8:
+        y += 0.10 * np.where(X[:, 7] > 0.0, X[:, 7] ** 2, -0.5 * X[:, 7])
+    if features >= 10:
+        y += 0.05 * (X[:, 8] ** 3) - 0.03 * X[:, 9]
+    y = (y + noise).reshape(-1, 1)
+
+    X_train = X[:n_train]
+    X_test = X[n_train:]
+    y_train = y[:n_train]
+    y_test = y[n_train:]
+    return DatasetBundle(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        meta={
+            "task": "mixed",
+            "features": features,
+            "train_size": n_train,
+            "test_size": n_test,
+        },
+    )
+
+
+def _build_tabular_teacher_mlp(
+    *,
+    seed: int,
+    n_train: int,
+    n_test: int,
+    features: int,
+    activation: str,
+) -> DatasetBundle:
+    rng = np.random.default_rng(seed)
+    total = n_train + n_test
+    X = rng.normal(0.0, 1.0, size=(total, features)).astype(np.float32)
+
+    hidden1 = max(32, min(256, int(features * 4)))
+    hidden2 = max(16, min(256, int(features * 2)))
+
+    def _relu(x: np.ndarray) -> np.ndarray:
+        return np.maximum(0.0, x)
+
+    act_key = activation.lower()
+    if act_key == "relu":
+        act_fn = _relu
+    elif act_key == "tanh":
+        act_fn = np.tanh
+    else:
+        raise ValueError("activation must be one of: 'relu', 'tanh'")
+
+    def _scaled(shape: tuple[int, ...], fan_in: int) -> np.ndarray:
+        return rng.normal(0.0, 1.0 / np.sqrt(max(1, fan_in)), size=shape).astype(np.float32)
+
+    W1 = _scaled((features, hidden1), fan_in=features)
+    b1 = _scaled((hidden1,), fan_in=features)
+    W2 = _scaled((hidden1, hidden2), fan_in=hidden1)
+    b2 = _scaled((hidden2,), fan_in=hidden1)
+    W3 = _scaled((hidden2, 1), fan_in=hidden2)
+    b3 = _scaled((1,), fan_in=hidden2)
+
+    h1 = act_fn(X @ W1 + b1)
+    h2 = act_fn(h1 @ W2 + b2)
+    y = (h2 @ W3 + b3).reshape(-1).astype(np.float32)
+
+    y_std = float(np.std(y))
+    if y_std > 1e-6:
+        y = y / y_std
+    y = y + 0.05 * rng.standard_normal(size=(total,)).astype(np.float32)
+    y = y.reshape(-1, 1)
+
+    X_train = X[:n_train]
+    X_test = X[n_train:]
+    y_train = y[:n_train]
+    y_test = y[n_train:]
+    return DatasetBundle(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        meta={
+            "task": f"teacher_mlp_{act_key}",
+            "teacher_hidden1": hidden1,
+            "teacher_hidden2": hidden2,
+            "features": features,
+            "train_size": n_train,
+            "test_size": n_test,
+        },
+    )
+
+
+def _build_dataset(
+    *,
+    task: str,
+    seed: int,
+    n_train: int,
+    n_test: int,
+    features: int,
+) -> DatasetBundle:
+    key = str(task).lower().strip()
+    if key in {"sine", "tabular_sine"}:
+        return _build_tabular_sine(seed=seed, n_train=n_train, n_test=n_test, features=features)
+    if key in {"mixed", "tabular_mixed"}:
+        return _build_tabular_mixed(seed=seed, n_train=n_train, n_test=n_test, features=features)
+    if key in {"teacher_relu", "teacher_mlp_relu"}:
+        return _build_tabular_teacher_mlp(
+            seed=seed, n_train=n_train, n_test=n_test, features=features, activation="relu"
+        )
+    if key in {"teacher_tanh", "teacher_mlp_tanh"}:
+        return _build_tabular_teacher_mlp(
+            seed=seed, n_train=n_train, n_test=n_test, features=features, activation="tanh"
+        )
+    raise ValueError("task must be one of: sine, mixed, teacher_relu, teacher_tanh")
 
 
 class DenseMLP(nn.Module):
@@ -89,6 +274,8 @@ class DenseMLP(nn.Module):
         *,
         hidden_dim: int,
         depth: int,
+        activation_type: str = "relu",
+        activation_config: Optional[Dict[str, Any]] = None,
         bias: bool = True,
     ) -> None:
         super().__init__()
@@ -98,13 +285,89 @@ class DenseMLP(nn.Module):
         in_dim = input_dim
         for _ in range(depth):
             layers.append(nn.Linear(in_dim, hidden_dim, bias=bias))
-            layers.append(nn.ReLU())
+            layers.append(_build_geo_activation(activation_type, hidden_dim, activation_config))
             in_dim = hidden_dim
         layers.append(nn.Linear(in_dim, output_dim, bias=bias))
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x.reshape(x.size(0), -1))
+
+
+class DenseResidualBlock(nn.Module):
+    def __init__(
+        self,
+        dim: int,
+        *,
+        activation_type: str,
+        activation_config: Optional[Dict[str, Any]] = None,
+        norm: str = "rms",
+        residual_alpha_init: float = 0.0,
+        bias: bool = True,
+    ) -> None:
+        super().__init__()
+        if dim <= 0:
+            raise ValueError("dim must be positive.")
+        norm_key = str(norm).lower()
+        if norm_key == "none":
+            self.norm = nn.Identity()
+        elif norm_key == "layer":
+            self.norm = nn.LayerNorm(int(dim))
+        elif norm_key == "rms":
+            self.norm = RMSNorm(int(dim))
+        else:
+            raise ValueError("norm must be one of: 'none', 'layer', 'rms'")
+
+        self.fc1 = nn.Linear(int(dim), int(dim), bias=bool(bias))
+        self.act = _build_geo_activation(str(activation_type), int(dim), activation_config)
+        self.fc2 = nn.Linear(int(dim), int(dim), bias=bool(bias))
+        self.alpha = nn.Parameter(torch.full((1,), float(residual_alpha_init)))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = self.norm(x)
+        h = self.act(self.fc1(h))
+        h = self.fc2(h)
+        return x + self.alpha * h
+
+
+class DenseResidualNet(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        *,
+        hidden_dim: int,
+        depth: int,
+        activation_type: str,
+        activation_config: Optional[Dict[str, Any]] = None,
+        norm: str = "rms",
+        residual_alpha_init: float = 0.0,
+        bias: bool = True,
+    ) -> None:
+        super().__init__()
+        if depth <= 0:
+            raise ValueError("depth must be positive.")
+        self.in_proj = nn.Linear(int(input_dim), int(hidden_dim), bias=bool(bias))
+        self.blocks = nn.ModuleList(
+            [
+                DenseResidualBlock(
+                    int(hidden_dim),
+                    activation_type=str(activation_type),
+                    activation_config=activation_config,
+                    norm=norm,
+                    residual_alpha_init=residual_alpha_init,
+                    bias=bias,
+                )
+                for _ in range(int(depth))
+            ]
+        )
+        self.head = nn.Linear(int(hidden_dim), int(output_dim), bias=bool(bias))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.in_proj(x.reshape(x.size(0), -1))
+        for block in self.blocks:
+            z = block(z)
+        return self.head(z)
 
 
 def _build_loader(
@@ -164,6 +427,10 @@ def _train_model(
     compile_mode: Optional[str],
     timing_warmup_steps: int,
     timing_epochs: int,
+    curve_every: int = 1,
+    curve_test: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+    curve_test_unscaled: Optional[np.ndarray] = None,
+    curve_test_y_scaler: Optional[StandardScaler] = None,
 ) -> Dict[str, Any]:
     model = model.to(device=device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(lr), weight_decay=float(weight_decay))
@@ -190,11 +457,14 @@ def _train_model(
     use_scaler = bool(amp and amp_dtype == torch.float16 and device.type == "cuda")
     scaler = torch.cuda.amp.GradScaler(enabled=use_scaler)
 
+    curve: List[Dict[str, Any]] = []
     step_events = []
     total_samples = 0
     start = time.perf_counter()
     for epoch in range(int(epochs)):
         model.train()
+        epoch_loss_sum = 0.0
+        epoch_samples = 0
         for step, (xb, yb) in enumerate(train_loader):
             xb = xb.to(device=device)
             yb = yb.to(device=device)
@@ -217,7 +487,24 @@ def _train_model(
             if record_step and device.type == "cuda":
                 end_event.record()
                 step_events.append((start_event, end_event))
+            bs = int(xb.shape[0])
+            epoch_loss_sum += float(loss.detach().item()) * bs
+            epoch_samples += bs
             total_samples += int(xb.shape[0])
+        if curve_every > 0 and ((epoch + 1) % int(curve_every) == 0):
+            train_mse = epoch_loss_sum / float(max(1, epoch_samples))
+            point: Dict[str, Any] = {"epoch": int(epoch + 1), "train_mse": float(train_mse)}
+            if curve_test is not None:
+                X_test, y_test = curve_test
+                point["test_mse"] = _evaluate(
+                    model,
+                    X=X_test,
+                    y=y_test,
+                    device=device,
+                    y_scaler=curve_test_y_scaler,
+                    y_unscaled=curve_test_unscaled,
+                )
+            curve.append(point)
     if device.type == "cuda":
         torch.cuda.synchronize()
     wall_time_s = time.perf_counter() - start
@@ -231,16 +518,36 @@ def _train_model(
         "compile_time_s": float(compile_time_s) if compile_time_s is not None else None,
         "step_time_ms_mean": step_time_ms,
         "samples_per_sec": float(total_samples) / float(wall_time_s) if wall_time_s > 0 else None,
+        "curve": curve,
     }
 
 
-def _evaluate(model: nn.Module, *, X: np.ndarray, y: np.ndarray, device: torch.device) -> float:
+def _evaluate(
+    model: nn.Module,
+    *,
+    X: np.ndarray,
+    y: np.ndarray,
+    device: torch.device,
+    y_scaler: Optional[StandardScaler] = None,
+    y_unscaled: Optional[np.ndarray] = None,
+) -> float:
     model.eval()
     X_t = torch.from_numpy(X).to(device=device)
-    y_t = torch.from_numpy(y).to(device=device)
     with torch.no_grad():
         pred = model(X_t)
+
+    if y_scaler is None:
+        y_t = torch.from_numpy(y).to(device=device)
         return float(torch.mean((pred - y_t) ** 2).item())
+
+    if y_unscaled is None:
+        y_unscaled = y_scaler.inverse_transform(y)
+
+    y_t = torch.from_numpy(y_unscaled).to(device=device, dtype=torch.float32)
+    mean_t = torch.from_numpy(y_scaler.mean).to(device=device, dtype=torch.float32)
+    scale_t = torch.from_numpy(y_scaler.scale).to(device=device, dtype=torch.float32)
+    pred_unscaled = pred.to(dtype=torch.float32) * scale_t + mean_t
+    return float(torch.mean((pred_unscaled - y_t) ** 2).item())
 
 
 def _flatten_dict(prefix: str, values: Dict[str, Any]) -> Dict[str, Any]:
@@ -311,6 +618,13 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="JSON string for activation config (optional).",
     )
+    p.add_argument(
+        "--task",
+        type=str,
+        default="mixed",
+        choices=["sine", "mixed", "teacher_relu", "teacher_tanh"],
+        help="Synthetic regression task used to generate training data.",
+    )
     p.add_argument("--epochs", type=int, default=25)
     p.add_argument("--batch-size", type=int, default=128)
     p.add_argument("--lr", type=float, default=1e-3)
@@ -334,6 +648,19 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--timing-epochs", type=int, default=1)
     p.add_argument("--train-size", type=int, default=4096)
     p.add_argument("--test-size", type=int, default=1024)
+    p.add_argument(
+        "--scale-x",
+        action="store_true",
+        help="Standardize X using train mean/std (fit on train split, applied to train+test).",
+    )
+    p.add_argument(
+        "--scale-y",
+        action="store_true",
+        help=(
+            "Standardize y using train mean/std. During evaluation, predictions are inverse-"
+            "transformed back to original scale before computing MSE."
+        ),
+    )
     p.add_argument("--num-workers", type=int, default=0)
     p.add_argument("--dense-depth", type=int, default=None, help="Dense hidden depth (defaults to sparse depth).")
     p.add_argument("--dense-max-width", type=int, default=4096)
@@ -345,6 +672,171 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--out", type=str, default=None)
     return p.parse_args()
+
+
+def _activation_param_multiplier(activation_type: str) -> int:
+    key = str(activation_type).lower()
+    if key == "psann":
+        return 3
+    if key == "phase_psann":
+        return 4
+    return 0
+
+
+def _dense_mlp_params_with_activation(
+    *,
+    input_dim: int,
+    output_dim: int,
+    hidden_dim: int,
+    depth: int,
+    activation_type: str,
+    bias: bool = True,
+) -> int:
+    base = dense_mlp_params(
+        input_dim=int(input_dim),
+        output_dim=int(output_dim),
+        hidden_dim=int(hidden_dim),
+        depth=int(depth),
+        bias=bool(bias),
+    )
+    extra = _activation_param_multiplier(activation_type) * int(hidden_dim) * int(depth)
+    return int(base + extra)
+
+
+def _match_dense_width_with_activation(
+    *,
+    target_params: int,
+    input_dim: int,
+    output_dim: int,
+    depth: int,
+    activation_type: str,
+    bias: bool = True,
+    max_width: int = 8192,
+) -> Tuple[int, int]:
+    if target_params <= 0:
+        raise ValueError("target_params must be positive.")
+    lo, hi = 1, int(max_width)
+    best_width = 1
+    best_mismatch = abs(
+        _dense_mlp_params_with_activation(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            hidden_dim=best_width,
+            depth=depth,
+            activation_type=activation_type,
+            bias=bias,
+        )
+        - target_params
+    )
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        params = _dense_mlp_params_with_activation(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            hidden_dim=mid,
+            depth=depth,
+            activation_type=activation_type,
+            bias=bias,
+        )
+        mismatch = abs(params - target_params)
+        if mismatch < best_mismatch:
+            best_mismatch = mismatch
+            best_width = mid
+        if params < target_params:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return int(best_width), int(best_mismatch)
+
+
+def _norm_param_count(norm: str, dim: int) -> int:
+    key = str(norm).lower()
+    if key == "none":
+        return 0
+    if key == "layer":
+        return 2 * int(dim)  # weight + bias
+    if key == "rms":
+        return int(dim)  # RMSNorm scale
+    raise ValueError("norm must be one of: 'none', 'layer', 'rms'")
+
+
+def _dense_linear_param_count(in_features: int, out_features: int, *, bias: bool) -> int:
+    return int(in_features) * int(out_features) + (int(out_features) if bias else 0)
+
+
+def _dense_residual_params_with_activation(
+    *,
+    input_dim: int,
+    output_dim: int,
+    hidden_dim: int,
+    depth: int,
+    activation_type: str,
+    norm: str = "rms",
+    bias: bool = True,
+) -> int:
+    if depth <= 0:
+        raise ValueError("depth must be positive.")
+    if hidden_dim <= 0:
+        raise ValueError("hidden_dim must be positive.")
+    total = _dense_linear_param_count(input_dim, hidden_dim, bias=bias)
+    total += _dense_linear_param_count(hidden_dim, output_dim, bias=bias)
+    block = 0
+    block += _norm_param_count(norm, hidden_dim)
+    block += _dense_linear_param_count(hidden_dim, hidden_dim, bias=bias)
+    block += _activation_param_multiplier(activation_type) * int(hidden_dim)
+    block += _dense_linear_param_count(hidden_dim, hidden_dim, bias=bias)
+    block += 1  # residual alpha
+    total += int(depth) * int(block)
+    return int(total)
+
+
+def _match_dense_residual_width_with_activation(
+    *,
+    target_params: int,
+    input_dim: int,
+    output_dim: int,
+    depth: int,
+    activation_type: str,
+    norm: str = "rms",
+    bias: bool = True,
+    max_width: int = 8192,
+) -> Tuple[int, int]:
+    if target_params <= 0:
+        raise ValueError("target_params must be positive.")
+    lo, hi = 1, int(max_width)
+    best_width = 1
+    best_mismatch = abs(
+        _dense_residual_params_with_activation(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            hidden_dim=best_width,
+            depth=depth,
+            activation_type=activation_type,
+            norm=norm,
+            bias=bias,
+        )
+        - target_params
+    )
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        params = _dense_residual_params_with_activation(
+            input_dim=input_dim,
+            output_dim=output_dim,
+            hidden_dim=mid,
+            depth=depth,
+            activation_type=activation_type,
+            norm=norm,
+            bias=bias,
+        )
+        mismatch = abs(params - target_params)
+        if mismatch < best_mismatch:
+            best_mismatch = mismatch
+            best_width = mid
+        if params < target_params:
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return int(best_width), int(best_mismatch)
 
 
 def main() -> None:
@@ -362,12 +854,53 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     activation_cfg = json.loads(args.activation_config) if args.activation_config else None
+    if str(args.sparse_activation).lower() == "mixed":
+        types = None if activation_cfg is None else activation_cfg.get("activation_types", activation_cfg.get("types"))
+        if not isinstance(types, list) or not types:
+            raise SystemExit(
+                "--sparse-activation mixed requires --activation-config JSON with "
+                "'activation_types' (a non-empty list)"
+            )
 
-    dataset = _build_tabular_sine(
+    dataset = _build_dataset(
+        task=str(args.task),
         seed=int(args.seed),
         n_train=int(args.train_size),
         n_test=int(args.test_size),
         features=features,
+    )
+    y_train_unscaled = dataset.y_train
+    y_test_unscaled = dataset.y_test
+    x_scaler = None
+    y_scaler = None
+
+    X_train = dataset.X_train
+    X_test = dataset.X_test
+    y_train = dataset.y_train
+    y_test = dataset.y_test
+    if args.scale_x:
+        x_scaler = _fit_standard_scaler(X_train)
+        X_train = x_scaler.transform(X_train)
+        X_test = x_scaler.transform(X_test)
+    if args.scale_y:
+        y_scaler = _fit_standard_scaler(y_train_unscaled)
+        y_train = y_scaler.transform(y_train_unscaled)
+        y_test = y_scaler.transform(y_test_unscaled)
+
+    dataset = DatasetBundle(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        meta={
+            **dataset.meta,
+            "scale_x": bool(args.scale_x),
+            "scale_y": bool(args.scale_y),
+            "x_scaler": "standard" if args.scale_x else None,
+            "y_scaler": "standard" if args.scale_y else None,
+            "y_scaler_mean": float(y_scaler.mean.reshape(-1)[0]) if y_scaler is not None else None,
+            "y_scaler_std": float(y_scaler.scale.reshape(-1)[0]) if y_scaler is not None else None,
+        },
     )
     train_loader = _build_loader(
         dataset.X_train,
@@ -378,6 +911,15 @@ def main() -> None:
     )
 
     device = choose_device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", None)
+        raise SystemExit(
+            "CUDA device requested but torch.cuda.is_available() is False.\n"
+            f"- torch={torch.__version__}\n"
+            f"- CUDA_VISIBLE_DEVICES={cuda_visible!r}\n\n"
+            "If running in Docker, start the container with GPU access (e.g. `--gpus all`)."
+        )
+    _print_header(args, out_dir, device)
     _set_precision(args.tf32)
     dtype = _resolve_dtype(args.dtype)
     amp_dtype = _resolve_dtype(args.amp_dtype)
@@ -406,39 +948,91 @@ def main() -> None:
         bias=True,
     )
 
-    dense_width, dense_mismatch = match_dense_width(
+    sparse_params_trainable = count_params(sparse_model, trainable_only=True)
+
+    dense_resrelu_width, dense_resrelu_mismatch = _match_dense_residual_width_with_activation(
         target_params=int(sparse_params_emp),
         input_dim=features,
         output_dim=1,
         depth=int(args.dense_depth),
+        activation_type="relu",
+        norm="rms",
         max_width=int(args.dense_max_width),
     )
-    dense_model = DenseMLP(
+    dense_resrelu_model = DenseResidualNet(
         input_dim=features,
         output_dim=1,
-        hidden_dim=int(dense_width),
+        hidden_dim=int(dense_resrelu_width),
         depth=int(args.dense_depth),
+        activation_type="relu",
+        norm="rms",
         bias=True,
     ).to(dtype=dtype)
-    dense_params_emp = count_params(dense_model)
-    dense_params_trainable = count_params(dense_model, trainable_only=True)
-    sparse_params_trainable = count_params(sparse_model, trainable_only=True)
-    dense_params_analytic = dense_mlp_params(
+    dense_resrelu_params_emp = count_params(dense_resrelu_model)
+    dense_resrelu_params_trainable = count_params(dense_resrelu_model, trainable_only=True)
+    dense_resrelu_params_analytic = _dense_residual_params_with_activation(
         input_dim=features,
         output_dim=1,
-        hidden_dim=int(dense_width),
+        hidden_dim=int(dense_resrelu_width),
         depth=int(args.dense_depth),
+        activation_type="relu",
+        norm="rms",
         bias=True,
     )
-    mismatch_ratio = (
-        abs(dense_params_emp - sparse_params_emp) / float(sparse_params_emp)
+    dense_resrelu_mismatch_ratio = (
+        abs(dense_resrelu_params_emp - sparse_params_emp) / float(sparse_params_emp)
         if sparse_params_emp > 0
         else None
     )
-    if mismatch_ratio is not None and mismatch_ratio > float(args.match_tolerance):
+    if dense_resrelu_mismatch_ratio is not None and dense_resrelu_mismatch_ratio > float(
+        args.match_tolerance
+    ):
         print(
-            "Warning: parameter mismatch exceeds tolerance "
-            f"({mismatch_ratio:.4f} > {float(args.match_tolerance):.4f})."
+            "Warning: dense_resrelu parameter mismatch exceeds tolerance "
+            f"({dense_resrelu_mismatch_ratio:.4f} > {float(args.match_tolerance):.4f})."
+        )
+
+    dense_respsann_width, dense_respsann_mismatch = _match_dense_residual_width_with_activation(
+        target_params=int(sparse_params_emp),
+        input_dim=features,
+        output_dim=1,
+        depth=int(args.dense_depth),
+        activation_type="psann",
+        norm="rms",
+        max_width=int(args.dense_max_width),
+    )
+    dense_respsann_model = DenseResidualNet(
+        input_dim=features,
+        output_dim=1,
+        hidden_dim=int(dense_respsann_width),
+        depth=int(args.dense_depth),
+        activation_type="psann",
+        activation_config=activation_cfg,
+        norm="rms",
+        bias=True,
+    ).to(dtype=dtype)
+    dense_respsann_params_emp = count_params(dense_respsann_model)
+    dense_respsann_params_trainable = count_params(dense_respsann_model, trainable_only=True)
+    dense_respsann_params_analytic = _dense_residual_params_with_activation(
+        input_dim=features,
+        output_dim=1,
+        hidden_dim=int(dense_respsann_width),
+        depth=int(args.dense_depth),
+        activation_type="psann",
+        norm="rms",
+        bias=True,
+    )
+    dense_respsann_mismatch_ratio = (
+        abs(dense_respsann_params_emp - sparse_params_emp) / float(sparse_params_emp)
+        if sparse_params_emp > 0
+        else None
+    )
+    if dense_respsann_mismatch_ratio is not None and dense_respsann_mismatch_ratio > float(
+        args.match_tolerance
+    ):
+        print(
+            "Warning: dense_respsann parameter mismatch exceeds tolerance "
+            f"({dense_respsann_mismatch_ratio:.4f} > {float(args.match_tolerance):.4f})."
         )
 
     sparse_train = _train_model(
@@ -455,9 +1049,13 @@ def main() -> None:
         compile_mode=args.compile_mode,
         timing_warmup_steps=int(args.timing_warmup_steps),
         timing_epochs=int(args.timing_epochs),
+        curve_every=1,
+        curve_test=(dataset.X_test, dataset.y_test),
+        curve_test_unscaled=y_test_unscaled,
+        curve_test_y_scaler=y_scaler,
     )
-    dense_train = _train_model(
-        dense_model,
+    dense_resrelu_train = _train_model(
+        dense_resrelu_model,
         train_loader=train_loader,
         device=device,
         epochs=int(args.epochs),
@@ -470,13 +1068,82 @@ def main() -> None:
         compile_mode=args.compile_mode,
         timing_warmup_steps=int(args.timing_warmup_steps),
         timing_epochs=int(args.timing_epochs),
+        curve_every=1,
+        curve_test=(dataset.X_test, dataset.y_test),
+        curve_test_unscaled=y_test_unscaled,
+        curve_test_y_scaler=y_scaler,
+    )
+    dense_respsann_train = _train_model(
+        dense_respsann_model,
+        train_loader=train_loader,
+        device=device,
+        epochs=int(args.epochs),
+        lr=float(args.lr),
+        weight_decay=float(args.weight_decay),
+        amp=bool(args.amp),
+        amp_dtype=amp_dtype,
+        compile_model=bool(args.compile),
+        compile_backend=args.compile_backend,
+        compile_mode=args.compile_mode,
+        timing_warmup_steps=int(args.timing_warmup_steps),
+        timing_epochs=int(args.timing_epochs),
+        curve_every=1,
+        curve_test=(dataset.X_test, dataset.y_test),
+        curve_test_unscaled=y_test_unscaled,
+        curve_test_y_scaler=y_scaler,
     )
 
+    sparse_curve = sparse_train.pop("curve", [])
+    dense_resrelu_curve = dense_resrelu_train.pop("curve", [])
+    dense_respsann_curve = dense_respsann_train.pop("curve", [])
+
     sparse_mse = _evaluate(
-        sparse_model, X=dataset.X_test, y=dataset.y_test, device=device
+        sparse_model,
+        X=dataset.X_test,
+        y=dataset.y_test,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_test_unscaled,
     )
-    dense_mse = _evaluate(
-        dense_model, X=dataset.X_test, y=dataset.y_test, device=device
+    dense_resrelu_mse = _evaluate(
+        dense_resrelu_model,
+        X=dataset.X_test,
+        y=dataset.y_test,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_test_unscaled,
+    )
+    dense_respsann_mse = _evaluate(
+        dense_respsann_model,
+        X=dataset.X_test,
+        y=dataset.y_test,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_test_unscaled,
+    )
+    sparse_mse_train = _evaluate(
+        sparse_model,
+        X=dataset.X_train,
+        y=dataset.y_train,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_train_unscaled,
+    )
+    dense_resrelu_mse_train = _evaluate(
+        dense_resrelu_model,
+        X=dataset.X_train,
+        y=dataset.y_train,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_train_unscaled,
+    )
+    dense_respsann_mse_train = _evaluate(
+        dense_respsann_model,
+        X=dataset.X_train,
+        y=dataset.y_train,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_train_unscaled,
     )
 
     env = _get_env_info(device)
@@ -487,12 +1154,15 @@ def main() -> None:
         "depth_sparse": int(args.depth),
         "k": int(args.k),
         "dense_depth": int(args.dense_depth),
-        "dense_width": int(dense_width),
+        "dense_resrelu_width": int(dense_resrelu_width),
+        "dense_respsann_width": int(dense_respsann_width),
         "pattern": str(args.pattern),
         "radius": int(args.radius),
         "wrap_mode": str(args.wrap_mode),
         "sparse_activation": str(args.sparse_activation),
         "activation_config": activation_cfg,
+        "task": str(args.task),
+        "dataset_meta": dataset.meta,
         "train_size": int(args.train_size),
         "test_size": int(args.test_size),
         "epochs": int(args.epochs),
@@ -523,17 +1193,33 @@ def main() -> None:
                 "params_trainable": sparse_params_trainable,
                 "params_analytic": sparse_params_analytic,
                 "train": sparse_train,
+                "curve": sparse_curve,
+                "mse_train": sparse_mse_train,
                 "mse_test": sparse_mse,
             },
             {
-                "name": "dense_relu",
-                "params_empirical": dense_params_emp,
-                "params_trainable": dense_params_trainable,
-                "params_analytic": dense_params_analytic,
-                "param_mismatch": int(abs(dense_params_emp - sparse_params_emp)),
-                "param_mismatch_ratio": mismatch_ratio,
-                "train": dense_train,
-                "mse_test": dense_mse,
+                "name": "dense_resrelu",
+                "params_empirical": dense_resrelu_params_emp,
+                "params_trainable": dense_resrelu_params_trainable,
+                "params_analytic": dense_resrelu_params_analytic,
+                "param_mismatch": int(abs(dense_resrelu_params_emp - sparse_params_emp)),
+                "param_mismatch_ratio": dense_resrelu_mismatch_ratio,
+                "train": dense_resrelu_train,
+                "curve": dense_resrelu_curve,
+                "mse_train": dense_resrelu_mse_train,
+                "mse_test": dense_resrelu_mse,
+            },
+            {
+                "name": "dense_respsann",
+                "params_empirical": dense_respsann_params_emp,
+                "params_trainable": dense_respsann_params_trainable,
+                "params_analytic": dense_respsann_params_analytic,
+                "param_mismatch": int(abs(dense_respsann_params_emp - sparse_params_emp)),
+                "param_mismatch_ratio": dense_respsann_mismatch_ratio,
+                "train": dense_respsann_train,
+                "curve": dense_respsann_curve,
+                "mse_train": dense_respsann_mse_train,
+                "mse_test": dense_respsann_mse,
             },
         ],
     }
@@ -551,6 +1237,7 @@ def main() -> None:
             "model": entry["name"],
             "params_empirical": entry["params_empirical"],
             "params_analytic": entry["params_analytic"],
+            "mse_train": entry.get("mse_train"),
             "mse_test": entry["mse_test"],
         }
         if "param_mismatch" in entry:

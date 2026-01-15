@@ -67,8 +67,8 @@ from torch import nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 
-from psann.lm.models.registry import get_base
-from psann.lm.models.sine import SineConfig
+from psannlm.lm.models.registry import get_base
+from psannlm.lm.models.sine import SineConfig
 from psann.utils.diagnostics import participation_ratio
 
 

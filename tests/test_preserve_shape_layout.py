@@ -151,6 +151,42 @@ def test_per_element_validation_raises_on_spatial_mismatch():
         _prepare_validation_tensors(est, prepared, fit_args.validation, device=torch.device("cpu"))
 
 
+def test_per_element_target_scaler_standard_scales_targets():
+    rs = np.random.RandomState(3)
+    X = rs.randn(4, 2, 3, 3).astype(np.float32)
+    y = (10.0 + 5.0 * rs.randn(4, 1, 3, 3)).astype(np.float32)
+
+    est = make_regressor(
+        preserve_shape=True,
+        per_element=True,
+        data_format="channels_first",
+        target_scaler="standard",
+    )
+    fit_args = normalise_fit_args(
+        est,
+        X,
+        y,
+        context=None,
+        validation_data=None,
+        noisy=None,
+        verbose=0,
+        lr_max=None,
+        lr_min=None,
+        hisso=False,
+        hisso_kwargs={},
+    )
+    prepared, _ = prepare_inputs_and_scaler(est, fit_args)
+    assert prepared.y_cf is not None
+    y_scaled = prepared.y_cf
+    mean = y_scaled.mean(axis=(0, 2, 3))
+    std = y_scaled.std(axis=(0, 2, 3))
+    assert np.allclose(mean, 0.0, atol=1e-3)
+    assert np.allclose(std, 1.0, atol=1e-3)
+    state = est._target_scaler_state_
+    assert state is not None
+    assert state["n"] == int(y.shape[0] * y.shape[2] * y.shape[3])
+
+
 def test_flat_validation_raises_on_target_mismatch():
     rs = np.random.RandomState(3)
     X = rs.randn(5, 3, 2, 1).astype(np.float32)

@@ -35,14 +35,18 @@ jobs:
       - name: Black format check
         run: python -m black --check src tests scripts examples psannlm
 
+      - name: Mypy type check
+        if: matrix.python-version == '3.11'
+        run: python -m mypy src psannlm
+
       - name: Pytest (not slow)
         if: matrix.python-version != '3.11'
-        run: python -m pytest -m "not slow"
+        run: python -m pytest -m "not slow and not gpu"
 
       - name: Pytest with coverage (not slow)
         if: matrix.python-version == '3.11'
         run: |
-          coverage run -m pytest -m "not slow"
+          coverage run -m pytest -m "not slow and not gpu"
           coverage xml
           coverage report --fail-under=0
 
@@ -86,13 +90,19 @@ jobs:
           python -m pip install dist/*.whl
           python - << 'PY'
           import importlib
+          import importlib.util
 
           import psann
           from psann import PSANNRegressor, WaveResNetRegressor
-          from psann.lm import psannLM, psannLMDataPrep
 
           # psannlm package should NOT be importable yet
           assert importlib.util.find_spec("psannlm") is None, "psannlm should not be installed with psann only"
+          try:
+              importlib.import_module("psann.lm")
+          except ImportError as exc:
+              assert "psannlm" in str(exc)
+          else:
+              raise AssertionError("psann.lm should raise ImportError when psannlm is not installed")
           PY
 
       - name: Install psannlm wheel and smoke test imports
@@ -101,7 +111,7 @@ jobs:
           python - << 'PY'
           import psannlm
           import psannlm.train  # noqa: F401
-          from psann.lm import psannLM, psannLMDataPrep
+          from psannlm import psannLM, psannLMDataPrep
 
           m = psannLM()
           assert hasattr(m, "fit") and hasattr(m, "generate")

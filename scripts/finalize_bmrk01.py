@@ -44,7 +44,7 @@ def _parse_last_metrics(csv_path: Path) -> Dict[str, float]:
 
 
 def _build_dataprep(cfg: Dict[str, Any]):
-    from psann.lm import psannLMDataPrep
+    from psannlm.lm import psannLMDataPrep
 
     data_cfg = cfg.get("data", {})
     sources = []
@@ -73,8 +73,8 @@ def _build_dataprep(cfg: Dict[str, Any]):
 
 
 def _evaluate_validation(cfg: Dict[str, Any], bench_dir: Path, dp) -> Dict[str, float]:
-    from psann.lm import psannLM
-    from psann.lm.data.dataset import collate_batch
+    from psannlm.lm import psannLM
+    from psannlm.lm.data.dataset import collate_batch
 
     train_cfg = cfg.get("train", {})
     model_cfg = cfg.get("model", {})

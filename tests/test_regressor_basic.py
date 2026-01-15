@@ -131,3 +131,138 @@ def test_minmax_scaler_warm_start_tracks_global_range():
     transformed = (stacked - expected_min) / scale
     assert transformed.min() >= -1e-6
     assert transformed.max() <= 1.0 + 1e-6
+
+
+def test_target_scaler_resets_without_warm_start():
+    rs = np.random.RandomState(123)
+    X = rs.randn(64, 3).astype(np.float32)
+    y = (X.sum(axis=1, keepdims=True) + 0.05 * rs.randn(64, 1)).astype(np.float32)
+
+    est = PSANNRegressor(
+        hidden_layers=1,
+        hidden_units=16,
+        epochs=1,
+        batch_size=16,
+        target_scaler="standard",
+        warm_start=False,
+        device="cpu",
+        random_state=0,
+    )
+    est.fit(X, y)
+    first_state = est._target_scaler_state_
+    assert first_state is not None
+    assert first_state["n"] == y.shape[0]
+
+    X_small = X[:16]
+    y_small = y[:16]
+    est.fit(X_small, y_small)
+    second_state = est._target_scaler_state_
+    assert second_state is not None
+    assert second_state["n"] == y_small.shape[0]
+
+
+def test_target_scaler_warm_start_accumulates_stats():
+    rs = np.random.RandomState(9)
+    X = rs.randn(50, 4).astype(np.float32)
+    y = (X.sum(axis=1, keepdims=True) + 0.1 * rs.randn(50, 1)).astype(np.float32)
+
+    est = PSANNRegressor(
+        hidden_layers=1,
+        hidden_units=12,
+        epochs=1,
+        batch_size=25,
+        target_scaler="standard",
+        warm_start=True,
+        device="cpu",
+        random_state=0,
+    )
+    est.fit(X, y)
+    first_state = est._target_scaler_state_
+    assert first_state is not None
+    assert first_state["n"] == y.shape[0]
+
+    X_extra = rs.randn(30, 4).astype(np.float32)
+    y_extra = (X_extra.sum(axis=1, keepdims=True) + 0.1 * rs.randn(30, 1)).astype(np.float32)
+    est.fit(X_extra, y_extra)
+    second_state = est._target_scaler_state_
+    assert second_state is not None
+    assert second_state["n"] == y.shape[0] + y_extra.shape[0]
+
+
+def test_target_minmax_scaler_warm_start_tracks_global_range():
+    rs = np.random.RandomState(21)
+    X = rs.randn(40, 3).astype(np.float32)
+    y_first = rs.uniform(-1.0, 1.0, size=(40, 1)).astype(np.float32)
+
+    est = PSANNRegressor(
+        hidden_layers=1,
+        hidden_units=10,
+        epochs=1,
+        batch_size=20,
+        target_scaler="minmax",
+        warm_start=True,
+        device="cpu",
+        random_state=0,
+    )
+    est.fit(X, y_first)
+
+    state_first = est._target_scaler_state_
+    assert state_first is not None
+    assert est._target_scaler_kind_ == "minmax"
+    assert np.allclose(state_first["min"], y_first.min(axis=0), atol=1e-6)
+    assert np.allclose(state_first["max"], y_first.max(axis=0), atol=1e-6)
+
+    y_second = rs.uniform(-2.5, 2.0, size=(60, 1)).astype(np.float32)
+    X_second = rs.randn(60, 3).astype(np.float32)
+    est.fit(X_second, y_second)
+
+    state_second = est._target_scaler_state_
+    assert state_second is not None
+    expected_min = np.minimum(y_first.min(axis=0), y_second.min(axis=0))
+    expected_max = np.maximum(y_first.max(axis=0), y_second.max(axis=0))
+
+    assert np.allclose(state_second["min"], expected_min, atol=1e-6)
+    assert np.allclose(state_second["max"], expected_max, atol=1e-6)
+
+
+def test_predict_inverses_target_scaler_outputs():
+    torch = pytest.importorskip("torch")
+
+    class ZeroModel(torch.nn.Module):
+        def forward(self, x, context=None):  # noqa: D401
+            return torch.zeros((x.shape[0], 1), device=x.device, dtype=x.dtype)
+
+    est = PSANNRegressor(hidden_layers=1, hidden_units=4, device="cpu")
+    est.model_ = ZeroModel()
+    est.input_shape_ = (3,)
+    est._keep_column_output_ = False
+    est._output_shape_tuple_ = None
+    est._target_scaler_kind_ = "standard"
+    est._target_scaler_state_ = {
+        "n": 1,
+        "mean": np.array([10.0], dtype=np.float32),
+        "M2": np.array([4.0], dtype=np.float32),  # std=2
+    }
+
+    X = np.zeros((5, 3), dtype=np.float32)
+    preds = est.predict(X)
+    assert preds.shape == (5,)
+    assert np.allclose(preds, 10.0, atol=1e-6)
+
+
+def test_stream_target_is_scaled_when_target_scaler_active():
+    torch = pytest.importorskip("torch")
+
+    est = PSANNRegressor(hidden_layers=1, hidden_units=4, device="cpu")
+    est.model_ = torch.nn.Linear(3, 1)
+    est.input_shape_ = (3,)
+    est._target_scaler_kind_ = "standard"
+    est._target_scaler_state_ = {
+        "n": 1,
+        "mean": np.array([10.0], dtype=np.float32),
+        "M2": np.array([4.0], dtype=np.float32),  # std=2
+    }
+    reference = torch.zeros((1, 1), dtype=torch.float32)
+    scaled = est._coerce_stream_target(np.asarray(10.0, dtype=np.float32), reference, torch.device("cpu"))
+    assert scaled.shape == (1, 1)
+    assert float(scaled.item()) == pytest.approx(0.0, abs=1e-6)

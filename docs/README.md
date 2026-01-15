@@ -8,20 +8,30 @@ Use this guide to locate the right document and to see which notes are still act
 
 | Document | Status | Notes |
 | --- | --- | --- |
+| `PROJECT_MAP.md` | Active | High-level overview: what’s supported vs experimental, install model, repo layout. |
+| `REPO_STRUCTURE.md` | Active | Where things live, what’s generated, and repo conventions for scripts/outputs. |
 | `API.md` | Active | Public estimator surface reference, kept in sync with `src/psann/sklearn.py`. |
+| `public_api.md` | Active | Supported top-level exports and experimental surfaces. |
 | `migration.md` | Active | Upgrade guidance and behavioural changes between releases. |
 | `CONTRIBUTING.md` | Active | Contribution workflow, coding standards, and review expectations. |
 | `examples/README.md` | Active | CPU runtimes and usage notes for scripts in `examples/`. |
 | `benchmarks/hisso_variants.md` | Active | Benchmark description; accompanying JSON captures reproducible config. |
 | `benchmarks/README.md` | Active | Data provenance, size, and regeneration instructions for HISSO benchmarks. |
 | `benchmarks/lm_base_sweeps.md` | Active | Summary of recent PSANN-LM base sweeps + recommendations for the next full-scale run. |
+| `geo_sparse_benchmarks_summary.md` | Active | Short index of GeoSparse sweeps with repro pointers. |
+| `geo_sparse_benchmarks_report.md` | Archive | Long-form GeoSparse benchmark handoff with raw appendix. |
 | `PSANN_Results_Compendium.md` | Active | Curated experiment results and interpretation tips. |
 | `diagnostics.md` | Active | Quick reference for feature quality diagnostics; see revision history for recent notation fixes. |
 | `wave_resnet.md` | Active | Background and design rationale for the WaveResNet backbone. |
+| `architecture.md` | Active | High-level module map and data flow across the estimator stack. |
+| `performance_tips.md` | Active | Practical CPU/GPU, dtype, and memory tips for faster runs. |
+| `project_cleanup_todo.md` | Backlog | Comprehensive checklist for making the repo newcomer-friendly and slimming packaging. |
 | `extras_removal_inventory.md` | Backlog | Source-of-truth inventory for removing the legacy extras stack (linked to `backlog/extras-removal.md`). |
+| `backlog/todo_inventory.md` | Backlog | Inventory of TODO documents and issue-triage guidance. |
 | `backlog/docs-site-generator.md` | Backlog | Notes on evaluating MkDocs/Sphinx once the HISSO refactor settles. |
 | `lsm_robustness_todo.md` | Archive | Historical HISSO/extras backlog; superseded by the extras removal plan. |
 | `phase1_audit.md` | Archive | Snapshot of the naming audit prior to the cleanup work. Preserve for traceability. |
+| `ResearchFindings_and_NextSteps.md` | Archive | Historical research notes; see Results Compendium for current takeaways. |
 | `archive/codex_instructions.md` | Archive | Legacy Colab instructions; kept for historical context only. |
 
 ## Maintenance Notes

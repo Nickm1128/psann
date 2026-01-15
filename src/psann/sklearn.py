@@ -313,6 +313,14 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
     """Sklearn-style regressor wrapper around a PSANN network (PyTorch).
 
     Parameters mirror the README's proposed API.
+
+    Shapes and dtype:
+    - X: float32 array shaped (N, F) for flattened inputs, or (N, C, ...) / (N, ..., C)
+      when preserve_shape=True.
+    - y: float32 array shaped (N,) or (N, target_dim); when per_element=True, y can match
+      the spatial layout of X.
+
+    Defaults are chosen for CPU-friendly quick runs; set device="cuda" to train on GPU.
     """
 
     def __init__(
@@ -355,6 +363,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         warm_start: bool = False,
         scaler: Optional[ScalerSpec] = None,
         scaler_params: Optional[Dict[str, Any]] = None,
+        target_scaler: Optional[ScalerSpec] = None,
+        target_scaler_params: Optional[Dict[str, Any]] = None,
         context_builder: Optional[Union[str, Callable[[np.ndarray], np.ndarray]]] = None,
         context_builder_params: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -427,6 +437,9 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         # Optional input scaler (minmax/standard or custom object with fit/transform)
         self.scaler = scaler
         self.scaler_params = scaler_params or None
+        # Optional target scaler (minmax/standard or custom object with fit/transform)
+        self.target_scaler = target_scaler
+        self.target_scaler_params = target_scaler_params or None
         self.context_builder = context_builder
         self.context_builder_params = (
             copy.deepcopy(context_builder_params) if context_builder_params is not None else {}
@@ -460,6 +473,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         # Fitted scaler state (set during fit)
         self._scaler_kind_: Optional[str] = None
         self._scaler_state_: Optional[Dict[str, Any]] = None
+        self._target_scaler_kind_: Optional[str] = None
+        self._target_scaler_state_: Optional[Dict[str, Any]] = None
 
         # Inference metadata
         self._train_inputs_layout_: str = "flat"
@@ -816,6 +831,214 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             return obj.transform(Z)
 
         return _xfm
+
+    def _make_internal_target_scaler(self) -> Optional[Dict[str, Any]]:
+        kind = self.target_scaler
+        if kind is None:
+            return None
+        if isinstance(kind, str):
+            key = kind.lower()
+            if key not in {"standard", "minmax"}:
+                raise ValueError(
+                    "Unsupported target_scaler string. Use 'standard', 'minmax', or provide an object with fit/transform."
+                )
+            return {"type": key, "state": {}}
+        # Custom object: must implement fit/transform; inverse_transform optional
+        if not hasattr(kind, "fit") or not hasattr(kind, "transform"):
+            raise ValueError(
+                "Custom target_scaler must implement fit(X) and transform(X). Optional inverse_transform(X)."
+            )
+        return {"type": "custom", "obj": kind}
+
+    def _target_scaler_fit_update(
+        self, y2d: np.ndarray
+    ) -> Optional[Callable[[np.ndarray], np.ndarray]]:
+        """Fit or update the target scaler on a 2D array and return a transform function."""
+        if self.target_scaler is None:
+            self._target_scaler_kind_ = None
+            self._target_scaler_state_ = None
+            return None
+        spec = getattr(self, "_target_scaler_spec_", None)
+        if spec is None:
+            spec = self._make_internal_target_scaler()
+            self._target_scaler_spec_ = spec
+        if spec is None:
+            self._target_scaler_kind_ = None
+            self._target_scaler_state_ = None
+            return None
+
+        if spec.get("type") == "standard":
+            self._target_scaler_kind_ = "standard"
+            st = self._target_scaler_state_ or {"n": 0, "mean": None, "M2": None}
+            n0 = int(st["n"])
+            y_arr = np.asarray(y2d, dtype=np.float32)
+            if n0 == 0:
+                mean = y_arr.mean(axis=0)
+                diff = y_arr - mean
+                M2 = (diff * diff).sum(axis=0)
+                n = y_arr.shape[0]
+            else:
+                mean0 = st["mean"]
+                M20 = st["M2"]
+                n = n0 + y_arr.shape[0]
+                delta = y_arr.mean(axis=0) - mean0
+                mean = (mean0 * n0 + y_arr.sum(axis=0)) / n
+                M2a = M20
+                xa = n0
+                xb = y_arr.shape[0]
+                y_centered = y_arr - y_arr.mean(axis=0)
+                M2b = (y_centered * y_centered).sum(axis=0)
+                M2 = M2a + M2b + (delta * delta) * (xa * xb) / max(n, 1)
+            self._target_scaler_state_ = {"n": int(n), "mean": mean, "M2": M2}
+
+            def _xfm(Z: np.ndarray) -> np.ndarray:
+                st2 = self._target_scaler_state_
+                assert st2 is not None
+                mean2 = st2["mean"]
+                var = st2["M2"] / max(st2["n"], 1)
+                std = np.sqrt(np.maximum(var, 1e-8)).astype(np.float32)
+                return (Z - mean2) / std
+
+            return _xfm
+
+        if spec.get("type") == "minmax":
+            self._target_scaler_kind_ = "minmax"
+            st = self._target_scaler_state_ or {"min": None, "max": None}
+            y_arr = np.asarray(y2d, dtype=np.float32)
+            mn = y_arr.min(axis=0) if st["min"] is None else np.minimum(st["min"], y_arr.min(axis=0))
+            mx = y_arr.max(axis=0) if st["max"] is None else np.maximum(st["max"], y_arr.max(axis=0))
+            self._target_scaler_state_ = {"min": mn, "max": mx}
+
+            def _xfm(Z: np.ndarray) -> np.ndarray:
+                st2 = self._target_scaler_state_
+                assert st2 is not None
+                mn2 = st2["min"]
+                mx2 = st2["max"]
+                scale = np.where((mx2 - mn2) > 1e-8, (mx2 - mn2), 1.0)
+                return (Z - mn2) / scale
+
+            return _xfm
+
+        obj = spec.get("obj")
+        self._target_scaler_kind_ = "custom"
+        if not hasattr(self, "_target_scaler_fitted_") or not getattr(
+            self, "_target_scaler_fitted_", False
+        ):
+            try:
+                obj.fit(y2d, **(self.target_scaler_params or {}))
+            except TypeError:
+                obj.fit(y2d)
+            self._target_scaler_fitted_ = True
+        else:
+            if hasattr(obj, "partial_fit"):
+                obj.partial_fit(y2d)
+            else:
+                pass
+
+        def _xfm(Z: np.ndarray) -> np.ndarray:
+            return obj.transform(Z)
+
+        return _xfm
+
+    def _apply_fitted_target_scaler(self, y2d: np.ndarray) -> np.ndarray:
+        kind = getattr(self, "_target_scaler_kind_", None)
+        if kind is None:
+            return y2d.astype(np.float32, copy=False)
+        st = getattr(self, "_target_scaler_state_", None)
+        if kind == "standard" and st is not None:
+            n = max(int(st.get("n", 0)), 1)
+            mean = np.asarray(st.get("mean"), dtype=np.float32)
+            var = np.asarray(st.get("M2"), dtype=np.float32) / float(n)
+            std = np.sqrt(np.maximum(var, 1e-8)).astype(np.float32, copy=False)
+            return ((y2d - mean) / std).astype(np.float32, copy=False)
+        if kind == "minmax" and st is not None:
+            mn = np.asarray(st.get("min"), dtype=np.float32)
+            mx = np.asarray(st.get("max"), dtype=np.float32)
+            scale = np.where((mx - mn) > 1e-8, (mx - mn), 1.0).astype(np.float32, copy=False)
+            return ((y2d - mn) / scale).astype(np.float32, copy=False)
+        if kind == "custom" and hasattr(self, "target_scaler") and hasattr(
+            self.target_scaler, "transform"
+        ):
+            transformed = self.target_scaler.transform(y2d)
+            return np.asarray(transformed, dtype=np.float32)
+        return y2d.astype(np.float32, copy=False)
+
+    def _inverse_fitted_target_scaler(self, y2d: np.ndarray) -> np.ndarray:
+        kind = getattr(self, "_target_scaler_kind_", None)
+        st = getattr(self, "_target_scaler_state_", None)
+        if kind is None:
+            return y2d.astype(np.float32, copy=False)
+        if kind == "standard" and st is not None:
+            mean = np.asarray(st.get("mean"), dtype=np.float32)
+            n = max(int(st.get("n", 0)), 1)
+            var = np.asarray(st.get("M2"), dtype=np.float32) / float(n)
+            std = np.sqrt(np.maximum(var, 1e-8)).astype(np.float32, copy=False)
+            return (y2d * std + mean).astype(np.float32, copy=False)
+        if kind == "minmax" and st is not None:
+            mn = np.asarray(st.get("min"), dtype=np.float32)
+            mx = np.asarray(st.get("max"), dtype=np.float32)
+            scale = np.where((mx - mn) > 1e-8, (mx - mn), 1.0).astype(np.float32, copy=False)
+            return (y2d * scale + mn).astype(np.float32, copy=False)
+        if kind == "custom" and hasattr(self.target_scaler, "inverse_transform"):
+            inv = self.target_scaler.inverse_transform(y2d)
+            return np.asarray(inv, dtype=np.float32)
+        return y2d.astype(np.float32, copy=False)
+
+    def _apply_fitted_target_scaler_like(self, y: np.ndarray) -> np.ndarray:
+        y_arr = np.asarray(y, dtype=np.float32)
+        if getattr(self, "_target_scaler_kind_", None) is None:
+            return y_arr.astype(np.float32, copy=False)
+        orig_shape = y_arr.shape
+
+        if self.preserve_shape and self.per_element:
+            target_cf = getattr(self, "_target_cf_shape_", None)
+            if target_cf is not None and y_arr.size == int(y_arr.shape[0]) * int(np.prod(target_cf)):
+                y_cf = y_arr.reshape((y_arr.shape[0],) + tuple(target_cf))
+                n, n_targets = int(y_cf.shape[0]), int(y_cf.shape[1])
+                y2d = y_cf.reshape(n, n_targets, -1).transpose(0, 2, 1).reshape(-1, n_targets)
+                y2d = self._apply_fitted_target_scaler(y2d)
+                y_cf = y2d.reshape(n, -1, n_targets).transpose(0, 2, 1).reshape(y_cf.shape)
+                return y_cf.reshape(orig_shape).astype(np.float32, copy=False)
+
+        if y_arr.ndim == 0:
+            y2d = y_arr.reshape(1, 1)
+            y2d = self._apply_fitted_target_scaler(y2d)
+            return y2d.reshape(orig_shape).astype(np.float32, copy=False)
+        if y_arr.ndim == 1:
+            y2d = y_arr.reshape(1, -1)
+            y2d = self._apply_fitted_target_scaler(y2d)
+            return y2d.reshape(orig_shape).astype(np.float32, copy=False)
+        y2d = y_arr.reshape(int(y_arr.shape[0]), -1)
+        y2d = self._apply_fitted_target_scaler(y2d)
+        return y2d.reshape(orig_shape).astype(np.float32, copy=False)
+
+    def _inverse_fitted_target_scaler_like(self, y: np.ndarray) -> np.ndarray:
+        y_arr = np.asarray(y, dtype=np.float32)
+        if getattr(self, "_target_scaler_kind_", None) is None:
+            return y_arr.astype(np.float32, copy=False)
+        orig_shape = y_arr.shape
+
+        if self.preserve_shape and self.per_element:
+            target_cf = getattr(self, "_target_cf_shape_", None)
+            if target_cf is not None and y_arr.size == int(y_arr.shape[0]) * int(np.prod(target_cf)):
+                y_cf = y_arr.reshape((y_arr.shape[0],) + tuple(target_cf))
+                n, n_targets = int(y_cf.shape[0]), int(y_cf.shape[1])
+                y2d = y_cf.reshape(n, n_targets, -1).transpose(0, 2, 1).reshape(-1, n_targets)
+                y2d = self._inverse_fitted_target_scaler(y2d)
+                y_cf = y2d.reshape(n, -1, n_targets).transpose(0, 2, 1).reshape(y_cf.shape)
+                return y_cf.reshape(orig_shape).astype(np.float32, copy=False)
+
+        if y_arr.ndim == 0:
+            y2d = y_arr.reshape(1, 1)
+            y2d = self._inverse_fitted_target_scaler(y2d)
+            return y2d.reshape(orig_shape).astype(np.float32, copy=False)
+        if y_arr.ndim == 1:
+            y2d = y_arr.reshape(1, -1)
+            y2d = self._inverse_fitted_target_scaler(y2d)
+            return y2d.reshape(orig_shape).astype(np.float32, copy=False)
+        y2d = y_arr.reshape(int(y_arr.shape[0]), -1)
+        y2d = self._inverse_fitted_target_scaler(y2d)
+        return y2d.reshape(orig_shape).astype(np.float32, copy=False)
 
     def _scaler_inverse_tensor(self, X_ep: torch.Tensor, *, feature_dim: int = -1) -> torch.Tensor:
         """Inverse-transform a torch tensor episode if scaler is active.
@@ -1574,6 +1797,11 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             self._scaler_state_ = None
             self._scaler_spec_ = None
             self._scaler_kind_ = None
+            self._scaler_fitted_ = False
+            self._target_scaler_state_ = None
+            self._target_scaler_spec_ = None
+            self._target_scaler_kind_ = None
+            self._target_scaler_fitted_ = False
 
         fit_args = normalise_fit_args(
             self,
@@ -1679,6 +1907,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
     def predict(self, X: np.ndarray, *, context: Optional[np.ndarray] = None) -> np.ndarray:
         inputs_np, meta, context_np = self._prepare_inference_inputs(X, context)
         preds = self._run_model(inputs_np, context_np=context_np, state_updates=False)
+        preds = self._inverse_fitted_target_scaler_like(preds)
         return self._reshape_predictions(preds, meta)
 
     def score(self, X: np.ndarray, y: np.ndarray, *, context: Optional[np.ndarray] = None) -> float:
@@ -1716,6 +1945,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
 
         inputs_np, meta, context_np = self._prepare_inference_inputs(batch, context)
         preds = self._run_model(inputs_np, context_np=context_np, state_updates=bool(update_state))
+        preds = self._inverse_fitted_target_scaler_like(preds)
         reshaped = self._reshape_predictions(preds, meta)
         if update_params:
             if target is None:
@@ -1938,6 +2168,7 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
                 f"Streaming target shape {arr.shape} does not match prediction shape {expected_shape}."
             )
 
+        arr = self._apply_fitted_target_scaler_like(arr)
         return torch.from_numpy(arr.astype(np.float32, copy=False)).to(device)
 
     def _apply_stream_update(
@@ -2000,6 +2231,12 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             "scaler_state": getattr(self, "_scaler_state_", None),
             "scaler_spec": getattr(self, "_scaler_spec_", None),
             "scaler_obj": self.scaler if getattr(self, "_scaler_kind_", None) == "custom" else None,
+            "target_scaler_kind": getattr(self, "_target_scaler_kind_", None),
+            "target_scaler_state": getattr(self, "_target_scaler_state_", None),
+            "target_scaler_spec": getattr(self, "_target_scaler_spec_", None),
+            "target_scaler_obj": (
+                self.target_scaler if getattr(self, "_target_scaler_kind_", None) == "custom" else None
+            ),
             "input_shape": (
                 tuple(self.input_shape_)
                 if getattr(self, "input_shape_", None) is not None
@@ -2068,6 +2305,14 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         if scaler_obj is not None:
             estimator.scaler = scaler_obj
             estimator._scaler_fitted_ = True
+
+        estimator._target_scaler_kind_ = payload.get("target_scaler_kind")
+        estimator._target_scaler_state_ = payload.get("target_scaler_state")
+        estimator._target_scaler_spec_ = payload.get("target_scaler_spec")
+        target_scaler_obj = payload.get("target_scaler_obj")
+        if target_scaler_obj is not None:
+            estimator.target_scaler = target_scaler_obj
+            estimator._target_scaler_fitted_ = True
 
         input_shape = payload.get("input_shape")
         estimator.input_shape_ = tuple(input_shape) if input_shape is not None else None
@@ -2141,6 +2386,8 @@ class WaveResNetRegressor(PSANNRegressor):
         warm_start: bool = False,
         scaler: Optional[ScalerSpec] = None,
         scaler_params: Optional[Dict[str, Any]] = None,
+        target_scaler: Optional[ScalerSpec] = None,
+        target_scaler_params: Optional[Dict[str, Any]] = None,
         first_layer_w0: float = 30.0,
         hidden_w0: float = 1.0,
         norm: Literal["none", "weight", "rms"] = "none",
@@ -2288,6 +2535,8 @@ class WaveResNetRegressor(PSANNRegressor):
             warm_start=warm_start,
             scaler=scaler,
             scaler_params=scaler_params,
+            target_scaler=target_scaler,
+            target_scaler_params=target_scaler_params,
             context_builder=context_builder,
             context_builder_params=context_builder_params,
         )
@@ -2810,6 +3059,8 @@ class SGRPSANNRegressor(PSANNRegressor):
         warm_start: bool = False,
         scaler: Optional[ScalerSpec] = None,
         scaler_params: Optional[Dict[str, Any]] = None,
+        target_scaler: Optional[ScalerSpec] = None,
+        target_scaler_params: Optional[Dict[str, Any]] = None,
         # SGR-specific
         phase_init: float = 0.0,
         phase_trainable: bool = True,
@@ -2898,6 +3149,8 @@ class SGRPSANNRegressor(PSANNRegressor):
             warm_start=warm_start,
             scaler=scaler,
             scaler_params=scaler_params,
+            target_scaler=target_scaler,
+            target_scaler_params=target_scaler_params,
         )
 
         self.phase_init = float(phase_init)
@@ -3051,6 +3304,8 @@ class ResPSANNRegressor(PSANNRegressor):
         warm_start: bool = False,
         scaler: Optional[ScalerSpec] = None,
         scaler_params: Optional[Dict[str, Any]] = None,
+        target_scaler: Optional[ScalerSpec] = None,
+        target_scaler_params: Optional[Dict[str, Any]] = None,
         # residual-specific
         w0_first: float = 12.0,
         w0_hidden: float = 1.0,
@@ -3096,6 +3351,8 @@ class ResPSANNRegressor(PSANNRegressor):
             warm_start=warm_start,
             scaler=scaler,
             scaler_params=scaler_params,
+            target_scaler=target_scaler,
+            target_scaler_params=target_scaler_params,
         )
         self.w0_first = float(w0_first)
         self.w0_hidden = float(w0_hidden)
@@ -3171,6 +3428,10 @@ class ResPSANNRegressor(PSANNRegressor):
 class GeoSparseRegressor(PSANNRegressor):
     """Sklearn-style regressor using the GeoSparseNet backbone.
 
+    Shapes and dtype:
+    - X: float32 array shaped (N, H, W) or (N, H * W) with shape=(H, W) provided.
+    - y: float32 array shaped (N,) or (N, target_dim).
+
     Note: hidden_layers controls the sparse depth. hidden_units/hidden_width are unused.
     """
 
@@ -3214,6 +3475,8 @@ class GeoSparseRegressor(PSANNRegressor):
         warm_start: bool = False,
         scaler: Optional[ScalerSpec] = None,
         scaler_params: Optional[Dict[str, Any]] = None,
+        target_scaler: Optional[ScalerSpec] = None,
+        target_scaler_params: Optional[Dict[str, Any]] = None,
         # geo-specific
         shape: Optional[Tuple[int, int]] = None,
         k: int = 8,
@@ -3284,6 +3547,8 @@ class GeoSparseRegressor(PSANNRegressor):
             warm_start=warm_start,
             scaler=scaler,
             scaler_params=scaler_params,
+            target_scaler=target_scaler,
+            target_scaler_params=target_scaler_params,
         )
         self.geo_shape = tuple(shape) if shape is not None else None
         self.geo_k = int(k)
@@ -3411,6 +3676,8 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         warm_start: bool = False,
         scaler: Optional[ScalerSpec] = None,
         scaler_params: Optional[Dict[str, Any]] = None,
+        target_scaler: Optional[ScalerSpec] = None,
+        target_scaler_params: Optional[Dict[str, Any]] = None,
         w0_first: float = 12.0,
         w0_hidden: float = 1.0,
         norm: str = "rms",
@@ -3460,6 +3727,8 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
             warm_start=warm_start,
             scaler=scaler,
             scaler_params=scaler_params,
+            target_scaler=target_scaler,
+            target_scaler_params=target_scaler_params,
             w0_first=w0_first,
             w0_hidden=w0_hidden,
             norm=norm,

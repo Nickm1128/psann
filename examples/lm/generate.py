@@ -1,6 +1,6 @@
 """Minimal generation example for PSANN-LM."""
 
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm.lm import psannLM, psannLMDataPrep
 
 
 def main() -> None:

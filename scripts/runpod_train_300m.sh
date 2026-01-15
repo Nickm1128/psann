@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RunPod training script for ~300M PSANN-LM (6B tokens target, Chinchilla-style)
 # Prereqs (PyPI-style): `pip install psann psannlm` and CUDA-ready PyTorch.
-# For local development from this repo: `pip install -e .[dev,lm]`.
+# For local development from this repo: `pip install -e .[dev]` and `pip install -e ./psannlm`.
 
 set -euo pipefail
 
@@ -162,7 +162,7 @@ WEIGHT_DECAY=${WEIGHT_DECAY:-0.01}
 # Leave some VRAM headroom for system/processes.
 # Note: too low of a fraction can trip PyTorch's internal cap if the caching allocator
 # reserves a lot of memory; bump this up if you see OOM with lots of "reserved but unallocated".
-CUDA_MEMORY_FRACTION=${CUDA_MEMORY_FRACTION:-0.90}
+CUDA_MEMORY_FRACTION=${CUDA_MEMORY_FRACTION:-0.85}
 CUDA_EMPTY_CACHE_AFTER_INIT=${CUDA_EMPTY_CACHE_AFTER_INIT:-1}
 
 # torch.compile is a major speed win on GB10 for WaveResNet; set TORCH_COMPILE=0 to disable.

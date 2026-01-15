@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm.lm import psannLM, psannLMDataPrep
 
 
 SAMPLE_TEXTS = Path(__file__).resolve().parents[2] / "examples" / "lm" / "sample_texts.txt"

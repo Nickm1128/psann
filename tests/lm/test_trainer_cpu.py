@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from psann.lm.config import TrainConfig
-from psann.lm.data.dataset import LMDataset, PackingConfig
-from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psann.lm.models.transformer_respsann import ResPSANNTransformer, ResPSANNTransformerConfig
-from psann.lm.train.trainer import Trainer
+from psannlm.lm.config import TrainConfig
+from psannlm.lm.data.dataset import LMDataset, PackingConfig
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
+from psannlm.lm.models.transformer_respsann import ResPSANNTransformer, ResPSANNTransformerConfig
+from psannlm.lm.train.trainer import Trainer
 
 
 def _tiny_dataset(max_length: int = 8):

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import subprocess
 import sys
@@ -12,19 +13,10 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 
-def _parse_list(value: str) -> List[str]:
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _slugify(value: str) -> str:
-    return (
-        value.replace(":", "_")
-        .replace("/", "_")
-        .replace("\\", "_")
-        .replace(" ", "_")
-        .replace(",", "_")
-        .replace("=", "_")
-    )
+try:
+    from scripts._cli_utils import parse_comma_list, slugify
+except ImportError:  # pragma: no cover - supports `python scripts/foo.py`
+    from _cli_utils import parse_comma_list, slugify  # type: ignore
 
 
 def _run_command(cmd: List[str], *, dry_run: bool) -> subprocess.CompletedProcess:
@@ -32,6 +24,20 @@ def _run_command(cmd: List[str], *, dry_run: bool) -> subprocess.CompletedProces
         print("DRY RUN:", " ".join(cmd))
         return subprocess.CompletedProcess(cmd, 0, "", "")
     return subprocess.run(cmd, check=False, capture_output=True, text=True)
+
+
+def _print_header(args: argparse.Namespace, out_root: Path, total_runs: int) -> None:
+    ts = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(
+        "[sweep] start",
+        f"time={ts}",
+        f"out={out_root}",
+        f"runs={total_runs}",
+        f"task={args.task}",
+        f"device={args.device}",
+        f"dtype={args.dtype}",
+        flush=True,
+    )
 
 
 def _load_results(path: Path) -> Optional[Dict[str, Any]]:
@@ -58,11 +64,19 @@ def _write_summary(rows: Iterable[Dict[str, Any]], path: Path) -> None:
     rows = list(rows)
     if not rows:
         return
-    keys = sorted({k for row in rows for k in row.keys()})
+    keys = sorted({k for row in rows for k in row.keys() if k is not None})
     with path.open("w", encoding="utf-8", newline="") as fh:
-        fh.write(",".join(keys) + "\n")
+        writer = csv.DictWriter(fh, fieldnames=keys, extrasaction="ignore")
+        writer.writeheader()
         for row in rows:
-            fh.write(",".join(str(row.get(k, "")) for k in keys) + "\n")
+            sanitized: Dict[str, Any] = {}
+            for key in keys:
+                value = row.get(key, "")
+                if isinstance(value, (dict, list, tuple)):
+                    sanitized[key] = json.dumps(value, sort_keys=True)
+                else:
+                    sanitized[key] = value
+            writer.writerow(sanitized)
 
 
 def _aggregate_by_model(rows: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
@@ -72,7 +86,13 @@ def _aggregate_by_model(rows: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, f
         model = str(row.get("model", "unknown"))
         metrics = agg.setdefault(model, {})
         counts[model] = counts.get(model, 0) + 1
-        for key in ("mse_test", "train_train_time_s", "train_step_time_ms_mean", "train_samples_per_sec"):
+        for key in (
+            "mse_test",
+            "mse_train",
+            "train_train_time_s",
+            "train_step_time_ms_mean",
+            "train_samples_per_sec",
+        ):
             val = row.get(key)
             if isinstance(val, (int, float)):
                 metrics[key] = float(metrics.get(key, 0.0) + float(val))
@@ -116,6 +136,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ks", type=str, default="4,8,16", help="Comma list of k values.")
     p.add_argument("--activations", type=str, default="relu,psann", help="Comma list of activations.")
     p.add_argument("--seeds", type=str, default="0,1", help="Comma list of seeds.")
+    p.add_argument(
+        "--task",
+        type=str,
+        default="mixed",
+        choices=["sine", "mixed", "teacher_relu", "teacher_tanh"],
+        help="Synthetic regression task (passed through to benchmark script).",
+    )
     p.add_argument("--device", type=str, default="auto")
     p.add_argument("--epochs", type=int, default=25)
     p.add_argument("--batch-size", type=int, default=128)
@@ -133,6 +160,19 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--match-tolerance", type=float, default=0.01)
     p.add_argument("--train-size", type=int, default=4096)
     p.add_argument("--test-size", type=int, default=1024)
+    p.add_argument(
+        "--scale-x",
+        action="store_true",
+        help="Standardize X (fit on train split; passed through to benchmark script).",
+    )
+    p.add_argument(
+        "--scale-y",
+        action="store_true",
+        help=(
+            "Standardize y (fit on train split; predictions are inverse-transformed before eval "
+            "MSE; passed through to benchmark script)."
+        ),
+    )
     p.add_argument("--pattern", type=str, default="local")
     p.add_argument("--radius", type=int, default=1)
     p.add_argument("--wrap-mode", type=str, default="clamp")
@@ -140,17 +180,24 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--plot", action="store_true")
     p.add_argument("--out", type=str, default=None)
     p.add_argument("--resume", action="store_true")
+    p.add_argument(
+        "--progress-every",
+        type=int,
+        default=1,
+        help="Print progress every N runs (1 = every run).",
+    )
     p.add_argument("--dry-run", action="store_true")
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    shapes = _parse_list(args.shapes)
-    depths = [int(v) for v in _parse_list(args.depths)]
-    ks = [int(v) for v in _parse_list(args.ks)]
-    activations = _parse_list(args.activations)
-    seeds = [int(v) for v in _parse_list(args.seeds)]
+    shapes = parse_comma_list(args.shapes)
+    depths = [int(v) for v in parse_comma_list(args.depths)]
+    ks = [int(v) for v in parse_comma_list(args.ks)]
+    activations = parse_comma_list(args.activations)
+    seeds = [int(v) for v in parse_comma_list(args.seeds)]
+    task = str(args.task)
 
     out_root = (
         Path(args.out)
@@ -159,21 +206,35 @@ def main() -> None:
     )
     out_root.mkdir(parents=True, exist_ok=True)
 
+    total_runs = len(shapes) * len(depths) * len(ks) * len(activations) * len(seeds)
+    _print_header(args, out_root, total_runs)
+    run_index = 0
+    sweep_start = time.perf_counter()
+    executed_durations_s: List[float] = []
+
     rows: List[Dict[str, Any]] = []
     for shape in shapes:
         for depth in depths:
             for k in ks:
                 for activation in activations:
                     for seed in seeds:
-                        run_id = f"shape={shape}_depth={depth}_k={k}_act={activation}_seed={seed}"
-                        slug = _slugify(run_id)
+                        run_index += 1
+                        run_id = (
+                            f"task={task}_shape={shape}_depth={depth}_k={k}_act={activation}_seed={seed}"
+                        )
+                        slug = slugify(run_id, replace_commas=True, replace_equals=True)
                         run_dir = out_root / slug
                         results_path = run_dir / "results.json"
                         if args.resume and results_path.exists():
                             payload = _load_results(results_path)
                             if payload is not None:
                                 rows.extend(_rows_from_results(payload, run_id, run_dir))
+                            if run_index % max(1, int(args.progress_every)) == 0:
+                                print(f"[sweep] {run_index}/{total_runs} resume-skip {slug}")
                             continue
+
+                        if not args.dry_run:
+                            run_dir.mkdir(parents=True, exist_ok=True)
 
                         cmd = [
                             sys.executable,
@@ -186,6 +247,8 @@ def main() -> None:
                             str(k),
                             "--sparse-activation",
                             activation,
+                            "--task",
+                            task,
                             "--seed",
                             str(seed),
                             "--device",
@@ -231,10 +294,25 @@ def main() -> None:
                             cmd.append("--tf32")
                         if args.compile:
                             cmd.append("--compile")
+                        if args.scale_x:
+                            cmd.append("--scale-x")
+                        if args.scale_y:
+                            cmd.append("--scale-y")
                         if args.activation_config is not None:
                             cmd.extend(["--activation-config", str(args.activation_config)])
 
+                        if run_index % max(1, int(args.progress_every)) == 0:
+                            print(f"[sweep] {run_index}/{total_runs} start {slug}")
+
+                        run_start = time.perf_counter()
                         result = _run_command(cmd, dry_run=bool(args.dry_run))
+                        run_elapsed = time.perf_counter() - run_start
+                        if not args.dry_run:
+                            (run_dir / "stdout.log").write_text(result.stdout, encoding="utf-8")
+                            (run_dir / "stderr.log").write_text(result.stderr, encoding="utf-8")
+                        if result.returncode == 0:
+                            executed_durations_s.append(float(run_elapsed))
+
                         if result.returncode != 0:
                             rows.append(
                                 {
@@ -243,6 +321,10 @@ def main() -> None:
                                     "returncode": int(result.returncode),
                                     "stderr": result.stderr.strip(),
                                 }
+                            )
+                            print(
+                                f"[sweep] {run_index}/{total_runs} ERROR rc={result.returncode} {slug} "
+                                f"({run_elapsed:.1f}s)"
                             )
                             continue
                         payload = _load_results(results_path)
@@ -255,8 +337,33 @@ def main() -> None:
                                     "stderr": "missing results.json",
                                 }
                             )
+                            print(f"[sweep] {run_index}/{total_runs} ERROR missing results.json {slug}")
                             continue
                         rows.extend(_rows_from_results(payload, run_id, run_dir))
+                        if run_index % max(1, int(args.progress_every)) == 0:
+                            metrics: List[str] = []
+                            for m in payload.get("models", []):
+                                name = m.get("name")
+                                mse = m.get("mse_test")
+                                if isinstance(mse, (int, float)):
+                                    metrics.append(f"{name}={float(mse):.4g}")
+                                else:
+                                    metrics.append(f"{name}=?")
+
+                            eta_s = None
+                            if executed_durations_s:
+                                avg = sum(executed_durations_s) / float(len(executed_durations_s))
+                                remaining = total_runs - run_index
+                                eta_s = avg * float(remaining)
+
+                            msg = (
+                                f"[sweep] {run_index}/{total_runs} done {slug} ({run_elapsed:.1f}s) "
+                                + " ".join(metrics)
+                            )
+                            if eta_s is not None:
+                                msg += f" ETA~{eta_s/60.0:.1f}m"
+                            msg += f" elapsed={((time.perf_counter()-sweep_start)/60.0):.1f}m"
+                            print(msg)
 
     _write_summary(rows, out_root / "summary.csv")
     summary_by_model = _aggregate_by_model(rows)
@@ -293,6 +400,7 @@ def _rows_from_results(
                 "params_analytic": model.get("params_analytic"),
                 "param_mismatch": model.get("param_mismatch"),
                 "param_mismatch_ratio": model.get("param_mismatch_ratio"),
+                "mse_train": model.get("mse_train"),
                 "mse_test": model.get("mse_test"),
             }
         )

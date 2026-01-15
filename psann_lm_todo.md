@@ -69,7 +69,7 @@
   * [x] Flesh out docstrings and references in docs/lm.md
   * [x] Verify examples import/use align with API
   * [x] Add simple usage test(s)
-  * Notes: `src/psann/lm/api.py` docstrings now mirror the published spec, docs/lm.md gained a "Public API Reference" section (with pointers to examples), and `tests/lm/test_public_api.py` exercises psannLMDataPrep → psannLM → generate/save/load on CPU.
+  * Notes: `src/psannlm/lm/api.py` docstrings now mirror the published spec, docs/lm.md gained a "Public API Reference" section (with pointers to examples), and `tests/lm/test_public_api.py` exercises psannLMDataPrep → psannLM → generate/save/load on CPU.
 
 * [x] Trainable sine params ablations
   * [x] Define grid (amp/freq/damp; trainable on/off)
@@ -145,15 +145,15 @@
 
 ## Architecture Overview
 
-* **Module path:** `psann/lm/`
+* **Module path:** `psannlm/lm/`
 
-  * `psann/lm/models/` â€“ transformer stacks on ResPSANN/WaveResNet
-  * `psann/lm/data/` â€“ tokenization, dataset, collation, streaming
-  * `psann/lm/train/` â€“ trainer, loops, scaling utils
-  * `psann/lm/infer/` â€“ generation utilities
-  * `psann/lm/api.py` â€“ `psannLM`, `psannLMDataPrep`
-  * `psann/lm/config.py` â€“ typed configs for model/data/train
-  * `psann/lm/tests/` â€“ unit & integration tests
+  * `psannlm/lm/models/` â€“ transformer stacks on ResPSANN/WaveResNet
+  * `psannlm/lm/data/` â€“ tokenization, dataset, collation, streaming
+  * `psannlm/lm/train/` â€“ trainer, loops, scaling utils
+  * `psannlm/lm/infer/` â€“ generation utilities
+  * `psannlm/lm/api.py` â€“ `psannLM`, `psannLMDataPrep`
+  * `psannlm/lm/config.py` â€“ typed configs for model/data/train
+  * `psannlm/lm/tests/` â€“ unit & integration tests
   * `examples/lm/` â€“ notebooks and scripts
 * **Key idea:** A PSANN-style transformer block with sine-activated MLPs (trainable amplitude/frequency/damping) and optional WaveResNet residual pathways; registry pattern to select base.
 
@@ -162,7 +162,7 @@
 ## Public API Spec (first-class UX)
 
 ```python
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm import psannLM, psannLMDataPrep
 
 texts = ["hello world", "goodnight moon"]
 train_data = psannLMDataPrep(texts, tokenizer="auto", max_length=1024, pack_sequences=True)
@@ -248,30 +248,30 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### 0) Project Scaffolding & Docs
 
-* [x] **PH-01:** Create `psann/lm/` scaffolding and `__init__.py` exports for public API.
-* [x] **PH-02:** Add `pyproject.toml` updates for new extras: `psann[lm]` installs tokenizer deps.
+* [x] **PH-01:** Create `psannlm/lm/` scaffolding and `__init__.py` exports for public API.
+* [x] **PH-02:** Add `pyproject.toml` updates for new extras: `psannlm` installs tokenizer deps.
 * [x] **PH-03:** Add `docs/lm.md` page with getting started, config, and examples.
 * [x] **PH-04:** Add `examples/lm/minimal_train.py` and `examples/lm/generate.py`.
 
 ### 1) Config, Registry, and API Stubs (CPU)
 
-* [x] **CFG-01:** Implement `psann/lm/config.py`:
+* [x] **CFG-01:** Implement `psannlm/lm/config.py`:
   * [x] `ModelConfig`, `DataConfig`, `TrainConfig` dataclasses with validation.
-* [x] **REG-01:** Implement base registry in `psann/lm/models/registry.py`:
+* [x] **REG-01:** Implement base registry in `psannlm/lm/models/registry.py`:
   * [x] Register `"respsann"` and `"waveresnet"`.
-* [x] **API-01:** Implement `psannLM` high-level wrapper in `psann/lm/api.py`:
+* [x] **API-01:** Implement `psannLM` high-level wrapper in `psannlm/lm/api.py`:
   * [x] `__init__` takes `base`, model kwargs, auto-bridges `vocab_size`, `max_length`.
   * [x] `fit(train_data, val_data=None, **train_kwargs)`.
   * [x] `generate(prompt, **gen_kwargs)`.
   * [x] `save(path)`, `load(path)`.
-* [x] **API-02:** Implement `psannLMDataPrep` in `psann/lm/api.py`:
+* [x] **API-02:** Implement `psannLMDataPrep` in `psannlm/lm/api.py`:
   * [x] Accepts `List[str]` or path(s); builds tokenizer if needed.
   * [x] Exposes `.dataset`, `.vocab_size`, `.tokenizer`, `.pad_id`.
   * [x] Supports validation split and packed sequences.
 
 ### 2) Sine Activation Core (CPU)
 
-* [x] **SINE-01:** Create `psann/lm/models/sine.py`:
+* [x] **SINE-01:** Create `psannlm/lm/models/sine.py`:
   * [x] Parametric sine with amplitude/frequency/damping parameters.
   * [x] Optional residual scaling; configurable init ranges.
   * [x] Unit tests for forward/backward, shape, dtype, grad flow.
@@ -293,12 +293,12 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### 4) Tokenization & Data (CPU)
 
-* [x] **TOK-01:** Tokenizer plugin interface `psann/lm/data/tokenizer.py`:
+* [x] **TOK-01:** Tokenizer plugin interface `psannlm/lm/data/tokenizer.py`:
   * [x] Adapters for `sentencepiece` and `tokenizers` (BPE/Unigram).
   * [x] `auto` mode picks installed backend; can train from corpus or load prebuilt.
 * [x] **TOK-02:** Vocab building utilities with min-freq, special tokens, `unk`, `pad`, `bos`, `eos`.
 * [x] **TOK-03:** CLI/DataPrep expose `tokenizer_model_path` (load prebuilt tokenizer models).
-* [x] **DATA-01:** Dataset and collation in `psann/lm/data/dataset.py`:
+* [x] **DATA-01:** Dataset and collation in `psannlm/lm/data/dataset.py`:
   * [x] Sequence packing (contiguous stream, `pack_sequences=True`).
   * [x] Streaming from files (mmap/shards), deterministic shuffling.
   * [x] `batch_tokens` sampler for efficient token-based batching.
@@ -306,13 +306,13 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### 5) Training Loop (CPU baseline; GPU features toggled later)
 
-* [x] **TRN-01:** Implement trainer in `psann/lm/train/trainer.py`:
+* [x] **TRN-01:** Implement trainer in `psannlm/lm/train/trainer.py`:
   * [x] Cross-entropy LM loss (shifted), label smoothing optional.
   * [x] Optimizers: AdamW default; schedulers: cosine w/ warmup.
   * [x] Gradient clipping, accumulation.
   * [x] Checkpoint save/load, best-val tracking.
   * [x] Logging hooks: throughput, loss, perplexity, lr, grad-norm.
-* [x] **TRN-02:** CLI helpers `psann/lm/train/cli.py` to run from YAML config.
+* [x] **TRN-02:** CLI helpers `psannlm/lm/train/cli.py` to run from YAML config.
 
 ### 6) Inference & Sampling (CPU ok)
 
@@ -336,7 +336,7 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 ### 9) Benchmark & Validation (GPU)
 
 * [x] **BMRK-01:** Tiny corpus (e.g., ~50MB) baseline: loss curve, perplexity target.
-  - Plan documented in `benchmarks/lm_plan.md` (dataset: `datasets/lm/tiny_books.txt`, run `python -m psann.lm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml`, record `loss_curve.png` + `metrics.json`).
+  - Plan documented in `benchmarks/lm_plan.md` (dataset: `datasets/lm/tiny_books.txt`, run `python -m psannlm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml`, record `loss_curve.png` + `metrics.json`).
   - Status: artifacts verified at `reports/benchmarks/20251106_140525/` (metrics.csv/json + loss_curve.png).
   - Metrics JSON path: `reports/benchmarks/20251106_140525/metrics.json`.
 * [x] **BMRK-02:** Throughput table: tokens/s for base configs and batch_tokens variants.

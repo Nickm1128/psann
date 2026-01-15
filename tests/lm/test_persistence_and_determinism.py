@@ -1,7 +1,7 @@
 import os
 import torch
 
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm.lm import psannLM, psannLMDataPrep
 
 
 def test_save_load_roundtrip_and_seeded_generation(tmp_path):

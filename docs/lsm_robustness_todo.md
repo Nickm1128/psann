@@ -30,3 +30,7 @@ All extras-expansion tasks landed between 2025-10-25 and 2025-10-28, culminating
 - [x] Provide a score_reconstruction helper for the conv expander to mirror the dense path and support diagnostics promised in the docs (src/psann/lsm.py:469).
 - [x] Add regression coverage that exercises PSANNRegressor with both LSMExpander and LSMConv2dExpander under lsm_train=True/False and preserve_shape modes to keep _fit integration stable (\tests/).
 - [x] Refresh API docs and examples once behaviour changes land so the LSM sections reflect canonical parameter naming, tensor support, and conv diagnostics (docs/API.md, docs/examples/README.md).
+# Archived Note
+
+This document is historical and superseded by the cleanup roadmap in
+`docs/project_cleanup_todo.md`. Keep for reference only.

@@ -146,6 +146,31 @@ def test_geo_sparse_phase_psann_config() -> None:
     assert not act._phi.requires_grad
 
 
+def test_geo_sparse_mixed_activation_builds_and_trains_sine_subset() -> None:
+    from psann.activations import MixedActivation
+
+    features = 8
+    indices = torch.arange(features).repeat(features, 1)
+    block = GeoSparseResidualBlock(
+        features,
+        indices,
+        activation_type="mixed",
+        activation_config={
+            "activation_types": ["psann", "relu"],
+            "activation_ratios": [0.5, 0.5],
+            "trainable": True,
+        },
+        norm="none",
+    )
+    assert isinstance(block.act, MixedActivation)
+    assert "psann" in block.act.acts
+    x = torch.randn(2, features, requires_grad=True)
+    y = block(x).sum()
+    y.backward()
+    sine = block.act.acts["psann"]
+    assert sine._A.grad is not None
+
+
 def test_param_helpers_and_matcher() -> None:
     model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.ReLU(), torch.nn.Linear(4, 2))
     assert count_params(model) == sum(p.numel() for p in model.parameters())

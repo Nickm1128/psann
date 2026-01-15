@@ -236,7 +236,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--compile", action="store_true")
     p.add_argument("--compile-backend", type=str, default="inductor")
     p.add_argument("--compile-mode", type=str, default="default")
-    p.add_argument("--compute-mode", type=str, default="gather", choices=["gather", "scatter"])
+    p.add_argument(
+        "--compute-mode",
+        type=str,
+        default="gather",
+        choices=["gather", "scatter", "auto"],
+        help="GeoSparseLinear compute path; use 'auto' to benchmark gather+scatter.",
+    )
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--out", type=str, default=None)
     return p.parse_args()
@@ -265,29 +271,35 @@ def main() -> None:
         seed=int(args.seed),
     ).to(device=device)
 
-    layer = GeoSparseLinear(
-        features,
-        features,
-        indices,
-        bias=True,
-        compute_mode=str(args.compute_mode),
-    ).to(dtype=dtype)
-    block = GeoSparseResidualBlock(
-        features,
-        indices,
-        activation_type="relu",
-        norm="rms",
-        drop_path=0.0,
-        residual_alpha_init=0.0,
-        bias=True,
-        compute_mode=str(args.compute_mode),
-    ).to(dtype=dtype)
+    compute_modes = (
+        ["gather", "scatter"] if str(args.compute_mode) == "auto" else [str(args.compute_mode)]
+    )
 
     x = torch.randn(int(args.batch_size), features, device=device, dtype=dtype)
 
-    results = [
-        _bench_model(
-            "geo_sparse_linear",
+    results = []
+    per_mode_summary = {}
+    for mode in compute_modes:
+        layer = GeoSparseLinear(
+            features,
+            features,
+            indices,
+            bias=True,
+            compute_mode=mode,
+        ).to(dtype=dtype)
+        block = GeoSparseResidualBlock(
+            features,
+            indices,
+            activation_type="relu",
+            norm="rms",
+            drop_path=0.0,
+            residual_alpha_init=0.0,
+            bias=True,
+            compute_mode=mode,
+        ).to(dtype=dtype)
+
+        linear_result = _bench_model(
+            f"geo_sparse_linear_{mode}",
             layer,
             x,
             device=device,
@@ -298,9 +310,9 @@ def main() -> None:
             compile_model=bool(args.compile),
             compile_backend=args.compile_backend,
             compile_mode=args.compile_mode,
-        ),
-        _bench_model(
-            "geo_sparse_block",
+        )
+        block_result = _bench_model(
+            f"geo_sparse_block_{mode}",
             block,
             x,
             device=device,
@@ -311,8 +323,11 @@ def main() -> None:
             compile_model=bool(args.compile),
             compile_backend=args.compile_backend,
             compile_mode=args.compile_mode,
-        ),
-    ]
+        )
+        results.extend([linear_result, block_result])
+        per_mode_summary[mode] = (
+            linear_result["forward_backward_ms"] + block_result["forward_backward_ms"]
+        ) / 2.0
 
     out_dir = Path(args.out) if args.out else Path("reports") / "geo_sparse_micro" / time.strftime(
         "%Y%m%d_%H%M%S"
@@ -339,12 +354,18 @@ def main() -> None:
         "compile_backend": str(args.compile_backend),
         "compile_mode": str(args.compile_mode),
         "compute_mode": str(args.compute_mode),
+        "compute_modes": compute_modes,
         "seed": int(args.seed),
     }
+
+    recommended_mode = None
+    if len(per_mode_summary) > 1:
+        recommended_mode = min(per_mode_summary, key=per_mode_summary.get)
 
     payload = {
         "environment": _get_env_info(device),
         "manifest": manifest,
+        "recommended_compute_mode": recommended_mode,
         "results": results,
     }
 

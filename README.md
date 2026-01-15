@@ -9,13 +9,31 @@ PSANN packages sine-activated Torch models behind a sklearn-style estimator surf
 The current line targets **primary outputs only** so there are no predictive extras, secondary heads, or legacy growth schedules to maintain.
 
 Quick links:
+- Project map (start here): `docs/PROJECT_MAP.md`
+- Repo structure & output conventions: `docs/REPO_STRUCTURE.md`
 - API reference: `docs/API.md`
+- Supported public API: `docs/public_api.md`
 - Scenario walkthroughs: `docs/examples/README.md`
+- Architecture overview: `docs/architecture.md`
+- Performance tips: `docs/performance_tips.md`
 - Migration notes: `docs/migration.md`
 - Results compendium: `docs/PSANN_Results_Compendium.md`
 - Contributor guide: `docs/CONTRIBUTING.md`
 - Technical design notes: `TECHNICAL_DETAILS.md`
  - Utility scripts overview: `scripts/README.md`
+
+## Start Here (5 minutes)
+
+```bash
+pip install psann
+python examples/01_basic_regression.py
+```
+
+Optional (experimental GeoSparse):
+
+```bash
+python examples/28_geosparse_regression.py
+```
 
 ## Installation
 
@@ -47,7 +65,8 @@ Optional extras in `pyproject.toml`:
 - `psann[sklearn]`: adds scikit-learn conveniences for estimator mixins and metrics.
 - `psann[viz]`: plotting helpers used in benchmarks and notebooks.
 - `psann[dev]`: pytest, ruff, black, coverage, build, pre-commit tooling, and mypy.
-- `psann[lm]`: pulls in LM-related dependencies (`sentencepiece`, `tokenizers`, `datasets`) for working with `psann.lm` and the `psannlm` package from source.
+
+Language modeling tooling lives in the separate `psannlm` package (`pip install psannlm`).
 
 Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibility extra:
 
@@ -56,6 +75,13 @@ pip install -e .[compat]
 ```
 
 The `compat` extra pins NumPy, SciPy, scikit-learn, and PyTorch to the newest widely available wheels while keeping `pyproject.toml` as the single source of truth.
+
+## FAQ / Common issues
+
+- **CUDA not available**: install a CUDA-enabled PyTorch build from the selector, then `pip install psann`.
+- **CPU-only quick check**: run `python examples/01_basic_regression.py` to confirm the environment.
+- **Large outputs in git**: generated artifacts belong under `runs/`, `reports/`, or `outputs/` (all ignored by git).
+- **Slow GPU runs**: enable TF32 and BF16 when supported; see `docs/performance_tips.md`.
 
 ## Running Tests
 
@@ -106,11 +132,12 @@ At a glance, the main things you import from `psann` are:
 - Wave backbones (for direct PyTorch usage):
   - `from psann import WaveResNet, WaveEncoder, WaveRNNCell, scan_regimes`
 
-Language modeling entry points live under `psann.lm`:
+Language modeling entry points live under `psannlm`:
 
-- `from psann.lm import psannLM, psannLMDataPrep`
+- `from psannlm import psannLM, psannLMDataPrep`
 
-The `psannlm` package provides the LM training CLI (`python -m psannlm.train`) used by scripts such as `scripts/train_psann_lm.py`.
+The `psannlm` package provides the LM training CLIs (`python -m psannlm` or
+`python -m psannlm.train`) used by scripts such as `scripts/train_psann_lm.py`.
 
 ## Quick Start
 
@@ -218,14 +245,14 @@ Install the core estimators plus the LM add-on from PyPI:
 pip install psann psannlm
 ```
 
-Use the `psann.lm` module for in-code training and generation, and the `psannlm` package for one-command training/CLI workflows:
-- High-level APIs: `from psann.lm import psannLM, psannLMDataPrep`
-- CLI entrypoint: `python scripts/train_psann_lm.py` (thin wrapper around `python -m psannlm.train`)
+Use the `psannlm` package for in-code training/generation and one-command training/CLI workflows:
+- High-level APIs: `from psannlm import psannLM, psannLMDataPrep`
+- CLI entrypoint: `python scripts/train_psann_lm.py` (thin wrapper around `python -m psannlm`)
 
 Then spin up a minimal CPU demo:
 
 ```python
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm import psannLM, psannLMDataPrep
 
 texts = ["hello world", "goodnight moon", "the quick brown fox jumps over the lazy dog"]
 dp = psannLMDataPrep(
@@ -412,8 +439,8 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 ## Package layout and tooling
 
 - `src/psann/` – core PSANN library (estimators, HISSO, wave backbones, diagnostics, token helpers).
-- `src/psann/lm/` – language modeling module (`psann.lm`) with public APIs `psannLM` and `psannLMDataPrep`.
-- `psannlm/` – standalone PSANN-LM training/CLI package published as `psannlm` on PyPI; drives `psann.lm` models via `psannlm.train`.
+- `src/psann/lm/` – stub module that forwards users to `psannlm`.
+- `psannlm/` – standalone PSANN-LM package published as `psannlm` on PyPI (LM APIs + training/CLI).
 - `scripts/` – utility scripts for benchmarks, GPU validation, language modeling, and releases. See `scripts/README.md` for a categorized overview.
 - `benchmarks/` – benchmark plans and result summaries for PSANN and PSANN-LM.
 - `notebooks/` – Colab-friendly analysis notebooks (HISSO logging, parity/probes, sine comparisons, context demos); these are example/analysis artifacts and are not imported as modules.

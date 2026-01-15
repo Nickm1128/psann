@@ -6,8 +6,8 @@ from __future__ import annotations
 import argparse
 
 
-from psann.lm.models.registry import get_base
-from psann.lm.models.sine import SineConfig
+from psannlm.lm.models.registry import get_base
+from psannlm.lm.models.sine import SineConfig
 
 
 def build_parser() -> argparse.ArgumentParser:

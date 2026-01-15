@@ -17,7 +17,7 @@ from datetime import datetime
 import argparse
 import json
 
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm.lm import psannLM, psannLMDataPrep
 
 PROMPTS = [
     "hello world",

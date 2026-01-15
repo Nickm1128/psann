@@ -41,13 +41,13 @@ except Exception as exc:  # pragma: no cover - import guard
 
 import torch
 
-from psann.lm.api import psannLM
-from psann.lm.config import TrainConfig
-from psann.lm.data.dataset import HFTextStreamingLMDataset, PackingConfig, build_text_filter
-from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psann.lm.models.registry import get_base, list_bases
-from psann.lm.models.sine import SineConfig
-from psann.lm.train.trainer import Trainer
+from psannlm.lm.api import psannLM
+from psannlm.lm.config import TrainConfig
+from psannlm.lm.data.dataset import HFTextStreamingLMDataset, PackingConfig, build_text_filter
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
+from psannlm.lm.models.registry import get_base, list_bases
+from psannlm.lm.models.sine import SineConfig
+from psannlm.lm.train.trainer import Trainer
 
 
 def _now_utc_tag() -> str:
@@ -151,6 +151,14 @@ def _default_config() -> Dict[str, Any]:
             "batch_tokens": 32768,
             "max_tokens": 200000,
             "max_batches": 0,
+        },
+        "distill": {
+            "enabled": False,
+            "teacher_base": "transformer",
+            "teacher_ckpt": None,
+            "teacher_max_steps": 0,
+            "alpha": 0.5,
+            "temperature": 2.0,
         },
         "sweep": {},
     }
@@ -828,6 +836,7 @@ def main() -> int:
         data_cfg = run_cfg.get("data", {})
         train_cfg = run_cfg.get("train", {})
         eval_cfg = run_cfg.get("eval", {})
+        distill_cfg = run_cfg.get("distill", {}) or {}
 
         sweep_root = runs_dir
         if sweep_count > 1:
@@ -844,8 +853,16 @@ def main() -> int:
         if sweep_count > 1 or not tok_meta_path.exists():
             _write_json(tok_meta_path, tokenizer_meta)
 
-        for base in bases:
-            for seed in seeds:
+        distill_enabled = bool(distill_cfg.get("enabled", False))
+        teacher_base = str(distill_cfg.get("teacher_base", "transformer"))
+        teacher_ckpt_override = distill_cfg.get("teacher_ckpt")
+        teacher_max_steps_override = int(distill_cfg.get("teacher_max_steps", 0) or 0)
+        distill_alpha = float(distill_cfg.get("alpha", 0.5))
+        distill_temperature = float(distill_cfg.get("temperature", 2.0))
+
+        for seed in seeds:
+            pending: List[tuple[str, Path, Path]] = []
+            for base in bases:
                 run_dir = sweep_root / f"{base}_seed{seed}"
                 run_dir.mkdir(parents=True, exist_ok=True)
                 metrics_path = run_dir / "metrics.json"
@@ -860,7 +877,204 @@ def main() -> int:
                             continue
                     except Exception:
                         pass
+                pending.append((base, run_dir, metrics_path))
 
+            if not pending:
+                continue
+
+            teacher_model: Optional[torch.nn.Module] = None
+            teacher_ckpt_path: Optional[Path] = None
+            teacher_run_dir: Optional[Path] = None
+
+            if distill_enabled:
+                if teacher_ckpt_override:
+                    teacher_ckpt_path = Path(str(teacher_ckpt_override)).expanduser()
+                    if not teacher_ckpt_path.is_absolute():
+                        teacher_ckpt_path = (ROOT / teacher_ckpt_path).resolve()
+                    if not teacher_ckpt_path.exists():
+                        raise RuntimeError(
+                            f"Teacher checkpoint not found: {teacher_ckpt_path}"
+                        )
+                else:
+                    teacher_run_dir = sweep_root / f"teacher_{teacher_base}_seed{seed}"
+                    teacher_run_dir.mkdir(parents=True, exist_ok=True)
+                    teacher_ckpt_path = teacher_run_dir / "final_model.pt"
+
+                    if not teacher_ckpt_path.exists():
+                        save_logs = bool(bench_cfg_run.get("save_run_logs", False))
+                        teacher_log_path = teacher_run_dir / "stdout.log"
+
+                        print(
+                            f"[bench] teacher={teacher_base} seed={seed} sweep={sweep_id:03d} -> {teacher_run_dir}"
+                        )
+                        torch.manual_seed(int(seed))
+                        random.seed(int(seed))
+                        if torch.cuda.is_available():
+                            torch.cuda.manual_seed_all(int(seed))
+
+                        with _tee_run_logs(teacher_log_path, enabled=save_logs):
+                            if save_logs:
+                                print(
+                                    f"[bench] logging stdout/stderr -> {teacher_log_path}",
+                                    flush=True,
+                                )
+                            vocab_size = int(tokenizer.vocab_size)
+                            factory = get_base(teacher_base)
+                            sine_cfg = train_cfg.get("sine_params", {}) or {}
+                            geosparse_kwargs: Dict[str, Any] = {}
+                            if str(teacher_base).lower() == "geosparse":
+                                for key in (
+                                    "geosparse_shape",
+                                    "geosparse_depth",
+                                    "geosparse_k",
+                                    "geosparse_pattern",
+                                    "geosparse_radius",
+                                    "geosparse_offsets",
+                                    "geosparse_wrap_mode",
+                                    "geosparse_activation",
+                                    "geosparse_activation_types",
+                                    "geosparse_activation_ratios",
+                                    "geosparse_activation_ratio_sum_tol",
+                                    "geosparse_activation_layout",
+                                    "geosparse_norm",
+                                    "geosparse_drop_path_max",
+                                    "geosparse_residual_alpha_init",
+                                    "geosparse_bias",
+                                    "geosparse_compute_mode",
+                                    "geosparse_seed",
+                                    "geosparse_chunk_size",
+                                ):
+                                    if key in train_cfg and train_cfg.get(key) is not None:
+                                        geosparse_kwargs[key] = train_cfg.get(key)
+                            model = factory(
+                                vocab_size=vocab_size,
+                                d_model=int(train_cfg.get("d_model", 256)),
+                                n_layers=int(train_cfg.get("n_layers", 4)),
+                                n_heads=int(train_cfg.get("n_heads", 4)),
+                                d_mlp=int(train_cfg.get("d_mlp", 1024)),
+                                dropout=float(train_cfg.get("dropout", 0.0)),
+                                positional_encoding=str(
+                                    train_cfg.get("positional_encoding", "rope")
+                                ),
+                                mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
+                                sine=SineConfig(
+                                    amp_init=float(sine_cfg.get("amp_init", 1.0)),
+                                    amp_init_std=float(sine_cfg.get("amp_init_std", 0.0)),
+                                    freq_init=float(sine_cfg.get("freq_init", 1.0)),
+                                    freq_init_std=float(sine_cfg.get("freq_init_std", 0.0)),
+                                    damp_init=float(sine_cfg.get("damp_init", 0.01)),
+                                    damp_init_std=float(sine_cfg.get("damp_init_std", 0.0)),
+                                    trainable=bool(sine_cfg.get("trainable", True)),
+                                ),
+                                attn_impl=str(train_cfg.get("attn_impl", "auto")),
+                                **geosparse_kwargs,
+                            )
+
+                            train_ds = _build_stream_dataset(
+                                data_cfg,
+                                tokenizer,
+                                split=str(data_cfg.get("train_split", "train")),
+                                shuffle=bool(data_cfg.get("shuffle", True)),
+                                seed=int(seed),
+                            )
+
+                            batch_tokens = int(train_cfg.get("batch_tokens", 32768))
+                            grad_accum = int(train_cfg.get("grad_accum_steps", 1))
+                            seq_len = int(data_cfg.get("max_length", 512))
+                            batch_size = max(1, batch_tokens // seq_len)
+                            tokens_per_step = batch_size * seq_len * grad_accum
+                            tokens_target = int(train_cfg.get("tokens_target", 0) or 0)
+                            max_steps = int(train_cfg.get("max_steps", 300))
+                            if tokens_target > 0:
+                                max_steps = max(
+                                    1, tokens_target // max(1, tokens_per_step)
+                                )
+                            teacher_steps = (
+                                teacher_max_steps_override
+                                if teacher_max_steps_override > 0
+                                else max_steps
+                            )
+
+                            tcfg = TrainConfig(
+                                epochs=1,
+                                batch_tokens=int(batch_tokens),
+                                lr=float(train_cfg.get("lr", 2e-4)),
+                                warmup_steps=int(train_cfg.get("warmup_steps", 200)),
+                                weight_decay=float(train_cfg.get("weight_decay", 0.01)),
+                                amp=str(train_cfg.get("amp", "bf16")),
+                                optimizer=str(train_cfg.get("optimizer", "adamw")),
+                                betas=_coerce_betas(train_cfg.get("betas")),
+                                eps=float(train_cfg.get("eps", 1e-8)),
+                                label_smoothing=float(train_cfg.get("label_smoothing", 0.0)),
+                                grad_clip=float(train_cfg.get("grad_clip", 1.0)),
+                                grad_checkpoint=bool(train_cfg.get("grad_checkpoint", False)),
+                                log_gpu_mem=bool(train_cfg.get("log_gpu_mem", False)),
+                                torch_compile=bool(train_cfg.get("torch_compile", False)),
+                                torch_compile_mode=str(
+                                    train_cfg.get("torch_compile_mode", "default")
+                                ),
+                                torch_compile_fullgraph=bool(
+                                    train_cfg.get("torch_compile_fullgraph", False)
+                                ),
+                                torch_compile_dynamic=bool(
+                                    train_cfg.get("torch_compile_dynamic", False)
+                                ),
+                                grad_accum_steps=int(grad_accum),
+                                ddp=_coerce_ddp(train_cfg.get("ddp"), default="off"),
+                                fsdp="off",
+                                steps_per_epoch=int(teacher_steps),
+                                checkpoint_dir=str(teacher_run_dir / "checkpoints"),
+                                log_interval_steps=int(train_cfg.get("log_interval_steps", 50)),
+                                save_interval_steps=int(train_cfg.get("save_interval_steps", 500)),
+                                dataloader_num_workers=0,
+                                dataloader_prefetch_factor=2,
+                                dataloader_persistent_workers=False,
+                                distill_alpha=0.0,
+                                distill_temperature=1.0,
+                            )
+                            trainer = Trainer(tcfg)
+                            trainer.train(model, train_ds, max_length=int(seq_len))
+
+                            teacher_lm = psannLM(
+                                base=teacher_base,
+                                d_model=int(train_cfg.get("d_model", 256)),
+                                n_layers=int(train_cfg.get("n_layers", 4)),
+                                n_heads=int(train_cfg.get("n_heads", 4)),
+                                d_mlp=int(train_cfg.get("d_mlp", 1024)),
+                                vocab_size=vocab_size,
+                                positional_encoding=str(
+                                    train_cfg.get("positional_encoding", "rope")
+                                ),
+                                sine_params=sine_cfg,
+                                dropout=float(train_cfg.get("dropout", 0.0)),
+                                mlp_activation=str(
+                                    train_cfg.get("mlp_activation", "sine")
+                                ),
+                                attn_impl=str(train_cfg.get("attn_impl", "auto")),
+                                **geosparse_kwargs,
+                            )
+                            teacher_lm._model = model
+                            teacher_lm.save(str(teacher_ckpt_path))
+
+                            teacher_model = model
+
+                if teacher_model is None and teacher_ckpt_path is not None:
+                    teacher_lm = psannLM.load(str(teacher_ckpt_path))
+                    if teacher_lm._model is None:
+                        teacher_lm._ensure_model(int(tokenizer.vocab_size))
+                    teacher_model = teacher_lm._model
+
+                if teacher_model is None:
+                    raise RuntimeError("Distillation enabled but teacher_model is None")
+
+                try:
+                    teacher_model.eval()
+                    for p in teacher_model.parameters():
+                        p.requires_grad_(False)
+                except Exception:
+                    pass
+
+            for base, run_dir, metrics_path in pending:
                 print(f"[bench] base={base} seed={seed} sweep={sweep_id:03d} -> {run_dir}")
                 torch.manual_seed(int(seed))
                 random.seed(int(seed))
@@ -892,6 +1106,31 @@ def main() -> int:
                         vocab_size = int(tokenizer.vocab_size)
                         factory = get_base(base)
                         sine_cfg = train_cfg.get("sine_params", {}) or {}
+                        geosparse_kwargs: Dict[str, Any] = {}
+                        if str(base).lower() == "geosparse":
+                            for key in (
+                                "geosparse_shape",
+                                "geosparse_depth",
+                                "geosparse_k",
+                                "geosparse_pattern",
+                                "geosparse_radius",
+                                "geosparse_offsets",
+                                "geosparse_wrap_mode",
+                                "geosparse_activation",
+                                "geosparse_activation_types",
+                                "geosparse_activation_ratios",
+                                "geosparse_activation_ratio_sum_tol",
+                                "geosparse_activation_layout",
+                                "geosparse_norm",
+                                "geosparse_drop_path_max",
+                                "geosparse_residual_alpha_init",
+                                "geosparse_bias",
+                                "geosparse_compute_mode",
+                                "geosparse_seed",
+                                "geosparse_chunk_size",
+                            ):
+                                if key in train_cfg and train_cfg.get(key) is not None:
+                                    geosparse_kwargs[key] = train_cfg.get(key)
                         model = factory(
                             vocab_size=vocab_size,
                             d_model=int(train_cfg.get("d_model", 256)),
@@ -911,6 +1150,7 @@ def main() -> int:
                                 trainable=bool(sine_cfg.get("trainable", True)),
                             ),
                             attn_impl=str(train_cfg.get("attn_impl", "auto")),
+                            **geosparse_kwargs,
                         )
                         param_count = sum(p.numel() for p in model.parameters())
                         record["param_count"] = int(param_count)
@@ -939,6 +1179,7 @@ def main() -> int:
                         max_steps = int(train_cfg.get("max_steps", 300))
                         if tokens_target > 0:
                             max_steps = max(1, tokens_target // max(1, tokens_per_step))
+
                         record["train_config"] = {
                             "batch_tokens": int(batch_tokens),
                             "grad_accum_steps": int(grad_accum),
@@ -963,6 +1204,11 @@ def main() -> int:
                             "max_steps": int(max_steps),
                             "tokens_target": int(tokens_target),
                             "tokens_per_step": int(tokens_per_step),
+                            "distill_enabled": bool(distill_enabled),
+                            "distill_alpha": float(distill_alpha) if distill_enabled else 0.0,
+                            "distill_temperature": float(distill_temperature) if distill_enabled else 1.0,
+                            "distill_teacher_base": teacher_base if distill_enabled else None,
+                            "distill_teacher_ckpt": str(teacher_ckpt_path) if distill_enabled else None,
                         }
                         record["data_config"] = {
                             "dataset": str(data_cfg.get("dataset")),
@@ -1004,6 +1250,8 @@ def main() -> int:
                             dataloader_num_workers=0,
                             dataloader_prefetch_factor=2,
                             dataloader_persistent_workers=False,
+                            distill_alpha=float(distill_alpha) if distill_enabled else 0.0,
+                            distill_temperature=float(distill_temperature) if distill_enabled else 1.0,
                         )
 
                         trainer = Trainer(tcfg)
@@ -1016,6 +1264,7 @@ def main() -> int:
                             train_ds,
                             max_length=int(seq_len),
                             val_dataset=None,
+                            teacher_model=teacher_model if distill_enabled else None,
                         )
                         if torch.cuda.is_available():
                             torch.cuda.synchronize()
@@ -1071,6 +1320,10 @@ def main() -> int:
                             vocab_size=vocab_size,
                             positional_encoding=str(train_cfg.get("positional_encoding", "rope")),
                             sine_params=sine_cfg,
+                            dropout=float(train_cfg.get("dropout", 0.0)),
+                            mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
+                            attn_impl=str(train_cfg.get("attn_impl", "auto")),
+                            **geosparse_kwargs,
                         )
                         lm._model = model  # reuse trained weights
                         ckpt_path = run_dir / "final_model.pt"
@@ -1113,6 +1366,20 @@ def main() -> int:
                     pass
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+
+            if teacher_run_dir is not None:
+                try:
+                    teacher_metrics = {
+                        "status": "ok",
+                        "teacher_base": teacher_base,
+                        "seed": int(seed),
+                        "teacher_ckpt_path": str(teacher_ckpt_path),
+                    }
+                    _write_json(teacher_run_dir / "metrics.json", teacher_metrics)
+                except Exception:
+                    pass
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     summary = {
         "timestamp_utc": tag,

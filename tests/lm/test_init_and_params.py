@@ -1,6 +1,6 @@
 import torch
 
-from psann.lm.models.registry import get_base
+from psannlm.lm.models.registry import get_base
 
 
 def test_param_count_and_forward():

@@ -22,6 +22,15 @@ python scripts/profile_hisso.py --epochs 4
 Set `CUDA_VISIBLE_DEVICES` or `PYTORCH_CUDA_ALLOC_CONF` if you need to target
 specific GPUs; no additional `PYTHONPATH` modifications are required.
 
+## Script Conventions
+
+When adding or updating scripts under `scripts/`:
+
+- Include a top-level module docstring with a 1–2 sentence summary plus at least one example command.
+- Use `argparse` or `typer` so `--help` documents the interface.
+- Prefer `--out` / `--output-dir` to control where artifacts are written (default under `reports/` or `outputs/`).
+- Print a short config header (timestamp, seed, device/dtype, output dir) so logs are self-contained.
+
 ## Available Scripts
 
 ### HISSO, parity, and diagnostics
@@ -60,6 +69,10 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 
 - `aggregate_benchmarks.py` - aggregates GPU validation outputs into
   `throughput.csv` and `memory.json` under a benchmark directory.
+- `microbench_psann.py` - microbenchmarks PSANN vs dense/transformer baselines for
+  throughput and memory, writing a JSON summary suitable for regression checks.
+- `benchmark_geo_sparse_micro.py` - GeoSparse forward/backward microbench with
+  optional `--compute-mode auto` to compare gather vs scatter paths.
 - `benchmark_regressor_ablations.py` - runs small ablations of ResPSANN,
   WaveResNet, and SGR-PSANN regressors across diverse synthetic datasets, writing
   JSONL/CSV summaries under `reports/ablations/`.
@@ -73,6 +86,11 @@ specific GPUs; no additional `PYTHONPATH` modifications are required.
 - `run_bmrk01.sh` - one-shot runner for the BMRK-01 tiny-corpus benchmark. Emits
   `metrics.csv`, `metrics.json`, and optionally `loss_curve.png` into
   `reports/benchmarks/<timestamp>/`.
+
+### Profiling helpers
+
+- `profile_psann.py` - torch.profiler wrapper for PSANN/dense/transformer/GeoSparse
+  models; exports a chrome trace plus a short summary table.
 
 ### Language modeling and PSANN-LM tooling
 

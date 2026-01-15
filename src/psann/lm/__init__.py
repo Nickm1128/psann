@@ -1,10 +1,12 @@
-"""PSANN Language Modeling (LM) module package.
+"""LM module stub.
 
-Exposes the public API entry points `psannLM` and `psannLMDataPrep`.
-This is an initial scaffold; training, data, and generation internals
-will be added incrementally per the plan in `psann_lm_todo.md`.
+The LM utilities were moved to the separate `psannlm` distribution so that
+`pip install psann` stays lean. Install `psannlm` and import from that package:
+
+  from psannlm import psannLM, psannLMDataPrep
 """
 
-from .api import psannLM, psannLMDataPrep
-
-__all__ = ["psannLM", "psannLMDataPrep"]
+raise ImportError(
+    "psann.lm has moved to the separate 'psannlm' package. "
+    "Install with: pip install psannlm"
+)

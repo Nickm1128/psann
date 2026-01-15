@@ -13,7 +13,7 @@ benchmarks. The script wraps:
 1. Full GPU validation (`python scripts/run_gpu_validation.py --out reports/gpu`)
 2. Throughput-only run (`--only GPU-03`)
 3. Gradient-checkpointing/memory run (`--only GPU-04`)
-4. Tiny corpus training (`python -m psann.lm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml`)
+4. Tiny corpus training (`python -m psannlm.lm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml`)
 
 Export `OUT_DIR`, `BENCH_OUT`, or `TINY_CONFIG` to customize destinations before running.
 
@@ -26,7 +26,7 @@ BMRK-01 – Tiny Corpus Baseline
   the processed shard locally.
 - **Command:** Use the dedicated YAML config for reproducibility:
   ```
-  python -m psann.lm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml
+  python -m psannlm.lm.train.cli --config examples/lm/configs/tiny_corpus_benchmark.yaml
   ```
 - **Metrics:** Capture
   - Training loss per epoch (CSV + plot).

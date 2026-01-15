@@ -22,9 +22,9 @@ import torch.nn.functional as F
 from datasets import load_dataset  # type: ignore
 
 # Local imports (repo root on PYTHONPATH)
-from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psann.lm.models.sine import SineConfig
-from psann.lm.models.registry import get_base
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
+from psannlm.lm.models.sine import SineConfig
+from psannlm.lm.models.registry import get_base
 
 
 def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:

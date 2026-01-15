@@ -15,7 +15,7 @@ model:
 data:
   sources:
     - path: data/sample_texts.txt
-  tokenizer: auto  # change to "sentencepiece" if psann[lm] installed
+  tokenizer: auto  # change to "sentencepiece" if psannlm is installed
   # tokenizer_model_path: path/to/prebuilt_tokenizer.model  # optional (SentencePiece .model or HF .json)
   max_length: 1024
   pack_sequences: true
@@ -35,4 +35,3 @@ train:
   checkpoint_dir: runs/lm/wrn_small
   log_interval_steps: 50
   save_interval_steps: 500
-

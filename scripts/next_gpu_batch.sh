@@ -50,7 +50,7 @@ fi
 
 # Run the training CLI and tee logs for parsing
 export PSANN_OUTPUT_DIR="${BENCH_DIR}"
-python -m psann.lm.train.cli --config "${TINY_CONFIG}" 2>&1 | tee "${BENCH_DIR}/tiny_benchmark.log"
+python -m psannlm.lm.train.cli --config "${TINY_CONFIG}" 2>&1 | tee "${BENCH_DIR}/tiny_benchmark.log"
 
 # Aggregate GPU reports into throughput/memory artifacts under the same benchmark dir
 python scripts/aggregate_benchmarks.py --gpu-reports "${OUT_DIR}" --out "${BENCH_DIR}"

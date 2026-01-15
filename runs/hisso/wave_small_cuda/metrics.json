@@ -1,5 +1,0 @@
-{
-  "error": "Traceback (most recent call last):\n  File \"C:\\Users\\milin\\Documents\\psann\\src\\psann\\scripts\\hisso_log_run.py\", line 453, in main\n    dataset = _load_dataset(config.get(\"data\", {}), config_path.parent)\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\milin\\Documents\\psann\\src\\psann\\scripts\\hisso_log_run.py\", line 149, in _load_dataset\n    with np.load(npz_path, allow_pickle=False) as data:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\milin\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python311\\site-packages\\numpy\\lib\\npyio.py\", line 427, in load\n    fid = stack.enter_context(open(os_fspath(file), \"rb\"))\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'C:\\\\remote\\\\datasets\\\\wave_resnet_small.npz'\n",
-  "start_time": "2025-10-28T19:27:49.654657",
-  "status": "error"
-}

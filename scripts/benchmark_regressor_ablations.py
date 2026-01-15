@@ -25,6 +25,11 @@ if _SRC_ROOT.exists():
 from psann import ResPSANNRegressor, SGRPSANNRegressor, WaveResNetRegressor
 from psann.utils import make_regime_switch_ts, seed_all
 
+try:
+    from scripts._cli_utils import parse_comma_list, slugify
+except ImportError:  # pragma: no cover - supports `python scripts/foo.py`
+    from _cli_utils import parse_comma_list, slugify  # type: ignore
+
 
 # ---------------------------------------------------------------------------
 # Dataset registry
@@ -606,10 +611,6 @@ def _run_single(
     return result
 
 
-def _parse_list(value: str) -> List[str]:
-    return [entry.strip() for entry in value.split(",") if entry.strip()]
-
-
 def _default_output_dir() -> Path:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     return Path("reports") / "ablations" / f"{stamp}_regressor_ablations"
@@ -707,15 +708,6 @@ def _flatten_result(entry: Dict[str, Any]) -> Dict[str, Any]:
     return flat
 
 
-def _slugify(value: str) -> str:
-    return (
-        value.replace(":", "__")
-        .replace("/", "_")
-        .replace("\\", "_")
-        .replace(" ", "_")
-    )
-
-
 def _load_results(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         return []
@@ -745,9 +737,9 @@ def main() -> None:
             print(key)
         raise SystemExit(0)
 
-    datasets = _parse_list(args.datasets)
-    models = _parse_list(args.models)
-    seeds = [int(s) for s in _parse_list(args.seeds)]
+    datasets = parse_comma_list(args.datasets)
+    models = parse_comma_list(args.models)
+    seeds = [int(s) for s in parse_comma_list(args.seeds)]
     if not datasets or not models or not seeds:
         raise ValueError("datasets, models, and seeds must be non-empty.")
 
@@ -788,7 +780,7 @@ def main() -> None:
                 run_id = f"{dataset.name}:{model_spec.name}:seed{seed}"
                 if run_id in existing:
                     continue
-                slug = _slugify(run_id)
+                slug = slugify(run_id, colon="__")
                 record: Dict[str, Any] = {
                     "run_id": run_id,
                     "dataset": dataset.name,

@@ -34,3 +34,7 @@
 ## 1.5 TODO / Coverage Review
 - No inline `TODO` markers detected under `src/`.
 - `# pragma: no cover` only present on `BaseTokenizer` abstract methods (`src/psann/tokenizer.py` lines 16-26); acceptable as interface stubs but flag for potential abstract-base test doubles.
+# Archived Note
+
+This document captures an earlier Phase 1 snapshot and is retained for traceability.
+Refer to `docs/project_cleanup_todo.md` and `docs/REPO_STRUCTURE.md` for current guidance.

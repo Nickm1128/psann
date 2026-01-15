@@ -1,2 +1,0 @@
-timestamp,level,message
-2025-11-02 15:22:44,460,ERROR,run.failed [Errno 2] No such file or directory: '/workspace/psann/configs/hisso/datasets/wave_resnet_small.npz'

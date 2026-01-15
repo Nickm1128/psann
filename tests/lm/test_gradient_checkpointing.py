@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from psann.lm.models.registry import get_base
+from psannlm.lm.models.registry import get_base
 
 
 def _tiny_model(base: str, vocab_size: int = 64):

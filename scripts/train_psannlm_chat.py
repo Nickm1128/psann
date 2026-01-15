@@ -26,9 +26,9 @@ from torch.optim import AdamW
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
-from psann.lm import psannLM
-from psann.lm.models.sine import SineConfig
-from psann.lm.models.registry import get_base
+from psannlm.lm import psannLM
+from psannlm.lm.models.sine import SineConfig
+from psannlm.lm.models.registry import get_base
 
 
 # --------------------------------------------------------------------------- #

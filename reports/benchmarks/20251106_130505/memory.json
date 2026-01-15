@@ -1,9 +1,0 @@
-{
-  "timestamp": "20251106_130503",
-  "base": "waveresnet",
-  "grad_checkpoint": true,
-  "amp": "bf16",
-  "max_memory_allocated_mb": 24.01,
-  "max_memory_reserved_mb": 28.0,
-  "elapsed_s": 1.4231
-}

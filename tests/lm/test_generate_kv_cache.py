@@ -1,5 +1,5 @@
 
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm.lm import psannLM, psannLMDataPrep
 
 
 def test_generate_batch_kv_cache_cpu():

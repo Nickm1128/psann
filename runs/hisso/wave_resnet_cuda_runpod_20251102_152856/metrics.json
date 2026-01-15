@@ -1,5 +1,0 @@
-{
-  "error": "Traceback (most recent call last):\n  File \"/workspace/psann/src/psann/scripts/hisso_log_run.py\", line 474, in main\n    estimator = EstimatorCls(**estimator_params)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/workspace/psann/src/psann/sklearn.py\", line 1838, in __init__\n    raise ValueError(\"WaveResNetRegressor currently supports preserve_shape=False.\")\nValueError: WaveResNetRegressor currently supports preserve_shape=False.\n",
-  "start_time": "2025-11-02T15:28:59.129855",
-  "status": "error"
-}

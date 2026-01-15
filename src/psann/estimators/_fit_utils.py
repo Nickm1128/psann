@@ -283,6 +283,9 @@ def _prepare_flatten_inputs(
             y_vec = y_arr.reshape(-1, 1)
         else:
             y_vec = y_arr.reshape(y_arr.shape[0], -1)
+        target_scaler_transform = estimator._target_scaler_fit_update(y_vec)
+        if target_scaler_transform is not None:
+            y_vec = target_scaler_transform(y_vec).astype(np.float32, copy=False)
         primary_dim = int(y_vec.shape[1])
     else:
         if fit_args.hisso:
@@ -323,10 +326,16 @@ def _prepare_preserve_shape_inputs(
     context = fit_args.context
 
     if X.ndim < 3:
-        raise ValueError("preserve_shape=True requires inputs of shape (N, C, ...).")
+        raise ValueError(
+            "preserve_shape=True requires inputs of shape (N, C, ...); "
+            f"got X with shape {X.shape}."
+        )
 
     if estimator.data_format not in {"channels_first", "channels_last"}:
-        raise ValueError("data_format must be 'channels_first' or 'channels_last'.")
+        raise ValueError(
+            "data_format must be 'channels_first' or 'channels_last'; "
+            f"received {estimator.data_format!r}."
+        )
 
     X_cf = np.moveaxis(X, -1, 1) if estimator.data_format == "channels_last" else X
     cf_shape = X_cf.shape
@@ -359,7 +368,9 @@ def _prepare_preserve_shape_inputs(
 
     if y is None:
         if not fit_args.hisso:
-            raise ValueError("y must be provided when hisso=False (preserve_shape=True).")
+            raise ValueError(
+                "y must be provided when hisso=False (preserve_shape=True)."
+            )
         if estimator.output_shape is not None:
             primary_dim = int(np.prod(estimator.output_shape))
         else:
@@ -393,6 +404,16 @@ def _prepare_preserve_shape_inputs(
                 f"received shape {np.shape(y)}."
             )
         y_cf = y_cf.astype(np.float32, copy=False)
+        n_targets = int(y_cf.shape[1])
+        y2d = y_cf.reshape(y_cf.shape[0], n_targets, -1).transpose(0, 2, 1).reshape(-1, n_targets)
+        target_scaler_transform = estimator._target_scaler_fit_update(y2d)
+        if target_scaler_transform is not None:
+            y2d = target_scaler_transform(y2d)
+            y_cf = (
+                y2d.reshape(y_cf.shape[0], -1, n_targets)
+                .transpose(0, 2, 1)
+                .reshape(y_cf.shape)
+            ).astype(np.float32, copy=False)
         y_vec = y_cf.reshape(y_cf.shape[0], -1)
         primary_dim = int(n_targets)
     else:
@@ -401,6 +422,9 @@ def _prepare_preserve_shape_inputs(
             y_vec = y_arr.reshape(-1, 1)
         else:
             y_vec = y_arr.reshape(y_arr.shape[0], -1)
+        target_scaler_transform = estimator._target_scaler_fit_update(y_vec)
+        if target_scaler_transform is not None:
+            y_vec = target_scaler_transform(y_vec).astype(np.float32, copy=False)
         if estimator.output_shape is not None:
             expected = int(np.prod(estimator.output_shape))
             if y_vec.shape[1] != expected:
@@ -880,6 +904,16 @@ def _prepare_validation_tensors(
                 "validation y channel dimension mismatch: "
                 f"expected {int(prepared.output_dim)}, received {int(y_val_cf.shape[1])}."
             )
+        y_val_cf = y_val_cf.astype(np.float32, copy=False)
+        n_val = int(y_val_cf.shape[0])
+        n_targets = int(y_val_cf.shape[1])
+        y_val_2d = (
+            y_val_cf.reshape(n_val, n_targets, -1).transpose(0, 2, 1).reshape(-1, n_targets)
+        )
+        y_val_2d = estimator._apply_fitted_target_scaler(y_val_2d)
+        y_val_cf = (
+            y_val_2d.reshape(n_val, -1, n_targets).transpose(0, 2, 1).reshape(y_val_cf.shape)
+        ).astype(np.float32, copy=False)
         y_val_t = _to_tensor(y_val_cf)
         return X_val_t, y_val_t, ctx_val_t
 
@@ -890,6 +924,7 @@ def _prepare_validation_tensors(
             "validation y target dimension mismatch: "
             f"expected {expected_targets}, received {y_val_flat.shape[1]}."
         )
+    y_val_flat = estimator._apply_fitted_target_scaler(y_val_flat)
     y_val_t = _to_tensor(y_val_flat)
     return X_val_t, y_val_t, ctx_val_t
 

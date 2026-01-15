@@ -33,10 +33,10 @@ from typing import Any, Dict, List, Sequence
 import torch
 
 try:
-    from psann.lm import psannLM, psannLMDataPrep
+    from psannlm.lm import psannLM, psannLMDataPrep
 except Exception:  # pragma: no cover - runner convenience
     print(
-        "Failed to import psann.lm — ensure PYTHONPATH=.<repo root> or install -e .",
+        "Failed to import psannlm.lm — ensure PYTHONPATH=.<repo root> or install -e .",
         file=sys.stderr,
     )
     raise

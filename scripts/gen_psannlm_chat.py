@@ -20,7 +20,7 @@ from typing import List
 import torch
 from transformers import AutoTokenizer
 
-from psann.lm import psannLM
+from psannlm.lm import psannLM
 
 
 def _log(msg: str) -> None:

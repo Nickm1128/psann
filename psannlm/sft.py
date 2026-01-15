@@ -36,12 +36,12 @@ from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Sequ
 
 import torch
 
-from psann.lm.config import TrainConfig
-from psann.lm.data.dataset import build_text_filter
-from psann.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psann.lm.models.registry import get_base
-from psann.lm.models.sine import SineConfig
-from psann.lm.train.trainer import Trainer
+from psannlm.lm.config import TrainConfig
+from psannlm.lm.data.dataset import build_text_filter
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
+from psannlm.lm.models.registry import get_base
+from psannlm.lm.models.sine import SineConfig
+from psannlm.lm.train.trainer import Trainer
 
 from .data_loader import build_stream_loader
 

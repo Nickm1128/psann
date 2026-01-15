@@ -1,6 +1,6 @@
 import torch
 
-from psann.lm.models.sine import build_sine, SineConfig
+from psannlm.lm.models.sine import build_sine, SineConfig
 
 
 def test_sine_build_forward_backward_shapes():

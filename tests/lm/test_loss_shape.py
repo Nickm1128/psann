@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from psann.lm.models.registry import get_base
+from psannlm.lm.models.registry import get_base
 
 
 def test_loss_scalar_shape():

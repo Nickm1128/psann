@@ -102,11 +102,6 @@ viz = [
 sklearn = [
   "scikit-learn>=1.2,<1.5",
 ]
-lm = [
-  "sentencepiece>=0.1.99",
-  "tokenizers>=0.13",
-  "datasets>=2.14",
-]
 compat = [
   "numpy==1.26.4",
   "scipy==1.11.4",
@@ -151,4 +146,5 @@ exclude_lines = [
 [tool.pytest.ini_options]
 markers = [
   "slow: marks HISSO integration runs; deselect with -m 'not slow'",
+  "gpu: marks GPU-only tests; deselect with -m 'not gpu'",
 ]

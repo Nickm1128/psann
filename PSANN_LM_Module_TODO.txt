@@ -45,15 +45,15 @@
 
 ## Architecture Overview
 
-* **Module path:** `psann/lm/`
+* **Module path:** `psannlm/lm/`
 
-  * `psann/lm/models/` — transformer stacks on ResPSANN/WaveResNet
-  * `psann/lm/data/` — tokenization, dataset, collation, streaming
-  * `psann/lm/train/` — trainer, loops, scaling utils
-  * `psann/lm/infer/` — generation utilities
-  * `psann/lm/api.py` — `psannLM`, `psannLMDataPrep`
-  * `psann/lm/config.py` — typed configs for model/data/train
-  * `psann/lm/tests/` — unit & integration tests
+  * `psannlm/lm/models/` — transformer stacks on ResPSANN/WaveResNet
+  * `psannlm/lm/data/` — tokenization, dataset, collation, streaming
+  * `psannlm/lm/train/` — trainer, loops, scaling utils
+  * `psannlm/lm/infer/` — generation utilities
+  * `psannlm/lm/api.py` — `psannLM`, `psannLMDataPrep`
+  * `psannlm/lm/config.py` — typed configs for model/data/train
+  * `psannlm/lm/tests/` — unit & integration tests
   * `examples/lm/` — notebooks and scripts
 * **Key idea:** A PSANN-style transformer block with sine-activated MLPs (trainable amplitude/frequency/damping) and optional WaveResNet residual pathways; registry pattern to select base.
 
@@ -62,7 +62,7 @@
 ## Public API Spec (first-class UX)
 
 ```python
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm import psannLM, psannLMDataPrep
 
 texts = ["hello world", "goodnight moon"]
 train_data = psannLMDataPrep(texts, tokenizer="auto", max_length=1024, pack_sequences=True)
@@ -127,26 +127,26 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### 0) Project Hygiene
 
-* [ ] **PH-01:** Create `psann/lm/` scaffolding and `__init__.py` exports for public API.
-* [ ] **PH-02:** Add `pyproject.toml`/`setup.cfg` updates for new extras: `psann[lm]` installs tokenizer deps.
+* [ ] **PH-01:** Create `psannlm/lm/` scaffolding and `__init__.py` exports for public API.
+* [ ] **PH-02:** Add `pyproject.toml`/`setup.cfg` updates for new extras: `psannlm` installs tokenizer deps.
 * [ ] **PH-03:** Add `docs/lm.md` page with getting started, config, and examples.
 * [ ] **PH-04:** Add `examples/lm/minimal_train.py` and `examples/lm/generate.py`.
 
 ### 1) Config, Registry, and API Stubs (CPU)
 
-* [ ] **CFG-01:** Implement `psann/lm/config.py`:
+* [ ] **CFG-01:** Implement `psannlm/lm/config.py`:
 
   * [ ] `ModelConfig`, `DataConfig`, `TrainConfig` dataclasses with validation.
-* [ ] **REG-01:** Implement base registry in `psann/lm/models/registry.py`:
+* [ ] **REG-01:** Implement base registry in `psannlm/lm/models/registry.py`:
 
   * [ ] Register `"respsann"` and `"waveresnet"`.
-* [ ] **API-01:** Implement `psannLM` high-level wrapper in `psann/lm/api.py`:
+* [ ] **API-01:** Implement `psannLM` high-level wrapper in `psannlm/lm/api.py`:
 
   * [ ] `__init__` takes `base`, model kwargs, auto-bridges `vocab_size`, `max_length`.
   * [ ] `fit(train_data, val_data=None, **train_kwargs)`.
   * [ ] `generate(prompt, **gen_kwargs)`.
   * [ ] `save(path)`, `load(path)`.
-* [ ] **API-02:** Implement `psannLMDataPrep` in `psann/lm/api.py`:
+* [ ] **API-02:** Implement `psannLMDataPrep` in `psannlm/lm/api.py`:
 
   * [ ] Accepts `List[str]` or path(s); builds tokenizer if needed.
   * [ ] Exposes `.dataset`, `.vocab_size`, `.tokenizer`, `.pad_id`.
@@ -154,7 +154,7 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### 2) Sine Activation Core (CPU)
 
-* [ ] **SINE-01:** Create `psann/lm/models/sine.py`:
+* [ ] **SINE-01:** Create `psannlm/lm/models/sine.py`:
 
   * [ ] Parametric sine with amplitude/frequency/damping parameters:
     `y = A * sin(ω * x) * exp(-d * |x|)` (stable variant), all trainable if enabled.
@@ -180,12 +180,12 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### 4) Tokenization & Data (CPU)
 
-* [ ] **TOK-01:** Tokenizer plugin interface `psann/lm/data/tokenizer.py`:
+* [ ] **TOK-01:** Tokenizer plugin interface `psannlm/lm/data/tokenizer.py`:
 
   * [ ] Adapters for `sentencepiece` and `tokenizers` (BPE/Unigram).
   * [ ] `auto` mode picks installed backend; can train from corpus or load prebuilt.
 * [ ] **TOK-02:** Vocab building utilities with min-freq, special tokens, `unk`, `pad`, `bos`, `eos`.
-* [ ] **DATA-01:** Dataset and collation in `psann/lm/data/dataset.py`:
+* [ ] **DATA-01:** Dataset and collation in `psannlm/lm/data/dataset.py`:
 
   * [ ] Sequence packing (contiguous stream, `pack_sequences=True`).
   * [ ] Streaming from files (mmap/shards), deterministic shuffling.
@@ -194,14 +194,14 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ### 5) Training Loop (CPU baseline; GPU features toggled later)
 
-* [ ] **TRN-01:** Implement trainer in `psann/lm/train/trainer.py`:
+* [ ] **TRN-01:** Implement trainer in `psannlm/lm/train/trainer.py`:
 
   * [ ] Cross-entropy LM loss (shifted), label smoothing optional.
   * [ ] Optimizers: AdamW default; schedulers: cosine w/ warmup.
   * [ ] Gradient clipping, accumulation.
   * [ ] Checkpoint save/load, best-val tracking.
   * [ ] Logging hooks: throughput, loss, perplexity, lr, grad-norm.
-* [ ] **TRN-02:** CLI helpers `psann/lm/train/cli.py` to run from YAML config.
+* [ ] **TRN-02:** CLI helpers `psannlm/lm/train/cli.py` to run from YAML config.
 
 ### 6) Inference & Sampling (CPU ok)
 
@@ -230,22 +230,22 @@ out = model.generate("Once upon a time", max_new_tokens=128, top_p=0.9)
 
 ## File/Code Stubs (to create)
 
-* [ ] `psann/lm/__init__.py` (export `psannLM`, `psannLMDataPrep`)
-* [ ] `psann/lm/api.py`
-* [ ] `psann/lm/config.py`
-* [ ] `psann/lm/models/registry.py`
-* [ ] `psann/lm/models/sine.py`
-* [ ] `psann/lm/models/transformer_respsann.py`
-* [ ] `psann/lm/models/transformer_waveresnet.py`
-* [ ] `psann/lm/data/tokenizer.py`
-* [ ] `psann/lm/data/dataset.py`
-* [ ] `psann/lm/train/trainer.py`
-* [ ] `psann/lm/train/cli.py`
-* [ ] `psann/lm/infer/generate.py`
-* [ ] `psann/lm/tests/test_sine.py`
-* [ ] `psann/lm/tests/test_data.py`
-* [ ] `psann/lm/tests/test_models_cpu.py`
-* [ ] `psann/lm/tests/test_gpu_integration.py`
+* [ ] `psannlm/lm/__init__.py` (export `psannLM`, `psannLMDataPrep`)
+* [ ] `psannlm/lm/api.py`
+* [ ] `psannlm/lm/config.py`
+* [ ] `psannlm/lm/models/registry.py`
+* [ ] `psannlm/lm/models/sine.py`
+* [ ] `psannlm/lm/models/transformer_respsann.py`
+* [ ] `psannlm/lm/models/transformer_waveresnet.py`
+* [ ] `psannlm/lm/data/tokenizer.py`
+* [ ] `psannlm/lm/data/dataset.py`
+* [ ] `psannlm/lm/train/trainer.py`
+* [ ] `psannlm/lm/train/cli.py`
+* [ ] `psannlm/lm/infer/generate.py`
+* [ ] `psannlm/lm/tests/test_sine.py`
+* [ ] `psannlm/lm/tests/test_data.py`
+* [ ] `psannlm/lm/tests/test_models_cpu.py`
+* [ ] `psannlm/lm/tests/test_gpu_integration.py`
 * [ ] `examples/lm/minimal_train.py`
 * [ ] `examples/lm/generate.py`
 * [ ] `docs/lm.md`

@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 import torch
 
-from psann.lm import psannLM, psannLMDataPrep
+from psannlm.lm import psannLM, psannLMDataPrep
 
 
 @contextmanager
