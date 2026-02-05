@@ -23,7 +23,9 @@ if _SRC_ROOT.exists():
     sys.path.insert(0, str(_SRC_ROOT))
 
 from psann import ResPSANNRegressor, SGRPSANNRegressor, WaveResNetRegressor
-from psann.utils import make_regime_switch_ts, seed_all
+from psann.params import count_params as psann_count_params
+from psann.utils import make_context_rotating_moons, make_drift_series, make_regime_switch_ts, make_shock_series, seed_all
+from gpu_env_report import gather_env_info
 
 try:
     from scripts._cli_utils import parse_comma_list, slugify
@@ -47,6 +49,9 @@ class DatasetBundle:
     y_test: np.ndarray
     meta: Dict[str, Any]
     y_train_labels: Optional[np.ndarray] = None
+    X_val: Optional[np.ndarray] = None
+    y_val: Optional[np.ndarray] = None
+    y_val_labels: Optional[np.ndarray] = None
     y_test_labels: Optional[np.ndarray] = None
 
 
@@ -214,6 +219,77 @@ def _make_ts_regime(seed: int) -> DatasetBundle:
     )
 
 
+def _make_ts_drift(seed: int) -> DatasetBundle:
+    X_raw, y_raw = make_drift_series(1600, drift=0.001, frequency=0.02, noise=0.02, seed=seed)
+    series = torch.cat([X_raw.squeeze(-1), y_raw[-1].squeeze(-1).reshape(1)], dim=0)
+    series_np = series.numpy().astype(np.float32)
+    feats = series_np[:-1].reshape(-1, 1)
+    targets = series_np[1:]
+    window = 32
+    X, y = _windowed_series(feats, targets, window=window)
+    return _split_sequence_dataset(
+        name="ts_drift",
+        X=X,
+        y=y,
+        window=window,
+        kind="sequence",
+        meta={"features": feats.shape[1], "window": window, "drift": 0.001},
+    )
+
+
+def _make_ts_shock(seed: int) -> DatasetBundle:
+    X_raw, y_raw = make_shock_series(
+        1600, shock_prob=0.05, shock_scale=2.0, noise=0.05, mean_revert=0.85, seed=seed
+    )
+    series = torch.cat([X_raw.squeeze(-1), y_raw[-1].squeeze(-1).reshape(1)], dim=0)
+    series_np = series.numpy().astype(np.float32)
+    feats = series_np[:-1].reshape(-1, 1)
+    targets = series_np[1:]
+    window = 32
+    X, y = _windowed_series(feats, targets, window=window)
+    return _split_sequence_dataset(
+        name="ts_shock",
+        X=X,
+        y=y,
+        window=window,
+        kind="sequence",
+        meta={"features": feats.shape[1], "window": window, "shock_prob": 0.05},
+    )
+
+
+def _make_context_rotating_moons(seed: int) -> DatasetBundle:
+    feats, labels, contexts = make_context_rotating_moons(1200, noise=0.05, seed=seed)
+    X = torch.cat([feats, contexts], dim=1).numpy().astype(np.float32)
+    y_labels = labels.numpy().astype(np.int64)
+    y_onehot = np.eye(2, dtype=np.float32)[y_labels]
+    order = np.random.default_rng(seed).permutation(X.shape[0])
+    X = X[order]
+    y_onehot = y_onehot[order]
+    y_labels = y_labels[order]
+    n_train = 900
+    X_train, X_test = X[:n_train], X[n_train:]
+    y_train, y_test = y_onehot[:n_train], y_onehot[n_train:]
+    y_train_labels = y_labels[:n_train]
+    y_test_labels = y_labels[n_train:]
+    return DatasetBundle(
+        name="context_rotating_moons",
+        task="classification",
+        kind="tabular",
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        meta={
+            "features": X.shape[1],
+            "train_size": n_train,
+            "test_size": X_test.shape[0],
+            "classes": 2,
+            "context_dim": 1,
+        },
+        y_train_labels=y_train_labels,
+        y_test_labels=y_test_labels,
+    )
+
 def _windowed_series(
     feats: np.ndarray,
     target: np.ndarray,
@@ -290,6 +366,18 @@ DATASETS: Dict[str, DatasetSpec] = {
         task="regression",
         kind="sequence",
         builder=_make_ts_regime,
+    ),
+    "ts_drift": DatasetSpec(
+        name="ts_drift", task="regression", kind="sequence", builder=_make_ts_drift
+    ),
+    "ts_shock": DatasetSpec(
+        name="ts_shock", task="regression", kind="sequence", builder=_make_ts_shock
+    ),
+    "context_rotating_moons": DatasetSpec(
+        name="context_rotating_moons",
+        task="classification",
+        kind="tabular",
+        builder=_make_context_rotating_moons,
     ),
 }
 
@@ -533,6 +621,104 @@ def _classification_metrics(
     }
 
 
+def _split_train_val(
+    dataset: DatasetBundle,
+    *,
+    val_fraction: float,
+    seed: int,
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    Optional[np.ndarray],
+    Optional[np.ndarray],
+]:
+    if dataset.X_val is not None and dataset.y_val is not None:
+        return (
+            dataset.X_train,
+            dataset.y_train,
+            dataset.X_val,
+            dataset.y_val,
+            dataset.y_train_labels,
+            dataset.y_val_labels,
+        )
+
+    X = dataset.X_train
+    y = dataset.y_train
+    n = X.shape[0]
+    if n < 2 or val_fraction <= 0.0:
+        return X, y, X[:0], y[:0], dataset.y_train_labels, None
+
+    rng = np.random.default_rng(seed)
+    if dataset.task == "classification" and dataset.y_train_labels is not None:
+        labels = dataset.y_train_labels
+        train_idx = []
+        val_idx = []
+        for cls in np.unique(labels):
+            cls_idx = np.where(labels == cls)[0]
+            rng.shuffle(cls_idx)
+            n_val = max(1, int(round(len(cls_idx) * val_fraction)))
+            val_idx.extend(cls_idx[:n_val])
+            train_idx.extend(cls_idx[n_val:])
+        train_idx = np.array(train_idx, dtype=np.int64)
+        val_idx = np.array(val_idx, dtype=np.int64)
+    else:
+        idx = rng.permutation(n)
+        n_val = max(1, int(round(n * val_fraction)))
+        val_idx = idx[:n_val]
+        train_idx = idx[n_val:]
+
+    X_train = X[train_idx]
+    y_train = y[train_idx]
+    X_val = X[val_idx]
+    y_val = y[val_idx]
+    y_train_labels = dataset.y_train_labels[train_idx] if dataset.y_train_labels is not None else None
+    y_val_labels = dataset.y_train_labels[val_idx] if dataset.y_train_labels is not None else None
+    return X_train, y_train, X_val, y_val, y_train_labels, y_val_labels
+
+
+def _history_stats(history: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not history:
+        return {}
+    train_losses = [h.get("train_loss") for h in history if h.get("train_loss") is not None]
+    val_losses = [h.get("val_loss") for h in history if h.get("val_loss") is not None]
+    epoch_times = [h.get("epoch_time_s") for h in history if h.get("epoch_time_s") is not None]
+    step_times = [h.get("step_time_s_mean") for h in history if h.get("step_time_s_mean") is not None]
+    grad_norms = [h.get("grad_norm_max") for h in history if h.get("grad_norm_max") is not None]
+    loss_nonfinite = sum(int(h.get("loss_nonfinite_steps") or 0) for h in history)
+    grad_nonfinite = sum(int(h.get("grad_nonfinite_steps") or 0) for h in history)
+    if train_losses:
+        mean = float(sum(train_losses) / len(train_losses))
+        var = float(sum((val - mean) ** 2 for val in train_losses) / len(train_losses))
+        loss_vol = math.sqrt(var)
+        mad = (
+            float(sum(abs(train_losses[i] - train_losses[i - 1]) for i in range(1, len(train_losses))))
+            / float(max(1, len(train_losses) - 1))
+        )
+    else:
+        loss_vol = None
+        mad = None
+    if val_losses:
+        mean_val = float(sum(val_losses) / len(val_losses))
+        var_val = float(sum((val - mean_val) ** 2 for val in val_losses) / len(val_losses))
+        val_vol = math.sqrt(var_val)
+    else:
+        val_vol = None
+    return {
+        "history_length": int(len(history)),
+        "loss_curve_volatility": loss_vol,
+        "loss_curve_mean_abs_diff": mad,
+        "val_curve_volatility": val_vol,
+        "epoch_time_s_mean": float(sum(epoch_times) / len(epoch_times)) if epoch_times else None,
+        "step_time_s_mean": float(sum(step_times) / len(step_times)) if step_times else None,
+        "grad_norm_max": float(max(grad_norms)) if grad_norms else None,
+        "loss_nonfinite_steps": int(loss_nonfinite),
+        "grad_nonfinite_steps": int(grad_nonfinite),
+        "train_time_s_total": history[-1].get("train_time_s_total"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -542,7 +728,7 @@ def _count_params(estimator: Any) -> int:
     model = getattr(estimator, "model_", None)
     if model is None:
         return 0
-    return int(sum(int(p.numel()) for p in model.parameters()))
+    return int(psann_count_params(model))
 
 
 def _run_single(
@@ -554,10 +740,13 @@ def _run_single(
     epochs: int,
     batch_size: int,
     lr: float,
+    val_fraction: float,
     save_model_path: Optional[Path] = None,
     save_preds_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
     params = dict(model.params)
     params.update(
         {
@@ -570,41 +759,67 @@ def _run_single(
     )
     estimator = model.estimator(**params)
     start = time.perf_counter()
-    estimator.fit(dataset.X_train, dataset.y_train, verbose=0)
+    X_train, y_train, X_val, y_val, y_train_labels, y_val_labels = _split_train_val(
+        dataset, val_fraction=float(val_fraction), seed=int(seed)
+    )
+    validation_data = (X_val, y_val) if X_val.size else None
+    estimator.fit(X_train, y_train, verbose=0, validation_data=validation_data)
     if save_model_path is not None:
         save_model_path.parent.mkdir(parents=True, exist_ok=True)
         estimator.save(str(save_model_path))
     elapsed = time.perf_counter() - start
 
-    pred_train = estimator.predict(dataset.X_train)
+    pred_train = estimator.predict(X_train)
+    pred_val = estimator.predict(X_val) if X_val.size else None
     pred_test = estimator.predict(dataset.X_test)
     result: Dict[str, Any] = {
         "train_time_s": float(elapsed),
         "n_params": _count_params(estimator),
+        "train_size": int(X_train.shape[0]),
+        "val_size": int(X_val.shape[0]),
+        "test_size": int(dataset.X_test.shape[0]),
     }
+    history = getattr(estimator, "history_", []) or []
+    result.update(_history_stats(history))
     if dataset.task == "classification":
-        if dataset.y_train_labels is None or dataset.y_test_labels is None:
+        if y_train_labels is None or dataset.y_test_labels is None:
             raise ValueError("classification dataset missing label arrays")
         num_classes = int(dataset.meta.get("classes", pred_train.shape[-1]))
-        result["metrics_train"] = _classification_metrics(
-            dataset.y_train_labels, pred_train, num_classes=num_classes
+        metrics_train = _classification_metrics(
+            y_train_labels, pred_train, num_classes=num_classes
         )
-        result["metrics_test"] = _classification_metrics(
+        metrics_train.update(_regression_metrics(y_train, pred_train))
+        result["metrics_train"] = metrics_train
+        if pred_val is not None and y_val_labels is not None:
+            metrics_val = _classification_metrics(
+                y_val_labels, pred_val, num_classes=num_classes
+            )
+            metrics_val.update(_regression_metrics(y_val, pred_val))
+            result["metrics_val"] = metrics_val
+        metrics_test = _classification_metrics(
             dataset.y_test_labels, pred_test, num_classes=num_classes
         )
+        metrics_test.update(_regression_metrics(dataset.y_test, pred_test))
+        result["metrics_test"] = metrics_test
     else:
-        result["metrics_train"] = _regression_metrics(dataset.y_train, pred_train)
+        result["metrics_train"] = _regression_metrics(y_train, pred_train)
+        if pred_val is not None and y_val.size:
+            result["metrics_val"] = _regression_metrics(y_val, pred_val)
         result["metrics_test"] = _regression_metrics(dataset.y_test, pred_test)
     if save_preds_path is not None:
         save_preds_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "y_train": dataset.y_train,
+            "y_train": y_train,
+            "y_val": y_val,
             "y_test": dataset.y_test,
             "pred_train": pred_train,
+            "pred_val": pred_val,
             "pred_test": pred_test,
         }
-        if dataset.y_train_labels is not None:
-            payload["y_train_labels"] = dataset.y_train_labels
+        if y_train_labels is not None:
+            payload["y_train_labels"] = y_train_labels
+        if y_val_labels is not None:
+            payload["y_val_labels"] = y_val_labels
         if dataset.y_test_labels is not None:
             payload["y_test_labels"] = dataset.y_test_labels
         np.savez_compressed(save_preds_path, **payload)
@@ -621,7 +836,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--datasets",
         type=str,
-        default="tabular_sine,tabular_shifted,classification_clusters,ts_periodic,ts_regime_switch",
+        default="tabular_sine,tabular_shifted,classification_clusters,context_rotating_moons,ts_periodic,ts_regime_switch,ts_drift,ts_shock",
         help="Comma-separated dataset names to run.",
     )
     parser.add_argument(
@@ -640,6 +855,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=25, help="Training epochs per run.")
     parser.add_argument("--batch-size", type=int, default=64, help="Training batch size.")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate.")
+    parser.add_argument(
+        "--val-fraction",
+        type=float,
+        default=0.15,
+        help="Fraction of training data held out for validation (0 disables).",
+    )
     parser.add_argument("--out", type=str, default=None, help="Output directory.")
     parser.add_argument(
         "--save-models",
@@ -695,6 +916,59 @@ def _write_summary(rows: List[Dict[str, Any]], path: Path) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+
+
+def _aggregate_seed_summary(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for row in rows:
+        if row.get("status") != "ok":
+            continue
+        dataset = str(row.get("dataset"))
+        model = str(row.get("model"))
+        groups.setdefault((dataset, model), []).append(row)
+
+    def _mean_std(values: List[float]) -> Tuple[float, float]:
+        if not values:
+            return float("nan"), float("nan")
+        mean = float(sum(values) / len(values))
+        var = float(sum((v - mean) ** 2 for v in values) / len(values))
+        return mean, math.sqrt(var)
+
+    allowed_prefixes = (
+        "metrics_",
+        "train_time_s",
+        "train_time_s_total",
+        "n_params",
+        "loss_curve_volatility",
+        "loss_curve_mean_abs_diff",
+        "val_curve_volatility",
+        "grad_norm_max",
+        "epoch_time_s_mean",
+        "step_time_s_mean",
+    )
+    summary_rows: List[Dict[str, Any]] = []
+    for (dataset, model), entries in sorted(groups.items()):
+        row: Dict[str, Any] = {"dataset": dataset, "model": model, "n_runs": len(entries)}
+        keys = set()
+        for entry in entries:
+            keys.update(entry.keys())
+        for key in sorted(keys):
+            if key in {"dataset", "model", "seed", "status"}:
+                continue
+            if not key.startswith(allowed_prefixes):
+                continue
+            vals = []
+            for entry in entries:
+                val = entry.get(key)
+                if isinstance(val, (int, float)):
+                    vals.append(float(val))
+            if not vals:
+                continue
+            mean, std = _mean_std(vals)
+            row[f"{key}_mean"] = mean
+            row[f"{key}_std"] = std
+        summary_rows.append(row)
+    return summary_rows
 
 
 def _flatten_result(entry: Dict[str, Any]) -> Dict[str, Any]:
@@ -756,6 +1030,7 @@ def main() -> None:
         "epochs": int(args.epochs),
         "batch_size": int(args.batch_size),
         "lr": float(args.lr),
+        "val_fraction": float(args.val_fraction),
         "save_models": bool(args.save_models),
         "save_preds": bool(args.save_preds),
         "resume": bool(args.resume),
@@ -765,6 +1040,11 @@ def main() -> None:
     }
     (out_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    env_info = gather_env_info()
+    env_info["selected_device"] = str(args.device)
+    (out_dir / "env.json").write_text(
+        json.dumps(env_info, indent=2, sort_keys=True), encoding="utf-8"
     )
 
     for dataset_name in datasets:
@@ -809,6 +1089,7 @@ def main() -> None:
                         epochs=args.epochs,
                         batch_size=args.batch_size,
                         lr=args.lr,
+                        val_fraction=args.val_fraction,
                         save_model_path=model_path,
                         save_preds_path=preds_path,
                     )
@@ -830,6 +1111,9 @@ def main() -> None:
     summary_rows = [_flatten_result(entry) for entry in results]
     if summary_rows:
         _write_summary(summary_rows, out_dir / "summary.csv")
+        seed_summary_rows = _aggregate_seed_summary(summary_rows)
+        if seed_summary_rows:
+            _write_summary(seed_summary_rows, out_dir / "seed_summary.csv")
     print(f"Wrote results to {results_path}")
 
 

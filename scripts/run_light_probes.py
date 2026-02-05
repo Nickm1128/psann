@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import json
+import math
 import os
 import subprocess
 import sys
+import time
 import types
 import zipfile
 from dataclasses import dataclass
@@ -23,9 +26,16 @@ import torch
 import torch.nn as nn
 from sklearn.metrics import mean_absolute_error, r2_score
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC_ROOT = _REPO_ROOT / "src"
+if _SRC_ROOT.exists():
+    sys.path.insert(0, str(_SRC_ROOT))
+
 from psann.conv import PSANNConv1dNet
+from psann.params import count_params, match_dense_width
 from psann.utils import choose_device
 from psann.utils import seed_all as psann_seed_all
+from gpu_env_report import gather_env_info
 
 
 def _maybe_install(module: str, package: str | None = None) -> None:
@@ -249,8 +259,73 @@ class MLPRegressor(nn.Module):
         return self.net(flat)
 
 
-def count_params(model: nn.Module) -> int:
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+def _smape(y_true: np.ndarray, y_pred: np.ndarray, eps: float = 1e-8) -> float:
+    denom = np.abs(y_true) + np.abs(y_pred) + float(eps)
+    return float(np.mean(2.0 * np.abs(y_pred - y_true) / denom))
+
+
+def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+    y_true = y_true.reshape(y_true.shape[0], -1)
+    y_pred = y_pred.reshape(y_pred.shape[0], -1)
+    mse = float(np.mean((y_pred - y_true) ** 2))
+    rmse = math.sqrt(mse)
+    mae = float(mean_absolute_error(y_true, y_pred))
+    return {
+        "mse": mse,
+        "rmse": rmse,
+        "mae": mae,
+        "smape": _smape(y_true, y_pred),
+        "r2": float(r2_score(y_true, y_pred)),
+    }
+
+
+def _loss_curve_volatility(losses: List[float]) -> float:
+    if len(losses) < 2:
+        return 0.0
+    mean = float(sum(losses) / len(losses))
+    var = float(sum((val - mean) ** 2 for val in losses) / len(losses))
+    return float(math.sqrt(var))
+
+
+def _loss_curve_mean_abs_diff(losses: List[float]) -> float:
+    if len(losses) < 2:
+        return 0.0
+    diffs = [abs(losses[i] - losses[i - 1]) for i in range(1, len(losses))]
+    return float(sum(diffs) / len(diffs))
+
+
+def _grad_norm(model: nn.Module) -> Optional[float]:
+    total_sq = 0.0
+    has_grad = False
+    for param in model.parameters():
+        if param.grad is None:
+            continue
+        grad = param.grad.detach()
+        if grad.is_sparse:
+            grad = grad.coalesce().values()
+        total_sq += float((grad.float() ** 2).sum().item())
+        has_grad = True
+    if not has_grad:
+        return None
+    return math.sqrt(total_sq)
+
+
+def _match_mlp_hidden(
+    *,
+    target_params: int,
+    input_dim: int,
+    output_dim: int,
+    depth: int,
+    max_width: int = 8192,
+) -> Tuple[int, int]:
+    width, mismatch = match_dense_width(
+        target_params=int(target_params),
+        input_dim=int(input_dim),
+        output_dim=int(output_dim),
+        depth=int(depth),
+        max_width=int(max_width),
+    )
+    return int(width), int(mismatch)
 
 
 def build_windows(
@@ -413,24 +488,81 @@ def train_regressor(
     vX = torch.from_numpy(val_X).float().to(device)
     vy = torch.from_numpy(val_y).float().to(device)
     total_steps = 0
+    history: List[dict] = []
+    total_start = time.perf_counter()
     for epoch in range(spec.epochs):
+        model.train()
+        epoch_start = time.perf_counter()
         perm = torch.randperm(tX.size(0), device=device)
+        epoch_loss_sum = 0.0
+        epoch_samples = 0
+        step_times: List[float] = []
+        grad_norms: List[float] = []
+        loss_nonfinite = 0
+        grad_nonfinite = 0
         for i in range(0, len(perm), spec.batch_size):
             idx = perm[i : i + spec.batch_size]
             xb, yb = tX.index_select(0, idx), ty.index_select(0, idx)
             opt.zero_grad()
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            step_start = time.perf_counter()
             loss = loss_fn(model(xb), yb)
+            loss_value = float(loss.detach().item())
+            if not math.isfinite(loss_value):
+                loss_nonfinite += 1
             loss.backward()
+            grad_norm = _grad_norm(model)
+            if grad_norm is not None:
+                grad_norms.append(grad_norm)
+                if not math.isfinite(grad_norm):
+                    grad_nonfinite += 1
             opt.step()
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            step_times.append(time.perf_counter() - step_start)
+            bs = xb.shape[0]
+            epoch_loss_sum += loss_value * bs
+            epoch_samples += bs
             total_steps += 1
+        train_loss = epoch_loss_sum / max(epoch_samples, 1)
+        model.eval()
+        with torch.no_grad():
+            val_loss = float(loss_fn(model(vX), vy).item())
+        epoch_time = time.perf_counter() - epoch_start
+        finite_grad_norms = [g for g in grad_norms if math.isfinite(g)]
+        grad_norm_mean = (
+            float(sum(finite_grad_norms) / len(finite_grad_norms)) if finite_grad_norms else None
+        )
+        grad_norm_max = float(max(finite_grad_norms)) if finite_grad_norms else None
+        step_time_mean = float(sum(step_times) / len(step_times)) if step_times else None
+        history.append(
+            {
+                "epoch": int(epoch + 1),
+                "train_loss": float(train_loss),
+                "val_loss": float(val_loss),
+                "epoch_time_s": float(epoch_time),
+                "step_time_s_mean": step_time_mean,
+                "steps": int(len(step_times)),
+                "samples": int(epoch_samples),
+                "grad_norm_mean": grad_norm_mean,
+                "grad_norm_max": grad_norm_max,
+                "loss_nonfinite_steps": int(loss_nonfinite),
+                "grad_nonfinite_steps": int(grad_nonfinite),
+            }
+        )
     model.eval()
     with torch.no_grad():
         vloss = loss_fn(model(vX), vy).item()
+    total_time = time.perf_counter() - total_start
+    if history:
+        history[-1]["train_time_s_total"] = float(total_time)
     return model, {
         "epochs": spec.epochs,
         "val_loss": float(vloss),
         "steps": total_steps,
         "train_size": int(len(train_X)),
+        "history": history,
     }
 
 
@@ -441,11 +573,42 @@ def evaluate_regressor(
     with torch.no_grad():
         preds = model(torch.from_numpy(test_X).float().to(device)).cpu().numpy()
     preds = preds.reshape(test_y.shape)
-    return {
-        "rmse": float(np.sqrt(np.mean((preds - test_y) ** 2))),
-        "mae": float(mean_absolute_error(test_y, preds)),
-        "r2": float(r2_score(test_y, preds)),
+    return _regression_metrics(test_y, preds)
+
+
+def _prefix_metrics(prefix: str, metrics: dict) -> dict:
+    return {f"{prefix}_{key}": value for key, value in metrics.items()}
+
+
+def _history_stats(history: List[dict]) -> dict:
+    if not history:
+        return {}
+    train_losses = [h.get("train_loss") for h in history if h.get("train_loss") is not None]
+    val_losses = [h.get("val_loss") for h in history if h.get("val_loss") is not None]
+    epoch_times = [h.get("epoch_time_s") for h in history if h.get("epoch_time_s") is not None]
+    step_times = [h.get("step_time_s_mean") for h in history if h.get("step_time_s_mean") is not None]
+    grad_norms = [h.get("grad_norm_max") for h in history if h.get("grad_norm_max") is not None]
+    loss_nonfinite = sum(int(h.get("loss_nonfinite_steps") or 0) for h in history)
+    grad_nonfinite = sum(int(h.get("grad_nonfinite_steps") or 0) for h in history)
+    stats = {
+        "history_length": int(len(history)),
+        "loss_curve_volatility": _loss_curve_volatility([float(x) for x in train_losses])
+        if train_losses
+        else None,
+        "loss_curve_mean_abs_diff": _loss_curve_mean_abs_diff([float(x) for x in train_losses])
+        if train_losses
+        else None,
+        "val_curve_volatility": _loss_curve_volatility([float(x) for x in val_losses])
+        if val_losses
+        else None,
+        "epoch_time_s_mean": float(sum(epoch_times) / len(epoch_times)) if epoch_times else None,
+        "step_time_s_mean": float(sum(step_times) / len(step_times)) if step_times else None,
+        "grad_norm_max": float(max(grad_norms)) if grad_norms else None,
+        "loss_nonfinite_steps": int(loss_nonfinite),
+        "grad_nonfinite_steps": int(grad_nonfinite),
+        "train_time_s_total": history[-1].get("train_time_s_total"),
     }
+    return stats
 
 
 def jacobian_pr(model: nn.Module, X_sample: np.ndarray, device: torch.device):
@@ -473,7 +636,9 @@ def run_light_task(
     device: torch.device,
     epochs: int,
     pr_snapshots: bool,
+    match_params: bool,
     metrics_rows: List[dict],
+    history_rows: List[dict],
 ) -> None:
     if task == "jena":
         train_X, train_y, val_X, val_y, test_X, test_y = load_jena_light(72, 36, 120)
@@ -485,6 +650,18 @@ def run_light_task(
             ),
             ("mlp", TrainSpec("mlp", hidden=64, depth=2, epochs=epochs)),
         ]
+        target_params = None
+        mlp_mismatch = None
+        if match_params:
+            psann_tmp = PSANNConvSpine(in_ch, specs[0][1].hidden, specs[0][1].depth, specs[0][1].kernel_size, horizon)
+            target_params = count_params(psann_tmp)
+            mlp_hidden, mlp_mismatch = _match_mlp_hidden(
+                target_params=target_params,
+                input_dim=train_X.shape[1] * in_ch,
+                output_dim=horizon,
+                depth=specs[1][1].depth,
+            )
+            specs[1][1].hidden = mlp_hidden
         for seed in seeds:
             seed_all(seed)
             for name, spec in specs:
@@ -494,15 +671,46 @@ def run_light_task(
                     else MLPRegressor(train_X.shape[1] * in_ch, spec.hidden, spec.depth, horizon)
                 )
                 model, info = train_regressor(model, train_X, train_y, val_X, val_y, spec, device)
+                info = dict(info)
+                history = info.pop("history", [])
+                train_metrics = evaluate_regressor(model, train_X, train_y, device)
+                val_metrics = evaluate_regressor(model, val_X, val_y, device)
                 test_metrics = evaluate_regressor(model, test_X, test_y, device)
+                params_total = count_params(model)
+                params_trainable = count_params(model, trainable_only=True)
+                history_rows.extend(
+                    {
+                        "task": "jena_light",
+                        "model": name,
+                        "seed": seed,
+                        **entry,
+                    }
+                    for entry in history
+                )
+                history_stats = _history_stats(history)
                 metrics_rows.append(
                     {
                         "task": "jena_light",
                         "model": name,
                         "seed": seed,
-                        "params": count_params(model),
+                        "params_total": params_total,
+                        "params_trainable": params_trainable,
+                        "param_target": target_params,
+                        "param_mismatch": mlp_mismatch if name == "mlp" else 0,
+                        "param_mismatch_ratio": (
+                            float(mlp_mismatch) / float(target_params)
+                            if (name == "mlp" and target_params)
+                            else 0.0
+                        ),
+                        "train_size": int(train_X.shape[0]),
+                        "val_size": int(val_X.shape[0]),
+                        "test_size": int(test_X.shape[0]),
+                        "input_shape": list(train_X.shape[1:]),
                         **info,
-                        **test_metrics,
+                        **_prefix_metrics("train", train_metrics),
+                        **_prefix_metrics("val", val_metrics),
+                        **_prefix_metrics("test", test_metrics),
+                        **history_stats,
                     }
                 )
                 if pr_snapshots and name == "psann_conv":
@@ -536,6 +744,18 @@ def run_light_task(
             ),
             ("mlp", TrainSpec("mlp", hidden=96, depth=2, epochs=epochs)),
         ]
+        target_params = None
+        mlp_mismatch = None
+        if match_params:
+            psann_tmp = PSANNConvSpine(in_ch, specs[0][1].hidden, specs[0][1].depth, specs[0][1].kernel_size, horizon)
+            target_params = count_params(psann_tmp)
+            mlp_hidden, mlp_mismatch = _match_mlp_hidden(
+                target_params=target_params,
+                input_dim=train_X.shape[1] * in_ch,
+                output_dim=horizon,
+                depth=specs[1][1].depth,
+            )
+            specs[1][1].hidden = mlp_hidden
         for seed in seeds:
             seed_all(seed)
             for name, spec in specs:
@@ -545,15 +765,46 @@ def run_light_task(
                     else MLPRegressor(train_X.shape[1] * in_ch, spec.hidden, spec.depth, horizon)
                 )
                 model, info = train_regressor(model, train_X, train_y, val_X, val_y, spec, device)
+                info = dict(info)
+                history = info.pop("history", [])
+                train_metrics = evaluate_regressor(model, train_X, train_y, device)
+                val_metrics = evaluate_regressor(model, val_X, val_y, device)
                 test_metrics = evaluate_regressor(model, test_X, test_y, device)
+                params_total = count_params(model)
+                params_trainable = count_params(model, trainable_only=True)
+                history_rows.extend(
+                    {
+                        "task": "beijing_light",
+                        "model": name,
+                        "seed": seed,
+                        **entry,
+                    }
+                    for entry in history
+                )
+                history_stats = _history_stats(history)
                 metrics_rows.append(
                     {
                         "task": "beijing_light",
                         "model": name,
                         "seed": seed,
-                        "params": count_params(model),
+                        "params_total": params_total,
+                        "params_trainable": params_trainable,
+                        "param_target": target_params,
+                        "param_mismatch": mlp_mismatch if name == "mlp" else 0,
+                        "param_mismatch_ratio": (
+                            float(mlp_mismatch) / float(target_params)
+                            if (name == "mlp" and target_params)
+                            else 0.0
+                        ),
+                        "train_size": int(train_X.shape[0]),
+                        "val_size": int(val_X.shape[0]),
+                        "test_size": int(test_X.shape[0]),
+                        "input_shape": list(train_X.shape[1:]),
                         **info,
-                        **test_metrics,
+                        **_prefix_metrics("train", train_metrics),
+                        **_prefix_metrics("val", val_metrics),
+                        **_prefix_metrics("test", test_metrics),
+                        **history_stats,
                     }
                 )
     elif task == "eaf":
@@ -566,6 +817,18 @@ def run_light_task(
             ),
             ("mlp", TrainSpec("mlp", hidden=48, depth=2, epochs=max(epochs, 8))),
         ]
+        target_params = None
+        mlp_mismatch = None
+        if match_params:
+            psann_tmp = PSANNConvSpine(in_ch, specs[0][1].hidden, specs[0][1].depth, specs[0][1].kernel_size, horizon)
+            target_params = count_params(psann_tmp)
+            mlp_hidden, mlp_mismatch = _match_mlp_hidden(
+                target_params=target_params,
+                input_dim=train_X.shape[1] * in_ch,
+                output_dim=horizon,
+                depth=specs[1][1].depth,
+            )
+            specs[1][1].hidden = mlp_hidden
         for seed in seeds:
             seed_all(seed)
             for name, spec in specs:
@@ -575,37 +838,135 @@ def run_light_task(
                     else MLPRegressor(train_X.shape[1] * in_ch, spec.hidden, spec.depth, horizon)
                 )
                 model, info = train_regressor(model, train_X, train_y, val_X, val_y, spec, device)
+                info = dict(info)
+                history = info.pop("history", [])
+                train_metrics = evaluate_regressor(model, train_X, train_y, device)
+                val_metrics = evaluate_regressor(model, val_X, val_y, device)
                 test_metrics = evaluate_regressor(model, test_X, test_y, device)
+                params_total = count_params(model)
+                params_trainable = count_params(model, trainable_only=True)
+                history_rows.extend(
+                    {
+                        "task": "eaf_temp_lite",
+                        "model": name,
+                        "seed": seed,
+                        **entry,
+                    }
+                    for entry in history
+                )
+                history_stats = _history_stats(history)
                 metrics_rows.append(
                     {
                         "task": "eaf_temp_lite",
                         "model": name,
                         "seed": seed,
-                        "params": count_params(model),
+                        "params_total": params_total,
+                        "params_trainable": params_trainable,
+                        "param_target": target_params,
+                        "param_mismatch": mlp_mismatch if name == "mlp" else 0,
+                        "param_mismatch_ratio": (
+                            float(mlp_mismatch) / float(target_params)
+                            if (name == "mlp" and target_params)
+                            else 0.0
+                        ),
+                        "train_size": int(train_X.shape[0]),
+                        "val_size": int(val_X.shape[0]),
+                        "test_size": int(test_X.shape[0]),
+                        "input_shape": list(train_X.shape[1:]),
                         **info,
-                        **test_metrics,
+                        **_prefix_metrics("train", train_metrics),
+                        **_prefix_metrics("val", val_metrics),
+                        **_prefix_metrics("test", test_metrics),
+                        **history_stats,
                     }
                 )
     else:
         raise ValueError(f"Unknown task: {task}")
 
 
-def run_all(tasks, seeds, epochs, device_str, pr_snapshots):
+def run_all(tasks, seeds, epochs, device_str, pr_snapshots, match_params: bool):
     maybe_extract_datasets_zip()
     device = pick_device(device_str)
     print(f"[env] DATA_ROOT={DATA_ROOT}")
     print(f"[env] RESULTS_ROOT={RESULTS_ROOT}")
     print(f"[env] device={device}")
     metrics_rows: List[dict] = []
+    history_rows: List[dict] = []
+    env_info = gather_env_info()
+    env_info["selected_device"] = str(device)
+    env_info["results_root"] = str(RESULTS_ROOT)
+    (RESULTS_ROOT / "env.json").write_text(
+        json.dumps(env_info, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    manifest = {
+        "tasks": list(tasks),
+        "seeds": list(seeds),
+        "epochs": int(epochs),
+        "device": str(device),
+        "match_params": bool(match_params),
+        "data_root": str(DATA_ROOT),
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    (RESULTS_ROOT / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
+    )
     for task in tasks:
         print(f"[run] task={task}")
-        run_light_task(task, seeds, device, epochs, pr_snapshots, metrics_rows)
+        run_light_task(
+            task,
+            seeds,
+            device,
+            epochs,
+            pr_snapshots,
+            match_params,
+            metrics_rows,
+            history_rows,
+        )
     if metrics_rows:
         df = pd.DataFrame(metrics_rows)
         out = RESULTS_ROOT / "metrics.csv"
         df.to_csv(out, index=False)
         print(df.head())
         print(f"[done] Wrote metrics to {out}")
+        metric_cols = [
+            c
+            for c in df.columns
+            if c.startswith(("train_", "val_", "test_"))
+            and any(
+                key in c
+                for key in ("mse", "rmse", "mae", "smape", "r2")
+            )
+        ]
+        stability_cols = [
+            c
+            for c in df.columns
+            if c
+            in (
+                "loss_curve_volatility",
+                "loss_curve_mean_abs_diff",
+                "val_curve_volatility",
+                "grad_norm_max",
+                "loss_nonfinite_steps",
+                "grad_nonfinite_steps",
+                "epoch_time_s_mean",
+                "step_time_s_mean",
+            )
+        ]
+        if metric_cols or stability_cols:
+            agg_cols = metric_cols + stability_cols
+            summary = df.groupby(["task", "model"])[agg_cols].agg(["mean", "std"])
+            summary.columns = [f"{name}_{stat}" for name, stat in summary.columns]
+            summary["n_runs"] = df.groupby(["task", "model"]).size()
+            summary = summary.reset_index()
+            summary_path = RESULTS_ROOT / "summary.csv"
+            summary.to_csv(summary_path, index=False)
+            print(f"[done] Wrote summary to {summary_path}")
+        if history_rows:
+            hist_path = RESULTS_ROOT / "history.jsonl"
+            with hist_path.open("w", encoding="utf-8") as fh:
+                for row in history_rows:
+                    fh.write(json.dumps(row) + "\n")
+            print(f"[done] Wrote history to {hist_path}")
     else:
         print("[warn] No metrics collected")
 
@@ -627,6 +988,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--pr-snapshots", action="store_true", help="Record Jacobian participation ratio snapshots."
     )
     parser.add_argument(
+        "--match-params",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Match MLP hidden width to PSANN parameter count.",
+    )
+    parser.add_argument(
         "--skip-deps", action="store_true", help="Skip dependency installation checks."
     )
     parser.add_argument(
@@ -644,7 +1011,14 @@ def main(argv: Optional[List[str]] = None) -> None:
         ensure_dependencies()
     _ensure_torch_dynamo_stub()
     configure_results_root(args.results_dir)
-    run_all(args.tasks, args.seeds, args.epochs, args.device, args.pr_snapshots)
+    run_all(
+        args.tasks,
+        args.seeds,
+        args.epochs,
+        args.device,
+        args.pr_snapshots,
+        args.match_params,
+    )
 
 
 if __name__ == "__main__":

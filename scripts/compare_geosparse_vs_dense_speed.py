@@ -83,6 +83,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--weight-decay", type=float, default=0.0)
     p.add_argument("--train-size", type=int, default=8192)
     p.add_argument("--test-size", type=int, default=2048)
+    p.add_argument("--val-fraction", type=float, default=0.1)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--dtype", type=str, default="float32")
     p.add_argument("--amp", action="store_true")
@@ -142,6 +143,8 @@ def _run_one(*, args: argparse.Namespace, seed: int, out_dir: Path) -> Dict[str,
         str(args.train_size),
         "--test-size",
         str(args.test_size),
+        "--val-fraction",
+        str(args.val_fraction),
         "--out",
         str(out_dir),
     ]

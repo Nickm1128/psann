@@ -67,6 +67,11 @@ When adding or updating scripts under `scripts/`:
 
 ### Benchmarks, corpora, and log parsing
 
+- `run_full_suite.py` - one-command runner for light probes, synthetic ablations, and GeoSparse
+  benchmarks. Writes to `reports/full_suite/<timestamp>/` and can git-commit results:
+  ```bash
+  python scripts/run_full_suite.py --device cuda --git-commit
+  ```
 - `aggregate_benchmarks.py` - aggregates GPU validation outputs into
   `throughput.csv` and `memory.json` under a benchmark directory.
 - `microbench_psann.py` - microbenchmarks PSANN vs dense/transformer baselines for

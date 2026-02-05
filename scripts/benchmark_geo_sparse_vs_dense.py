@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import time
 from pathlib import Path
@@ -26,6 +27,7 @@ from psann.layers.sine_residual import RMSNorm
 from psann.nn_geo_sparse import GeoSparseNet, _build_activation as _build_geo_activation
 from psann.params import count_params, dense_mlp_params, geo_sparse_net_params, match_dense_width
 from psann.utils import choose_device, seed_all
+from gpu_env_report import gather_env_info
 
 
 @dataclass
@@ -266,6 +268,23 @@ def _build_dataset(
     raise ValueError("task must be one of: sine, mixed, teacher_relu, teacher_tanh")
 
 
+def _train_val_split(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    val_fraction: float,
+    seed: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    if val_fraction <= 0.0:
+        return X, y, X[:0], y[:0]
+    rng = np.random.default_rng(seed)
+    idx = rng.permutation(X.shape[0])
+    n_val = max(1, int(round(X.shape[0] * val_fraction)))
+    val_idx = idx[:n_val]
+    train_idx = idx[n_val:]
+    return X[train_idx], y[train_idx], X[val_idx], y[val_idx]
+
+
 class DenseMLP(nn.Module):
     def __init__(
         self,
@@ -412,6 +431,22 @@ def _make_autocast_context(device: torch.device, amp: bool, amp_dtype: torch.dty
     return torch.autocast(device_type=device.type, dtype=amp_dtype, enabled=True)
 
 
+def _grad_norm(model: nn.Module) -> Optional[float]:
+    total_sq = 0.0
+    has_grad = False
+    for param in model.parameters():
+        if param.grad is None:
+            continue
+        grad = param.grad.detach()
+        if grad.is_sparse:
+            grad = grad.coalesce().values()
+        total_sq += float((grad.float() ** 2).sum().item())
+        has_grad = True
+    if not has_grad:
+        return None
+    return math.sqrt(total_sq)
+
+
 def _train_model(
     model: nn.Module,
     *,
@@ -460,9 +495,14 @@ def _train_model(
     curve: List[Dict[str, Any]] = []
     step_events = []
     total_samples = 0
+    epoch_times: List[float] = []
+    grad_norms: List[float] = []
+    loss_nonfinite = 0
+    grad_nonfinite = 0
     start = time.perf_counter()
     for epoch in range(int(epochs)):
         model.train()
+        epoch_start = time.perf_counter()
         epoch_loss_sum = 0.0
         epoch_samples = 0
         for step, (xb, yb) in enumerate(train_loader):
@@ -477,18 +517,35 @@ def _train_model(
             with _make_autocast_context(device, amp, amp_dtype):
                 pred = model(xb)
                 loss = loss_fn(pred, yb)
+            loss_value = float(loss.detach().item())
+            if not math.isfinite(loss_value):
+                loss_nonfinite += 1
             if scaler.is_enabled():
                 scaler.scale(loss).backward()
+                try:
+                    scaler.unscale_(optimizer)
+                except Exception:
+                    pass
+                grad_norm = _grad_norm(model)
+                if grad_norm is not None:
+                    grad_norms.append(grad_norm)
+                    if not math.isfinite(grad_norm):
+                        grad_nonfinite += 1
                 scaler.step(optimizer)
                 scaler.update()
             else:
                 loss.backward()
+                grad_norm = _grad_norm(model)
+                if grad_norm is not None:
+                    grad_norms.append(grad_norm)
+                    if not math.isfinite(grad_norm):
+                        grad_nonfinite += 1
                 optimizer.step()
             if record_step and device.type == "cuda":
                 end_event.record()
                 step_events.append((start_event, end_event))
             bs = int(xb.shape[0])
-            epoch_loss_sum += float(loss.detach().item()) * bs
+            epoch_loss_sum += loss_value * bs
             epoch_samples += bs
             total_samples += int(xb.shape[0])
         if curve_every > 0 and ((epoch + 1) % int(curve_every) == 0):
@@ -505,6 +562,7 @@ def _train_model(
                     y_unscaled=curve_test_unscaled,
                 )
             curve.append(point)
+        epoch_times.append(time.perf_counter() - epoch_start)
     if device.type == "cuda":
         torch.cuda.synchronize()
     wall_time_s = time.perf_counter() - start
@@ -518,6 +576,10 @@ def _train_model(
         "compile_time_s": float(compile_time_s) if compile_time_s is not None else None,
         "step_time_ms_mean": step_time_ms,
         "samples_per_sec": float(total_samples) / float(wall_time_s) if wall_time_s > 0 else None,
+        "epoch_time_s_mean": float(sum(epoch_times) / len(epoch_times)) if epoch_times else None,
+        "grad_norm_max": float(max(grad_norms)) if grad_norms else None,
+        "loss_nonfinite_steps": int(loss_nonfinite),
+        "grad_nonfinite_steps": int(grad_nonfinite),
         "curve": curve,
     }
 
@@ -550,6 +612,66 @@ def _evaluate(
     return float(torch.mean((pred_unscaled - y_t) ** 2).item())
 
 
+def _smape(y_true: np.ndarray, y_pred: np.ndarray, eps: float = 1e-8) -> float:
+    denom = np.abs(y_true) + np.abs(y_pred) + float(eps)
+    return float(np.mean(2.0 * np.abs(y_pred - y_true) / denom))
+
+
+def _r2_score_np(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    y_true = y_true.reshape(y_true.shape[0], -1)
+    y_pred = y_pred.reshape(y_pred.shape[0], -1)
+    ss_res = float(np.sum((y_true - y_pred) ** 2))
+    ss_tot = float(np.sum((y_true - np.mean(y_true)) ** 2))
+    if ss_tot == 0.0:
+        return float("nan")
+    return float(1.0 - (ss_res / ss_tot))
+
+
+def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
+    y_true = y_true.reshape(y_true.shape[0], -1)
+    y_pred = y_pred.reshape(y_pred.shape[0], -1)
+    mse = float(np.mean((y_pred - y_true) ** 2))
+    rmse = math.sqrt(mse)
+    mae = float(np.mean(np.abs(y_pred - y_true)))
+    return {
+        "mse": mse,
+        "rmse": rmse,
+        "mae": mae,
+        "smape": _smape(y_true, y_pred),
+        "r2": _r2_score_np(y_true, y_pred),
+    }
+
+
+def _predict_unscaled(
+    model: nn.Module,
+    *,
+    X: np.ndarray,
+    device: torch.device,
+    y_scaler: Optional[StandardScaler],
+) -> np.ndarray:
+    model.eval()
+    with torch.no_grad():
+        pred = model(torch.from_numpy(X).to(device=device))
+    pred_np = pred.detach().cpu().numpy().astype(np.float32)
+    if y_scaler is None:
+        return pred_np
+    return (pred_np * y_scaler.scale + y_scaler.mean).astype(np.float32)
+
+
+def _evaluate_metrics(
+    model: nn.Module,
+    *,
+    X: np.ndarray,
+    y: np.ndarray,
+    device: torch.device,
+    y_scaler: Optional[StandardScaler],
+    y_unscaled: Optional[np.ndarray],
+) -> Dict[str, float]:
+    y_true = y_unscaled if y_unscaled is not None else y
+    pred = _predict_unscaled(model, X=X, device=device, y_scaler=y_scaler)
+    return _regression_metrics(y_true, pred)
+
+
 def _flatten_dict(prefix: str, values: Dict[str, Any]) -> Dict[str, Any]:
     flat: Dict[str, Any] = {}
     for key, value in values.items():
@@ -573,33 +695,9 @@ def _write_summary(rows: Iterable[Dict[str, Any]], path: Path) -> None:
 
 
 def _get_env_info(device: torch.device) -> Dict[str, Any]:
-    info: Dict[str, Any] = {
-        "torch_version": torch.__version__,
-        "device": str(device),
-        "device_type": device.type,
-        "cuda_available": torch.cuda.is_available(),
-        "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
-        "cudnn_version": torch.backends.cudnn.version()
-        if torch.backends.cudnn.is_available()
-        else None,
-        "tf32_matmul": torch.backends.cuda.matmul.allow_tf32
-        if torch.cuda.is_available()
-        else None,
-        "tf32_cudnn": torch.backends.cudnn.allow_tf32 if torch.cuda.is_available() else None,
-        "matmul_precision": torch.get_float32_matmul_precision()
-        if hasattr(torch, "get_float32_matmul_precision")
-        else None,
-        "torch_compile_available": hasattr(torch, "compile"),
-    }
-    if torch.cuda.is_available():
-        try:
-            info["gpu_name"] = torch.cuda.get_device_name(0)
-            info["gpu_capability"] = torch.cuda.get_device_capability(0)
-            free_mem, total_mem = torch.cuda.mem_get_info(0)
-            info["gpu_mem_total_bytes"] = int(total_mem)
-            info["gpu_mem_free_bytes"] = int(free_mem)
-        except Exception:
-            pass
+    info = gather_env_info()
+    info["selected_device"] = str(device)
+    info["device_type"] = device.type
     return info
 
 
@@ -648,6 +746,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--timing-epochs", type=int, default=1)
     p.add_argument("--train-size", type=int, default=4096)
     p.add_argument("--test-size", type=int, default=1024)
+    p.add_argument(
+        "--val-fraction",
+        type=float,
+        default=0.1,
+        help="Fraction of training data held out for validation (0 disables).",
+    )
     p.add_argument(
         "--scale-x",
         action="store_true",
@@ -842,6 +946,8 @@ def _match_dense_residual_width_with_activation(
 def main() -> None:
     args = parse_args()
     seed_all(args.seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     shape = _parse_shape(args.shape)
     features = shape[0] * shape[1]
@@ -869,22 +975,37 @@ def main() -> None:
         n_test=int(args.test_size),
         features=features,
     )
-    y_train_unscaled = dataset.y_train
-    y_test_unscaled = dataset.y_test
+    X_train_raw = dataset.X_train
+    y_train_raw = dataset.y_train
+    X_test_raw = dataset.X_test
+    y_test_raw = dataset.y_test
+    X_train_raw, y_train_raw, X_val_raw, y_val_raw = _train_val_split(
+        X_train_raw,
+        y_train_raw,
+        val_fraction=float(args.val_fraction),
+        seed=int(args.seed),
+    )
+    y_train_unscaled = y_train_raw
+    y_val_unscaled = y_val_raw
+    y_test_unscaled = y_test_raw
     x_scaler = None
     y_scaler = None
 
-    X_train = dataset.X_train
-    X_test = dataset.X_test
-    y_train = dataset.y_train
-    y_test = dataset.y_test
+    X_train = X_train_raw
+    X_val = X_val_raw
+    X_test = X_test_raw
+    y_train = y_train_raw
+    y_val = y_val_raw
+    y_test = y_test_raw
     if args.scale_x:
-        x_scaler = _fit_standard_scaler(X_train)
-        X_train = x_scaler.transform(X_train)
-        X_test = x_scaler.transform(X_test)
+        x_scaler = _fit_standard_scaler(X_train_raw)
+        X_train = x_scaler.transform(X_train_raw)
+        X_val = x_scaler.transform(X_val_raw)
+        X_test = x_scaler.transform(X_test_raw)
     if args.scale_y:
         y_scaler = _fit_standard_scaler(y_train_unscaled)
         y_train = y_scaler.transform(y_train_unscaled)
+        y_val = y_scaler.transform(y_val_unscaled)
         y_test = y_scaler.transform(y_test_unscaled)
 
     dataset = DatasetBundle(
@@ -894,6 +1015,7 @@ def main() -> None:
         y_test=y_test,
         meta={
             **dataset.meta,
+            "val_size": int(X_val.shape[0]),
             "scale_x": bool(args.scale_x),
             "scale_y": bool(args.scale_y),
             "x_scaler": "standard" if args.scale_x else None,
@@ -1097,53 +1219,91 @@ def main() -> None:
     dense_resrelu_curve = dense_resrelu_train.pop("curve", [])
     dense_respsann_curve = dense_respsann_train.pop("curve", [])
 
-    sparse_mse = _evaluate(
+    sparse_metrics_train = _evaluate_metrics(
         sparse_model,
-        X=dataset.X_test,
-        y=dataset.y_test,
+        X=X_train,
+        y=y_train,
         device=device,
         y_scaler=y_scaler,
-        y_unscaled=y_test_unscaled,
+        y_unscaled=y_train_unscaled,
     )
-    dense_resrelu_mse = _evaluate(
-        dense_resrelu_model,
-        X=dataset.X_test,
-        y=dataset.y_test,
-        device=device,
-        y_scaler=y_scaler,
-        y_unscaled=y_test_unscaled,
+    sparse_metrics_val = (
+        _evaluate_metrics(
+            sparse_model,
+            X=X_val,
+            y=y_val,
+            device=device,
+            y_scaler=y_scaler,
+            y_unscaled=y_val_unscaled,
+        )
+        if X_val.size
+        else None
     )
-    dense_respsann_mse = _evaluate(
-        dense_respsann_model,
-        X=dataset.X_test,
-        y=dataset.y_test,
-        device=device,
-        y_scaler=y_scaler,
-        y_unscaled=y_test_unscaled,
-    )
-    sparse_mse_train = _evaluate(
+    sparse_metrics_test = _evaluate_metrics(
         sparse_model,
-        X=dataset.X_train,
-        y=dataset.y_train,
+        X=X_test,
+        y=y_test,
         device=device,
         y_scaler=y_scaler,
-        y_unscaled=y_train_unscaled,
+        y_unscaled=y_test_unscaled,
     )
-    dense_resrelu_mse_train = _evaluate(
+
+    dense_resrelu_metrics_train = _evaluate_metrics(
         dense_resrelu_model,
-        X=dataset.X_train,
-        y=dataset.y_train,
+        X=X_train,
+        y=y_train,
         device=device,
         y_scaler=y_scaler,
         y_unscaled=y_train_unscaled,
     )
-    dense_respsann_mse_train = _evaluate(
+    dense_resrelu_metrics_val = (
+        _evaluate_metrics(
+            dense_resrelu_model,
+            X=X_val,
+            y=y_val,
+            device=device,
+            y_scaler=y_scaler,
+            y_unscaled=y_val_unscaled,
+        )
+        if X_val.size
+        else None
+    )
+    dense_resrelu_metrics_test = _evaluate_metrics(
+        dense_resrelu_model,
+        X=X_test,
+        y=y_test,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_test_unscaled,
+    )
+
+    dense_respsann_metrics_train = _evaluate_metrics(
         dense_respsann_model,
-        X=dataset.X_train,
-        y=dataset.y_train,
+        X=X_train,
+        y=y_train,
         device=device,
         y_scaler=y_scaler,
         y_unscaled=y_train_unscaled,
+    )
+    dense_respsann_metrics_val = (
+        _evaluate_metrics(
+            dense_respsann_model,
+            X=X_val,
+            y=y_val,
+            device=device,
+            y_scaler=y_scaler,
+            y_unscaled=y_val_unscaled,
+        )
+        if X_val.size
+        else None
+    )
+    dense_respsann_metrics_test = _evaluate_metrics(
+        dense_respsann_model,
+        X=X_test,
+        y=y_test,
+        device=device,
+        y_scaler=y_scaler,
+        y_unscaled=y_test_unscaled,
     )
 
     env = _get_env_info(device)
@@ -1164,6 +1324,8 @@ def main() -> None:
         "task": str(args.task),
         "dataset_meta": dataset.meta,
         "train_size": int(args.train_size),
+        "val_fraction": float(args.val_fraction),
+        "val_size": int(X_val.shape[0]),
         "test_size": int(args.test_size),
         "epochs": int(args.epochs),
         "batch_size": int(args.batch_size),
@@ -1194,8 +1356,12 @@ def main() -> None:
                 "params_analytic": sparse_params_analytic,
                 "train": sparse_train,
                 "curve": sparse_curve,
-                "mse_train": sparse_mse_train,
-                "mse_test": sparse_mse,
+                "metrics_train": sparse_metrics_train,
+                "metrics_val": sparse_metrics_val,
+                "metrics_test": sparse_metrics_test,
+                "mse_train": sparse_metrics_train.get("mse"),
+                "mse_val": sparse_metrics_val.get("mse") if sparse_metrics_val else None,
+                "mse_test": sparse_metrics_test.get("mse"),
             },
             {
                 "name": "dense_resrelu",
@@ -1206,8 +1372,12 @@ def main() -> None:
                 "param_mismatch_ratio": dense_resrelu_mismatch_ratio,
                 "train": dense_resrelu_train,
                 "curve": dense_resrelu_curve,
-                "mse_train": dense_resrelu_mse_train,
-                "mse_test": dense_resrelu_mse,
+                "metrics_train": dense_resrelu_metrics_train,
+                "metrics_val": dense_resrelu_metrics_val,
+                "metrics_test": dense_resrelu_metrics_test,
+                "mse_train": dense_resrelu_metrics_train.get("mse"),
+                "mse_val": dense_resrelu_metrics_val.get("mse") if dense_resrelu_metrics_val else None,
+                "mse_test": dense_resrelu_metrics_test.get("mse"),
             },
             {
                 "name": "dense_respsann",
@@ -1218,8 +1388,12 @@ def main() -> None:
                 "param_mismatch_ratio": dense_respsann_mismatch_ratio,
                 "train": dense_respsann_train,
                 "curve": dense_respsann_curve,
-                "mse_train": dense_respsann_mse_train,
-                "mse_test": dense_respsann_mse,
+                "metrics_train": dense_respsann_metrics_train,
+                "metrics_val": dense_respsann_metrics_val,
+                "metrics_test": dense_respsann_metrics_test,
+                "mse_train": dense_respsann_metrics_train.get("mse"),
+                "mse_val": dense_respsann_metrics_val.get("mse") if dense_respsann_metrics_val else None,
+                "mse_test": dense_respsann_metrics_test.get("mse"),
             },
         ],
     }
@@ -1238,12 +1412,19 @@ def main() -> None:
             "params_empirical": entry["params_empirical"],
             "params_analytic": entry["params_analytic"],
             "mse_train": entry.get("mse_train"),
+            "mse_val": entry.get("mse_val"),
             "mse_test": entry["mse_test"],
         }
         if "param_mismatch" in entry:
             row["param_mismatch"] = entry["param_mismatch"]
         if "param_mismatch_ratio" in entry:
             row["param_mismatch_ratio"] = entry["param_mismatch_ratio"]
+        if isinstance(entry.get("metrics_train"), dict):
+            row.update(_flatten_dict("train_", entry["metrics_train"]))
+        if isinstance(entry.get("metrics_val"), dict):
+            row.update(_flatten_dict("val_", entry["metrics_val"]))
+        if isinstance(entry.get("metrics_test"), dict):
+            row.update(_flatten_dict("test_", entry["metrics_test"]))
         row.update(_flatten_dict("", entry["train"]))
         summary_rows.append(row)
     _write_summary(summary_rows, out_dir / "summary.csv")

@@ -89,8 +89,10 @@ def _aggregate_by_model(rows: Iterable[Dict[str, Any]]) -> Dict[str, Dict[str, f
         for key in (
             "mse_test",
             "mse_train",
+            "mse_val",
             "train_train_time_s",
             "train_step_time_ms_mean",
+            "train_epoch_time_s_mean",
             "train_samples_per_sec",
         ):
             val = row.get(key)
@@ -160,6 +162,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--match-tolerance", type=float, default=0.01)
     p.add_argument("--train-size", type=int, default=4096)
     p.add_argument("--test-size", type=int, default=1024)
+    p.add_argument("--val-fraction", type=float, default=0.1)
     p.add_argument(
         "--scale-x",
         action="store_true",
@@ -277,6 +280,8 @@ def main() -> None:
                             str(args.train_size),
                             "--test-size",
                             str(args.test_size),
+                            "--val-fraction",
+                            str(args.val_fraction),
                             "--pattern",
                             str(args.pattern),
                             "--radius",
@@ -401,9 +406,16 @@ def _rows_from_results(
                 "param_mismatch": model.get("param_mismatch"),
                 "param_mismatch_ratio": model.get("param_mismatch_ratio"),
                 "mse_train": model.get("mse_train"),
+                "mse_val": model.get("mse_val"),
                 "mse_test": model.get("mse_test"),
             }
         )
+        if isinstance(model.get("metrics_train"), dict):
+            row.update(_flatten("metrics_train_", model["metrics_train"]))
+        if isinstance(model.get("metrics_val"), dict):
+            row.update(_flatten("metrics_val_", model["metrics_val"]))
+        if isinstance(model.get("metrics_test"), dict):
+            row.update(_flatten("metrics_test_", model["metrics_test"]))
         if isinstance(model.get("train"), dict):
             row.update(_flatten("train_", model["train"]))
         rows.append(row)

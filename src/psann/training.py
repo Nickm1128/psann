@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+import math
+import time
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Callable, Optional, Tuple
@@ -57,7 +59,7 @@ def run_training_loop(
     epoch_callback: Optional[
         Callable[[int, float, Optional[float], bool, Optional[int]], None]
     ] = None,
-) -> Tuple[float, Optional[dict]]:
+) -> Tuple[list[dict], Optional[dict]]:
     """Run the shared PSANN training loop."""
 
     train_model = model
@@ -118,6 +120,24 @@ def run_training_loop(
     best = float("inf")
     patience = cfg.patience
     best_state: Optional[dict] = None
+    best_epoch: Optional[int] = None
+    history: list[dict] = []
+    total_start = time.perf_counter()
+
+    def _grad_norm(model_ref: torch.nn.Module) -> Optional[float]:
+        total_sq = 0.0
+        has_grad = False
+        for param in model_ref.parameters():
+            if param.grad is None:
+                continue
+            grad = param.grad.detach()
+            if grad.is_sparse:
+                grad = grad.coalesce().values()
+            total_sq += float((grad.float() ** 2).sum().item())
+            has_grad = True
+        if not has_grad:
+            return None
+        return math.sqrt(total_sq)
 
     for epoch in range(cfg.epochs):
         if cfg.lr_max is not None and cfg.lr_min is not None:
@@ -140,6 +160,12 @@ def run_training_loop(
             state_model.train()
         total = 0.0
         count = 0
+        steps = 0
+        step_times: list[float] = []
+        grad_norms: list[float] = []
+        loss_nonfinite = 0
+        grad_nonfinite = 0
+        epoch_start = time.perf_counter()
         for batch in train_loader:
             context_b: Optional[torch.Tensor] = None
             if isinstance(batch, (list, tuple)):
@@ -163,14 +189,28 @@ def run_training_loop(
             if noise_std is not None:
                 xb = xb + torch.randn_like(xb) * noise_std
             optimizer.zero_grad(set_to_none=True)
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            step_start = time.perf_counter()
             with amp_ctx:
                 pred = (
                     train_model(xb, context_b) if context_b is not None else train_model(xb)
                 )
                 loss = loss_fn(pred, yb)
             loss_value = float(loss.detach().item())
+            if not math.isfinite(loss_value):
+                loss_nonfinite += 1
             if scaler is not None:
                 scaler.scale(loss).backward()
+                try:
+                    scaler.unscale_(optimizer)
+                except Exception:
+                    pass
+                grad_norm = _grad_norm(state_model)
+                if grad_norm is not None:
+                    grad_norms.append(grad_norm)
+                    if not math.isfinite(grad_norm):
+                        grad_nonfinite += 1
                 if gradient_hook is not None:
                     try:
                         gradient_hook(state_model)
@@ -180,6 +220,11 @@ def run_training_loop(
                 scaler.update()
             else:
                 loss.backward()
+                grad_norm = _grad_norm(state_model)
+                if grad_norm is not None:
+                    grad_norms.append(grad_norm)
+                    if not math.isfinite(grad_norm):
+                        grad_nonfinite += 1
                 if gradient_hook is not None:
                     try:
                         gradient_hook(state_model)
@@ -191,7 +236,12 @@ def run_training_loop(
             bs = xb.shape[0]
             total += loss_value * bs
             count += bs
+            steps += 1
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            step_times.append(time.perf_counter() - step_start)
         train_loss = total / max(count, 1)
+        epoch_time = time.perf_counter() - epoch_start
 
         val_loss = None
         if val_inputs is not None and val_targets is not None:
@@ -226,6 +276,7 @@ def run_training_loop(
                     k: v.detach().cpu().clone() for k, v in state_model.state_dict().items()
                 }
                 improved = True
+                best_epoch = epoch + 1
             else:
                 patience -= 1
             patience_left = patience
@@ -236,10 +287,41 @@ def run_training_loop(
             except Exception:
                 pass
 
+        finite_grad_norms = [g for g in grad_norms if math.isfinite(g)]
+        grad_norm_mean = (
+            float(sum(finite_grad_norms) / len(finite_grad_norms)) if finite_grad_norms else None
+        )
+        grad_norm_max = float(max(finite_grad_norms)) if finite_grad_norms else None
+        step_time_mean = float(sum(step_times) / len(step_times)) if step_times else None
+
+        history.append(
+            {
+                "epoch": int(epoch + 1),
+                "train_loss": float(train_loss),
+                "val_loss": float(val_loss) if val_loss is not None else None,
+                "epoch_time_s": float(epoch_time),
+                "step_time_s_mean": step_time_mean,
+                "steps": int(steps),
+                "samples": int(count),
+                "grad_norm_mean": grad_norm_mean,
+                "grad_norm_max": grad_norm_max,
+                "loss_nonfinite_steps": int(loss_nonfinite),
+                "grad_nonfinite_steps": int(grad_nonfinite),
+                "improved": bool(improved),
+                "patience_left": int(patience_left) if patience_left is not None else None,
+                "best_metric": float(best) if math.isfinite(best) else None,
+                "best_epoch": int(best_epoch) if best_epoch is not None else None,
+            }
+        )
+
         if cfg.early_stopping and patience <= 0 and best_state is not None:
             if cfg.verbose:
                 print(f"Early stopping at epoch {epoch + 1} (best metric: {best:.6f})")
             state_model.load_state_dict(best_state)
             break
 
-    return train_loss, best_state
+    total_time_s = time.perf_counter() - total_start
+    if history:
+        history[-1]["train_time_s_total"] = float(total_time_s)
+
+    return history, best_state

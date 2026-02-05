@@ -257,3 +257,53 @@ This revision aligns the original plan to the datasets described in the companio
 - EAF lite setting is intentionally small; full EAF tasks (TEMP/O2 multi-horizon, final composition) remain for the compute-parity sweep with richer spines and feature engineering per the plan.
 - Beijing results strongly favor PSANN+Conv under the current config; cross-station generalization and missingness stress tests should be surfaced next.
 - Jena spectral diagnostics (Jacobian/NTK, PR over epochs) can be recorded via `--pr-snapshots` or the diagnostics cells in the research notebook.
+
+**Instrumented Run Commands (recommended)**
+- One-command full suite (light probes + synthetic ablations + GeoSparse benchmarks/sweep/micro):
+  - `python scripts/run_full_suite.py --device cuda --git-commit`
+- Light probes (real data lite):
+  - `python scripts/run_light_probes.py --epochs 20 --seeds 0 1 2 3 4 --match-params --results-dir reports/light_probes/<stamp>`
+  - Outputs: `metrics.csv`, `summary.csv`, `history.jsonl`, `env.json`, `manifest.json`.
+- Synthetic ablations (drift/shock/regime + tabular + moons):
+  - `python scripts/benchmark_regressor_ablations.py --datasets tabular_sine,tabular_shifted,classification_clusters,context_rotating_moons,ts_periodic,ts_regime_switch,ts_drift,ts_shock --seeds 0,1,2,3,4 --out reports/ablations/<stamp>`
+  - Outputs: `results.jsonl`, `summary.csv`, `seed_summary.csv`, `env.json`, `manifest.json`.
+- GeoSparse mixed-activation benchmark:
+  - `python scripts/benchmark_geo_sparse_vs_dense.py --task mixed --sparse-activation mixed --activation-config <json> --out reports/geo_sparse/<stamp>`
+  - Outputs: `results.json`, `summary.csv`, `manifest.json` (includes val metrics and timings).
+- GeoSparse sweep:
+  - `python scripts/geo_sparse_sweep.py --task mixed --activations relu,psann,mixed --seeds 0,1,2 --out reports/geo_sparse_sweep/<stamp>`
+- GeoSparse microbench:
+  - `python scripts/benchmark_geo_sparse_micro.py --out reports/geo_sparse_micro/<stamp>`
+
+**Local Artifact Inventory (2026-02-05)**
+- Light probes: results are embedded above; `colab_results_light/metrics.csv` is not present locally (rerun `scripts/run_light_probes.py` to regenerate).
+- Synthetic ablations: `reports/ablations/20260205_110015/` (5 seeds; `results.jsonl`, `summary.csv`, `seed_summary.csv`, `env.json`, `manifest.json`).
+- GeoSparse mixed benchmark: `reports/geo_sparse/20260205_131142/` (task=mixed, activation=mixed, shape=12x12 k=8; dense_respsann mismatch <1%; `results.json`, `summary.csv`, `manifest.json`).
+- Prior GeoSparse mixed benchmark: `reports/geo_sparse/20260205_121543/` (shape=8x8; dense_respsann mismatch ~2.8%).
+- GeoSparse sweep: `reports/geo_sparse_sweep/20260205_121654/` (24 runs, seed=0; `summary.csv`, `summary_by_model.json`).
+- GeoSparse microbench: `reports/geo_sparse_micro/20260205_122042/` (layer/block timing; `summary.csv`).
+- Legacy GeoSparse sweep: `reports/geo_sparse_sweep/local_smoke2/summary.csv` and `summary_by_model.json` exist (small CPU smoke); `reports/geo_sparse_sweep/local_smoke/summary.csv` contains import errors from an older run.
+- HISSO runs: `runs/hisso/*/metrics.json` + `events.csv` include dense and WaveResNet CPU/CUDA smoke runs (see `docs/PSANN_Results_Compendium.md` GPU sweep section).
+- GPU environment reports: `outputs/gpu_tests/*/env.json` and `SUMMARY.txt` are present.
+- Notebooks: `notebooks/PSANN_Parity_and_Probes.ipynb` contains prior real/synthetic pipelines (HAR/Rossmann loaders), and `notebooks/geosparse_crypto_direction.ipynb` uses the external `psann_crypto_trading` repo + DB; no exported metrics live in this repo.
+- Historical references: `benchmarks/psann_results_assessment.md` references `tmp_outputs/colab_results (1)` and `tmp_outputs/psann_synth_results (1)` which are not present in this checkout.
+
+**Comparison Matrix (Target)**
+| Dataset | Task | Models (required) | Seeds | Metrics | Status | Post |
+| --- | --- | --- | --- | --- | --- | --- |
+| Jena Climate (72 ctx / 36 h) | Forecasting | PSANN, ResPSANN, WaveResNet, MLP/TCN/LSTM | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | Light-probe (2 seeds) | Post: Real-data forecasting |
+| Beijing Air (24 ctx / 6 h) | Forecasting | PSANN, ResPSANN, WaveResNet, MLP/TCN/LSTM | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | Light-probe (2 seeds) | Post: Real-data forecasting |
+| EAF TEMP (lite) | Forecasting | PSANN, ResPSANN, WaveResNet, MLP | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | Light-probe (2 seeds) | Post: Real-data forecasting |
+| HAR engineered / raw | Classification | PSANN/ResPSANN + baselines | >=5 | Acc/F1 (+regression metrics for parity) | Loader in notebook | Post: Real-data forecasting |
+| Rossmann sales | Forecasting | PSANN/ResPSANN + baselines | >=5 | MSE/RMSE/MAE/SMAPE/R2 | Loader in notebook | Post: Real-data forecasting |
+| Synthetic drift / shock / regime | Forecasting | PSANN, ResPSANN, WaveResNet | >=5 | MSE/RMSE/MAE/SMAPE/R2 + stability | CPU sweep complete (`reports/ablations/20260205_110015/`) | Post: Synthetic robustness |
+| Tabular mixed / shifted | Regression | PSANN, ResPSANN, WaveResNet | >=5 | MSE/RMSE/MAE/SMAPE/R2 + stability | CPU sweep complete (`reports/ablations/20260205_110015/`) | Post: Synthetic robustness |
+| Context rotating moons | Classification | PSANN, ResPSANN, WaveResNet | >=5 | Acc/F1 (+regression metrics for parity) | CPU sweep complete (`reports/ablations/20260205_110015/`) | Post: Synthetic robustness |
+| GeoSparse mixed activation | Regression | GeoSparse + dense baselines | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | CPU mixed bench + sweep + micro (`reports/geo_sparse*`) | Post: GeoSparse mixed activation |
+| Crypto direction (external) | Classification | GeoSparse mixed + dense | >=3 | Accuracy / ROC + time/params | Notebook (external repo) | Post: GeoSparse mixed activation |
+
+**Post Mapping (Draft)**
+- Real-data forecasting post: Jena/Beijing/EAF + HAR/Rossmann runs (compute parity, multi-seed).
+- Synthetic robustness post: drift/shock/regime + tabular mixed/shifted + rotating-moons context tests, plus stability stats.
+- GeoSparse mixed-activation post: `benchmark_geo_sparse_vs_dense.py` (task=mixed, sparse_activation=mixed), `geo_sparse_sweep.py`, and microbench results.
+- Architecture/diagnostics post: SineParam/WaveResNet rationale + Jacobian/NTK/PR probes.

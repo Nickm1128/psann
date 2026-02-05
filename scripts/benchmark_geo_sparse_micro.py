@@ -21,6 +21,7 @@ if _SRC_ROOT.exists():
 from psann.layers.geo_sparse import GeoSparseLinear, build_geo_connectivity
 from psann.nn_geo_sparse import GeoSparseResidualBlock
 from psann.utils import choose_device, seed_all
+from gpu_env_report import gather_env_info
 
 
 def _parse_shape(text: str) -> Tuple[int, int]:
@@ -57,33 +58,9 @@ def _make_autocast_context(device: torch.device, amp: bool, amp_dtype: torch.dty
 
 
 def _get_env_info(device: torch.device) -> Dict[str, Any]:
-    info: Dict[str, Any] = {
-        "torch_version": torch.__version__,
-        "device": str(device),
-        "device_type": device.type,
-        "cuda_available": torch.cuda.is_available(),
-        "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
-        "cudnn_version": torch.backends.cudnn.version()
-        if torch.backends.cudnn.is_available()
-        else None,
-        "tf32_matmul": torch.backends.cuda.matmul.allow_tf32
-        if torch.cuda.is_available()
-        else None,
-        "tf32_cudnn": torch.backends.cudnn.allow_tf32 if torch.cuda.is_available() else None,
-        "matmul_precision": torch.get_float32_matmul_precision()
-        if hasattr(torch, "get_float32_matmul_precision")
-        else None,
-        "torch_compile_available": hasattr(torch, "compile"),
-    }
-    if torch.cuda.is_available():
-        try:
-            info["gpu_name"] = torch.cuda.get_device_name(0)
-            info["gpu_capability"] = torch.cuda.get_device_capability(0)
-            free_mem, total_mem = torch.cuda.mem_get_info(0)
-            info["gpu_mem_total_bytes"] = int(total_mem)
-            info["gpu_mem_free_bytes"] = int(free_mem)
-        except Exception:
-            pass
+    info = gather_env_info()
+    info["selected_device"] = str(device)
+    info["device_type"] = device.type
     return info
 
 

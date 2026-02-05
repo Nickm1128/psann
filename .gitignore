@@ -70,6 +70,8 @@ runs/*
 !runs/README.md
 reports/*
 !reports/README.md
+!reports/full_suite/
+!reports/full_suite/**
 
 # Common model / checkpoint artifacts
 *.pt
