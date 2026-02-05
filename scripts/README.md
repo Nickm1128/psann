@@ -73,6 +73,9 @@ When adding or updating scripts under `scripts/`:
   throughput and memory, writing a JSON summary suitable for regression checks.
 - `benchmark_geo_sparse_micro.py` - GeoSparse forward/backward microbench with
   optional `--compute-mode auto` to compare gather vs scatter paths.
+- `run_geosparse_vs_relu_benchmarks.py` - GeoSparse vs dense ReLU regression
+  suite with parameter matching and wall-clock timing; writes `results.jsonl`
+  plus aggregated summaries under `reports/`.
 - `benchmark_regressor_ablations.py` - runs small ablations of ResPSANN,
   WaveResNet, and SGR-PSANN regressors across diverse synthetic datasets, writing
   JSONL/CSV summaries under `reports/ablations/`.

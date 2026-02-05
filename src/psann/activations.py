@@ -99,9 +99,10 @@ class SineParam(nn.Module):
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
         # z: (..., feature_dim, ...). Supports (N,F) or (N,F,*) or (N,*,F) via feature_dim.
-        A = F.softplus(self._A)
-        f = F.softplus(self._f) + 1e-6
-        d = F.softplus(self._d)
+        params = F.softplus(torch.stack((self._A, self._f, self._d), dim=0))
+        A = params[0]
+        f = params[1] + 1e-6
+        d = params[2]
 
         # Apply optional bounds after positivity transform
         A = self._apply_bounds(A, "amplitude")
@@ -157,9 +158,10 @@ class PhaseSineParam(SineParam):
         self._phi.requires_grad = bool(phase_trainable)
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        A = F.softplus(self._A)
-        f = F.softplus(self._f) + 1e-6
-        d = F.softplus(self._d)
+        params = F.softplus(torch.stack((self._A, self._f, self._d), dim=0))
+        A = params[0]
+        f = params[1] + 1e-6
+        d = params[2]
 
         A = self._apply_bounds(A, "amplitude")
         f = self._apply_bounds(f, "frequency")

@@ -365,6 +365,13 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         scaler_params: Optional[Dict[str, Any]] = None,
         target_scaler: Optional[ScalerSpec] = None,
         target_scaler_params: Optional[Dict[str, Any]] = None,
+        amp: bool = False,
+        amp_dtype: Optional[Union[str, torch.dtype]] = "bfloat16",
+        compile: bool = False,
+        compile_backend: str = "inductor",
+        compile_mode: str = "default",
+        compile_fullgraph: bool = False,
+        compile_dynamic: bool = False,
         context_builder: Optional[Union[str, Callable[[np.ndarray], np.ndarray]]] = None,
         context_builder_params: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -440,6 +447,13 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         # Optional target scaler (minmax/standard or custom object with fit/transform)
         self.target_scaler = target_scaler
         self.target_scaler_params = target_scaler_params or None
+        self.amp = bool(amp)
+        self.amp_dtype = amp_dtype
+        self.compile = bool(compile)
+        self.compile_backend = str(compile_backend)
+        self.compile_mode = str(compile_mode)
+        self.compile_fullgraph = bool(compile_fullgraph)
+        self.compile_dynamic = bool(compile_dynamic)
         self.context_builder = context_builder
         self.context_builder_params = (
             copy.deepcopy(context_builder_params) if context_builder_params is not None else {}
@@ -3477,6 +3491,13 @@ class GeoSparseRegressor(PSANNRegressor):
         scaler_params: Optional[Dict[str, Any]] = None,
         target_scaler: Optional[ScalerSpec] = None,
         target_scaler_params: Optional[Dict[str, Any]] = None,
+        amp: bool = False,
+        amp_dtype: Optional[Union[str, torch.dtype]] = "bfloat16",
+        compile: bool = False,
+        compile_backend: str = "inductor",
+        compile_mode: str = "default",
+        compile_fullgraph: bool = False,
+        compile_dynamic: bool = False,
         # geo-specific
         shape: Optional[Tuple[int, int]] = None,
         k: int = 8,
@@ -3549,6 +3570,13 @@ class GeoSparseRegressor(PSANNRegressor):
             scaler_params=scaler_params,
             target_scaler=target_scaler,
             target_scaler_params=target_scaler_params,
+            amp=amp,
+            amp_dtype=amp_dtype,
+            compile=compile,
+            compile_backend=compile_backend,
+            compile_mode=compile_mode,
+            compile_fullgraph=compile_fullgraph,
+            compile_dynamic=compile_dynamic,
         )
         self.geo_shape = tuple(shape) if shape is not None else None
         self.geo_k = int(k)

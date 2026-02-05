@@ -673,6 +673,29 @@ def run_supervised_training(
         else None
     )
 
+    def _resolve_amp_dtype(value: Any) -> Optional[torch.dtype]:
+        if value is None:
+            return None
+        if isinstance(value, torch.dtype):
+            return value
+        if isinstance(value, str):
+            key = value.strip().lower()
+            aliases = {
+                "bf16": "bfloat16",
+                "bfloat16": "bfloat16",
+                "fp16": "float16",
+                "float16": "float16",
+                "fp32": "float32",
+                "float32": "float32",
+            }
+            key = aliases.get(key, key)
+            return getattr(torch, key, None)
+        return None
+
+    use_amp = bool(getattr(estimator, "amp", False))
+    amp_dtype = _resolve_amp_dtype(getattr(estimator, "amp_dtype", None))
+    compile_model = bool(getattr(estimator, "compile", False))
+
     cfg_loop = TrainingLoopConfig(
         epochs=int(estimator.epochs),
         patience=int(estimator.patience),
@@ -682,6 +705,13 @@ def run_supervised_training(
         verbose=int(fit_args.verbose),
         lr_max=None if fit_args.lr_max is None else float(fit_args.lr_max),
         lr_min=None if fit_args.lr_min is None else float(fit_args.lr_min),
+        use_amp=use_amp,
+        amp_dtype=amp_dtype,
+        compile_model=compile_model,
+        compile_backend=str(getattr(estimator, "compile_backend", "inductor")),
+        compile_mode=str(getattr(estimator, "compile_mode", "default")),
+        compile_fullgraph=bool(getattr(estimator, "compile_fullgraph", False)),
+        compile_dynamic=bool(getattr(estimator, "compile_dynamic", False)),
     )
 
     gradient_hook = getattr(estimator, "gradient_hook", None)
