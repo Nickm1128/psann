@@ -1,0 +1,29 @@
+{
+  "dense_respsann": {
+    "mse_test": 0.2013640178160535,
+    "mse_train": 0.1966203441498456,
+    "mse_val": 0.20014365452031294,
+    "train_epoch_time_s_mean": 0.36063224168912567,
+    "train_samples_per_sec": 13549.362868886117,
+    "train_step_time_ms_mean": 10.663783619760327,
+    "train_train_time_s": 3.6069345633177026
+  },
+  "dense_resrelu": {
+    "mse_test": 0.15258973098739428,
+    "mse_train": 0.1391888598187102,
+    "mse_val": 0.15178162280332158,
+    "train_epoch_time_s_mean": 0.22344204486348815,
+    "train_samples_per_sec": 21689.923453633837,
+    "train_step_time_ms_mean": 6.280019141846071,
+    "train_train_time_s": 2.2350231152996893
+  },
+  "geo_sparse": {
+    "mse_test": 0.1131255376946043,
+    "mse_train": 0.10842703658811471,
+    "mse_val": 0.11378390328199775,
+    "train_epoch_time_s_mean": 0.3452208628568635,
+    "train_samples_per_sec": 12133.8431516491,
+    "train_step_time_ms_mean": 6.4733149508226395,
+    "train_train_time_s": 3.453018767842743
+  }
+}

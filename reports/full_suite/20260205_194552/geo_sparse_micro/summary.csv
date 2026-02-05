@@ -1,0 +1,3 @@
+model,forward_ms,forward_backward_ms
+geo_sparse_linear_gather,0.02461695909500122,0.2987116813659668
+geo_sparse_block_gather,0.08699968338012695,0.38077632904052733

@@ -1,0 +1,28 @@
+{
+  "amp": false,
+  "amp_dtype": "bfloat16",
+  "amp_dtype_effective": "torch.bfloat16",
+  "batch_size": 256,
+  "compile": false,
+  "compile_backend": "inductor",
+  "compile_mode": "default",
+  "compute_mode": "gather",
+  "compute_modes": [
+    "gather"
+  ],
+  "device": "cuda",
+  "dtype": "float32",
+  "features": 144,
+  "k": 8,
+  "pattern": "local",
+  "radius": 1,
+  "seed": 0,
+  "shape": [
+    12,
+    12
+  ],
+  "steps": 50,
+  "tf32": false,
+  "warmup": 10,
+  "wrap_mode": "clamp"
+}

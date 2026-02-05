@@ -1,0 +1,19 @@
+{
+  "data_root": "/home/nickm1128/psann/datasets",
+  "device": "cuda",
+  "epochs": 20,
+  "match_params": true,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "tasks": [
+    "jena",
+    "beijing",
+    "eaf"
+  ],
+  "timestamp": "2026-02-05 19:45:55"
+}

@@ -1,0 +1,275 @@
+$ /home/nickm1128/venvs/psann/bin/python scripts/run_light_probes.py --epochs 20 --device cuda --results-dir /home/nickm1128/psann/reports/full_suite/20260205_194552/light_probes --tasks jena beijing eaf --seeds 0 1 2 3 4 --match-params --skip-deps
+/home/nickm1128/venvs/psann/lib/python3.12/site-packages/torch/cuda/__init__.py:435: UserWarning: 
+    Found GPU0 NVIDIA GB10 which is of cuda capability 12.1.
+    Minimum and Maximum cuda capability supported by this version of PyTorch is
+    (8.0) - (12.0)
+    
+  queued_call()
+[env] DATA_ROOT=/home/nickm1128/psann/datasets
+[env] RESULTS_ROOT=/home/nickm1128/psann/reports/full_suite/20260205_194552/light_probes
+[env] device=cuda
+[run] task=jena
+[run] task=beijing
+[run] task=eaf
+[warn] No EAF heats with >= 120 rows; using top 5 heats with >= 35 rows instead.
+         task       model  ...  grad_nonfinite_steps  train_time_s_total
+0  jena_light  psann_conv  ...                     0            6.026470
+1  jena_light         mlp  ...                     0            1.027661
+2  jena_light  psann_conv  ...                     0            5.606113
+3  jena_light         mlp  ...                     0            2.097993
+4  jena_light  psann_conv  ...                     0            5.145591
+
+[5 rows x 40 columns]
+[done] Wrote metrics to /home/nickm1128/psann/reports/full_suite/20260205_194552/light_probes/metrics.csv
+[done] Wrote summary to /home/nickm1128/psann/reports/full_suite/20260205_194552/light_probes/summary.csv
+[done] Wrote history to /home/nickm1128/psann/reports/full_suite/20260205_194552/light_probes/history.jsonl
+$ /home/nickm1128/venvs/psann/bin/python scripts/benchmark_regressor_ablations.py --datasets tabular_sine,tabular_shifted,classification_clusters,context_rotating_moons,ts_periodic,ts_regime_switch,ts_drift,ts_shock --seeds 0,1,2,3,4 --device cuda --epochs 25 --batch-size 128 --lr 0.001 --val-fraction 0.1 --out /home/nickm1128/psann/reports/full_suite/20260205_194552/ablations --resume
+/home/nickm1128/venvs/psann/lib/python3.12/site-packages/torch/cuda/__init__.py:435: UserWarning: 
+    Found GPU0 NVIDIA GB10 which is of cuda capability 12.1.
+    Minimum and Maximum cuda capability supported by this version of PyTorch is
+    (8.0) - (12.0)
+    
+  queued_call()
+Wrote results to /home/nickm1128/psann/reports/full_suite/20260205_194552/ablations/results.jsonl
+$ /home/nickm1128/venvs/psann/bin/python scripts/benchmark_geo_sparse_vs_dense.py --task mixed --sparse-activation mixed --activation-config '{"activation_types": ["psann", "relu"], "activation_ratios": [0.25, 0.75], "ratio_sum_tol": 0.001, "mix_layout": "random"}' --shape 12x12 --depth 6 --k 8 --device cuda --epochs 25 --batch-size 128 --lr 0.001 --train-size 4096 --test-size 1024 --val-fraction 0.1 --match-tolerance 0.01 --dense-max-width 4096 --out /home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse
+[bench] start time=2026-02-05 20:08:43 device=cuda seed=0 shape=12x12 depth=6 k=8 task=mixed out=/home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse
+[bench] torch=2.10.0+cu128 numpy=2.3.5 tf32=False amp=False
+/home/nickm1128/venvs/psann/lib/python3.12/site-packages/torch/cuda/__init__.py:435: UserWarning: 
+    Found GPU0 NVIDIA GB10 which is of cuda capability 12.1.
+    Minimum and Maximum cuda capability supported by this version of PyTorch is
+    (8.0) - (12.0)
+    
+  queued_call()
+/home/nickm1128/psann/scripts/benchmark_geo_sparse_vs_dense.py:493: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=use_scaler)
+Warning: dense_resrelu parameter mismatch exceeds tolerance (0.0191 > 0.0100).
+Wrote results to /home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse
+$ /home/nickm1128/venvs/psann/bin/python scripts/geo_sparse_sweep.py --task mixed --shapes 4x4,8x8 --depths 4,8 --ks 4,8,16 --activations relu,psann,mixed --seeds 0,1,2 --device cuda --epochs 10 --batch-size 128 --train-size 4096 --test-size 1024 --val-fraction 0.1 --activation-config '{"activation_types": ["psann", "relu"], "activation_ratios": [0.25, 0.75], "ratio_sum_tol": 0.001, "mix_layout": "random"}' --out /home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse_sweep --resume
+[sweep] start time=2026-02-05 20:09:00 out=/home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse_sweep runs=108 task=mixed device=cuda dtype=float32
+[sweep] 1/108 start task_mixed_shape_4x4_depth_4_k_4_act_relu_seed_0
+[sweep] 1/108 done task_mixed_shape_4x4_depth_4_k_4_act_relu_seed_0 (12.9s) geo_sparse=0.145 dense_resrelu=0.1389 dense_respsann=0.1707 ETA~23.0m elapsed=0.2m
+[sweep] 2/108 start task_mixed_shape_4x4_depth_4_k_4_act_relu_seed_1
+[sweep] 2/108 done task_mixed_shape_4x4_depth_4_k_4_act_relu_seed_1 (9.8s) geo_sparse=0.18 dense_resrelu=0.1282 dense_respsann=0.2132 ETA~20.0m elapsed=0.4m
+[sweep] 3/108 start task_mixed_shape_4x4_depth_4_k_4_act_relu_seed_2
+[sweep] 3/108 done task_mixed_shape_4x4_depth_4_k_4_act_relu_seed_2 (7.5s) geo_sparse=0.1242 dense_resrelu=0.1968 dense_respsann=0.2025 ETA~17.6m elapsed=0.5m
+[sweep] 4/108 start task_mixed_shape_4x4_depth_4_k_4_act_psann_seed_0
+[sweep] 4/108 done task_mixed_shape_4x4_depth_4_k_4_act_psann_seed_0 (9.5s) geo_sparse=0.1456 dense_resrelu=0.1883 dense_respsann=0.2029 ETA~17.2m elapsed=0.7m
+[sweep] 5/108 start task_mixed_shape_4x4_depth_4_k_4_act_psann_seed_1
+[sweep] 5/108 done task_mixed_shape_4x4_depth_4_k_4_act_psann_seed_1 (10.5s) geo_sparse=0.155 dense_resrelu=0.1254 dense_respsann=0.1547 ETA~17.2m elapsed=0.8m
+[sweep] 6/108 start task_mixed_shape_4x4_depth_4_k_4_act_psann_seed_2
+[sweep] 6/108 done task_mixed_shape_4x4_depth_4_k_4_act_psann_seed_2 (8.2s) geo_sparse=0.1076 dense_resrelu=0.1763 dense_respsann=0.1932 ETA~16.5m elapsed=1.0m
+[sweep] 7/108 start task_mixed_shape_4x4_depth_4_k_4_act_mixed_seed_0
+[sweep] 7/108 done task_mixed_shape_4x4_depth_4_k_4_act_mixed_seed_0 (6.4s) geo_sparse=0.1189 dense_resrelu=0.1402 dense_respsann=0.2028 ETA~15.6m elapsed=1.1m
+[sweep] 8/108 start task_mixed_shape_4x4_depth_4_k_4_act_mixed_seed_1
+[sweep] 8/108 done task_mixed_shape_4x4_depth_4_k_4_act_mixed_seed_1 (9.5s) geo_sparse=0.1806 dense_resrelu=0.1281 dense_respsann=0.1817 ETA~15.5m elapsed=1.2m
+[sweep] 9/108 start task_mixed_shape_4x4_depth_4_k_4_act_mixed_seed_2
+[sweep] 9/108 done task_mixed_shape_4x4_depth_4_k_4_act_mixed_seed_2 (9.9s) geo_sparse=0.118 dense_resrelu=0.1958 dense_respsann=0.201 ETA~15.4m elapsed=1.4m
+[sweep] 10/108 start task_mixed_shape_4x4_depth_4_k_8_act_relu_seed_0
+[sweep] 10/108 done task_mixed_shape_4x4_depth_4_k_8_act_relu_seed_0 (10.1s) geo_sparse=0.1301 dense_resrelu=0.1244 dense_respsann=0.175 ETA~15.4m elapsed=1.6m
+[sweep] 11/108 start task_mixed_shape_4x4_depth_4_k_8_act_relu_seed_1
+[sweep] 11/108 done task_mixed_shape_4x4_depth_4_k_8_act_relu_seed_1 (7.4s) geo_sparse=0.1769 dense_resrelu=0.1301 dense_respsann=0.2004 ETA~14.9m elapsed=1.7m
+[sweep] 12/108 start task_mixed_shape_4x4_depth_4_k_8_act_relu_seed_2
+[sweep] 12/108 done task_mixed_shape_4x4_depth_4_k_8_act_relu_seed_2 (8.0s) geo_sparse=0.1013 dense_resrelu=0.1264 dense_respsann=0.1969 ETA~14.6m elapsed=1.8m
+[sweep] 13/108 start task_mixed_shape_4x4_depth_4_k_8_act_psann_seed_0
+[sweep] 13/108 done task_mixed_shape_4x4_depth_4_k_8_act_psann_seed_0 (12.0s) geo_sparse=0.1169 dense_resrelu=0.121 dense_respsann=0.1935 ETA~14.8m elapsed=2.0m
+[sweep] 14/108 start task_mixed_shape_4x4_depth_4_k_8_act_psann_seed_1
+[sweep] 14/108 done task_mixed_shape_4x4_depth_4_k_8_act_psann_seed_1 (6.9s) geo_sparse=0.2044 dense_resrelu=0.1056 dense_respsann=0.2021 ETA~14.4m elapsed=2.1m
+[sweep] 15/108 start task_mixed_shape_4x4_depth_4_k_8_act_psann_seed_2
+[sweep] 15/108 done task_mixed_shape_4x4_depth_4_k_8_act_psann_seed_2 (11.5s) geo_sparse=0.1013 dense_resrelu=0.1146 dense_respsann=0.1822 ETA~14.5m elapsed=2.3m
+[sweep] 16/108 start task_mixed_shape_4x4_depth_4_k_8_act_mixed_seed_0
+[sweep] 16/108 done task_mixed_shape_4x4_depth_4_k_8_act_mixed_seed_0 (9.9s) geo_sparse=0.1191 dense_resrelu=0.1244 dense_respsann=0.175 ETA~14.4m elapsed=2.5m
+[sweep] 17/108 start task_mixed_shape_4x4_depth_4_k_8_act_mixed_seed_1
+[sweep] 17/108 done task_mixed_shape_4x4_depth_4_k_8_act_mixed_seed_1 (7.2s) geo_sparse=0.1582 dense_resrelu=0.1301 dense_respsann=0.2004 ETA~14.0m elapsed=2.6m
+[sweep] 18/108 start task_mixed_shape_4x4_depth_4_k_8_act_mixed_seed_2
+[sweep] 18/108 done task_mixed_shape_4x4_depth_4_k_8_act_mixed_seed_2 (11.6s) geo_sparse=0.09286 dense_resrelu=0.1264 dense_respsann=0.1969 ETA~14.1m elapsed=2.8m
+[sweep] 19/108 start task_mixed_shape_4x4_depth_4_k_16_act_relu_seed_0
+[sweep] 19/108 done task_mixed_shape_4x4_depth_4_k_16_act_relu_seed_0 (11.3s) geo_sparse=0.08661 dense_resrelu=0.1194 dense_respsann=0.1271 ETA~14.1m elapsed=3.0m
+[sweep] 20/108 start task_mixed_shape_4x4_depth_4_k_16_act_relu_seed_1
+[sweep] 20/108 done task_mixed_shape_4x4_depth_4_k_16_act_relu_seed_1 (7.3s) geo_sparse=0.09239 dense_resrelu=0.1198 dense_respsann=0.1949 ETA~13.7m elapsed=3.1m
+[sweep] 21/108 start task_mixed_shape_4x4_depth_4_k_16_act_relu_seed_2
+[sweep] 21/108 done task_mixed_shape_4x4_depth_4_k_16_act_relu_seed_2 (7.6s) geo_sparse=0.08412 dense_resrelu=0.09486 dense_respsann=0.1934 ETA~13.5m elapsed=3.3m
+[sweep] 22/108 start task_mixed_shape_4x4_depth_4_k_16_act_psann_seed_0
+[sweep] 22/108 done task_mixed_shape_4x4_depth_4_k_16_act_psann_seed_0 (6.9s) geo_sparse=0.07225 dense_resrelu=0.09534 dense_respsann=0.1348 ETA~13.2m elapsed=3.4m
+[sweep] 23/108 start task_mixed_shape_4x4_depth_4_k_16_act_psann_seed_1
+[sweep] 23/108 done task_mixed_shape_4x4_depth_4_k_16_act_psann_seed_1 (6.7s) geo_sparse=0.0847 dense_resrelu=0.1081 dense_respsann=0.1434 ETA~12.8m elapsed=3.5m
+[sweep] 24/108 start task_mixed_shape_4x4_depth_4_k_16_act_psann_seed_2
+[sweep] 24/108 done task_mixed_shape_4x4_depth_4_k_16_act_psann_seed_2 (8.9s) geo_sparse=0.07294 dense_resrelu=0.09531 dense_respsann=0.1908 ETA~12.7m elapsed=3.6m
+[sweep] 25/108 start task_mixed_shape_4x4_depth_4_k_16_act_mixed_seed_0
+[sweep] 25/108 done task_mixed_shape_4x4_depth_4_k_16_act_mixed_seed_0 (8.1s) geo_sparse=0.08201 dense_resrelu=0.1253 dense_respsann=0.1528 ETA~12.5m elapsed=3.8m
+[sweep] 26/108 start task_mixed_shape_4x4_depth_4_k_16_act_mixed_seed_1
+[sweep] 26/108 done task_mixed_shape_4x4_depth_4_k_16_act_mixed_seed_1 (6.8s) geo_sparse=0.08348 dense_resrelu=0.1185 dense_respsann=0.2018 ETA~12.2m elapsed=3.9m
+[sweep] 27/108 start task_mixed_shape_4x4_depth_4_k_16_act_mixed_seed_2
+[sweep] 27/108 done task_mixed_shape_4x4_depth_4_k_16_act_mixed_seed_2 (6.7s) geo_sparse=0.05833 dense_resrelu=0.09661 dense_respsann=0.1369 ETA~12.0m elapsed=4.0m
+[sweep] 28/108 start task_mixed_shape_4x4_depth_8_k_4_act_relu_seed_0
+[sweep] 28/108 done task_mixed_shape_4x4_depth_8_k_4_act_relu_seed_0 (9.1s) geo_sparse=0.1109 dense_resrelu=0.1422 dense_respsann=0.198 ETA~11.8m elapsed=4.1m
+[sweep] 29/108 start task_mixed_shape_4x4_depth_8_k_4_act_relu_seed_1
+[sweep] 29/108 done task_mixed_shape_4x4_depth_8_k_4_act_relu_seed_1 (9.9s) geo_sparse=0.1129 dense_resrelu=0.1226 dense_respsann=0.195 ETA~11.7m elapsed=4.3m
+[sweep] 30/108 start task_mixed_shape_4x4_depth_8_k_4_act_relu_seed_2
+[sweep] 30/108 done task_mixed_shape_4x4_depth_8_k_4_act_relu_seed_2 (8.3s) geo_sparse=0.1176 dense_resrelu=0.1433 dense_respsann=0.1807 ETA~11.5m elapsed=4.4m
+[sweep] 31/108 start task_mixed_shape_4x4_depth_8_k_4_act_psann_seed_0
+[sweep] 31/108 done task_mixed_shape_4x4_depth_8_k_4_act_psann_seed_0 (20.0s) geo_sparse=0.09365 dense_resrelu=0.1263 dense_respsann=0.1651 ETA~11.9m elapsed=4.8m
+[sweep] 32/108 start task_mixed_shape_4x4_depth_8_k_4_act_psann_seed_1
+[sweep] 32/108 done task_mixed_shape_4x4_depth_8_k_4_act_psann_seed_1 (20.2s) geo_sparse=0.08905 dense_resrelu=0.1339 dense_respsann=0.2131 ETA~12.1m elapsed=5.1m
+[sweep] 33/108 start task_mixed_shape_4x4_depth_8_k_4_act_psann_seed_2
+[sweep] 33/108 done task_mixed_shape_4x4_depth_8_k_4_act_psann_seed_2 (17.4s) geo_sparse=0.1152 dense_resrelu=0.1272 dense_respsann=0.1341 ETA~12.3m elapsed=5.4m
+[sweep] 34/108 start task_mixed_shape_4x4_depth_8_k_4_act_mixed_seed_0
+[sweep] 34/108 done task_mixed_shape_4x4_depth_8_k_4_act_mixed_seed_0 (9.4s) geo_sparse=0.1019 dense_resrelu=0.1267 dense_respsann=0.205 ETA~12.1m elapsed=5.6m
+[sweep] 35/108 start task_mixed_shape_4x4_depth_8_k_4_act_mixed_seed_1
+[sweep] 35/108 done task_mixed_shape_4x4_depth_8_k_4_act_mixed_seed_1 (10.5s) geo_sparse=0.0912 dense_resrelu=0.1325 dense_respsann=0.1951 ETA~12.0m elapsed=5.7m
+[sweep] 36/108 start task_mixed_shape_4x4_depth_8_k_4_act_mixed_seed_2
+[sweep] 36/108 done task_mixed_shape_4x4_depth_8_k_4_act_mixed_seed_2 (22.7s) geo_sparse=0.1168 dense_resrelu=0.1283 dense_respsann=0.2032 ETA~12.2m elapsed=6.1m
+[sweep] 37/108 start task_mixed_shape_4x4_depth_8_k_8_act_relu_seed_0
+[sweep] 37/108 done task_mixed_shape_4x4_depth_8_k_8_act_relu_seed_0 (17.4s) geo_sparse=0.0986 dense_resrelu=0.1065 dense_respsann=0.1642 ETA~12.3m elapsed=6.4m
+[sweep] 38/108 start task_mixed_shape_4x4_depth_8_k_8_act_relu_seed_1
+[sweep] 38/108 done task_mixed_shape_4x4_depth_8_k_8_act_relu_seed_1 (10.6s) geo_sparse=0.1065 dense_resrelu=0.1129 dense_respsann=0.187 ETA~12.1m elapsed=6.6m
+[sweep] 39/108 start task_mixed_shape_4x4_depth_8_k_8_act_relu_seed_2
+[sweep] 39/108 done task_mixed_shape_4x4_depth_8_k_8_act_relu_seed_2 (12.6s) geo_sparse=0.09285 dense_resrelu=0.1087 dense_respsann=0.1722 ETA~12.0m elapsed=6.8m
+[sweep] 40/108 start task_mixed_shape_4x4_depth_8_k_8_act_psann_seed_0
+[sweep] 40/108 done task_mixed_shape_4x4_depth_8_k_8_act_psann_seed_0 (21.2s) geo_sparse=0.08655 dense_resrelu=0.1108 dense_respsann=0.1741 ETA~12.1m elapsed=7.1m
+[sweep] 41/108 start task_mixed_shape_4x4_depth_8_k_8_act_psann_seed_1
+[sweep] 41/108 done task_mixed_shape_4x4_depth_8_k_8_act_psann_seed_1 (26.0s) geo_sparse=0.09648 dense_resrelu=0.1248 dense_respsann=0.1638 ETA~12.4m elapsed=7.6m
+[sweep] 42/108 start task_mixed_shape_4x4_depth_8_k_8_act_psann_seed_2
+[sweep] 42/108 done task_mixed_shape_4x4_depth_8_k_8_act_psann_seed_2 (10.0s) geo_sparse=0.09061 dense_resrelu=0.1109 dense_respsann=0.1641 ETA~12.2m elapsed=7.7m
+[sweep] 43/108 start task_mixed_shape_4x4_depth_8_k_8_act_mixed_seed_0
+[sweep] 43/108 done task_mixed_shape_4x4_depth_8_k_8_act_mixed_seed_0 (14.0s) geo_sparse=0.07241 dense_resrelu=0.1053 dense_respsann=0.1748 ETA~12.1m elapsed=8.0m
+[sweep] 44/108 start task_mixed_shape_4x4_depth_8_k_8_act_mixed_seed_1
+[sweep] 44/108 done task_mixed_shape_4x4_depth_8_k_8_act_mixed_seed_1 (13.8s) geo_sparse=0.1192 dense_resrelu=0.1133 dense_respsann=0.1492 ETA~11.9m elapsed=8.2m
+[sweep] 45/108 start task_mixed_shape_4x4_depth_8_k_8_act_mixed_seed_2
+[sweep] 45/108 done task_mixed_shape_4x4_depth_8_k_8_act_mixed_seed_2 (22.4s) geo_sparse=0.06076 dense_resrelu=0.1093 dense_respsann=0.1679 ETA~12.0m elapsed=8.6m
+[sweep] 46/108 start task_mixed_shape_4x4_depth_8_k_16_act_relu_seed_0
+[sweep] 46/108 done task_mixed_shape_4x4_depth_8_k_16_act_relu_seed_0 (19.6s) geo_sparse=0.06727 dense_resrelu=0.1016 dense_respsann=0.1239 ETA~12.0m elapsed=8.9m
+[sweep] 47/108 start task_mixed_shape_4x4_depth_8_k_16_act_relu_seed_1
+[sweep] 47/108 done task_mixed_shape_4x4_depth_8_k_16_act_relu_seed_1 (9.8s) geo_sparse=0.07389 dense_resrelu=0.1358 dense_respsann=0.1393 ETA~11.8m elapsed=9.1m
+[sweep] 48/108 start task_mixed_shape_4x4_depth_8_k_16_act_relu_seed_2
+[sweep] 48/108 done task_mixed_shape_4x4_depth_8_k_16_act_relu_seed_2 (9.7s) geo_sparse=0.07096 dense_resrelu=0.1018 dense_respsann=0.1182 ETA~11.5m elapsed=9.2m
+[sweep] 49/108 start task_mixed_shape_4x4_depth_8_k_16_act_psann_seed_0
+[sweep] 49/108 done task_mixed_shape_4x4_depth_8_k_16_act_psann_seed_0 (12.5s) geo_sparse=0.07151 dense_resrelu=0.1117 dense_respsann=0.1436 ETA~11.4m elapsed=9.4m
+[sweep] 50/108 start task_mixed_shape_4x4_depth_8_k_16_act_psann_seed_1
+[sweep] 50/108 done task_mixed_shape_4x4_depth_8_k_16_act_psann_seed_1 (17.4s) geo_sparse=0.08601 dense_resrelu=0.1273 dense_respsann=0.138 ETA~11.3m elapsed=9.7m
+[sweep] 51/108 start task_mixed_shape_4x4_depth_8_k_16_act_psann_seed_2
+[sweep] 51/108 done task_mixed_shape_4x4_depth_8_k_16_act_psann_seed_2 (9.5s) geo_sparse=0.07213 dense_resrelu=0.09431 dense_respsann=0.1694 ETA~11.0m elapsed=9.9m
+[sweep] 52/108 start task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_0
+[sweep] 52/108 done task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_0 (12.8s) geo_sparse=0.03663 dense_resrelu=0.1106 dense_respsann=0.1507 ETA~10.9m elapsed=10.1m
+[sweep] 53/108 start task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_1
+[sweep] 53/108 done task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_1 (11.5s) geo_sparse=0.06995 dense_resrelu=0.1269 dense_respsann=0.1243 ETA~10.7m elapsed=10.3m
+[sweep] 54/108 start task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_2
+[sweep] 54/108 done task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_2 (10.9s) geo_sparse=0.04197 dense_resrelu=0.09339 dense_respsann=0.1213 ETA~10.5m elapsed=10.5m
+[sweep] 55/108 start task_mixed_shape_8x8_depth_4_k_4_act_relu_seed_0
+[sweep] 55/108 done task_mixed_shape_8x8_depth_4_k_4_act_relu_seed_0 (7.4s) geo_sparse=0.2028 dense_resrelu=0.234 dense_respsann=0.2378 ETA~10.2m elapsed=10.6m
+[sweep] 56/108 start task_mixed_shape_8x8_depth_4_k_4_act_relu_seed_1
+[sweep] 56/108 done task_mixed_shape_8x8_depth_4_k_4_act_relu_seed_1 (9.7s) geo_sparse=0.2142 dense_resrelu=0.237 dense_respsann=0.238 ETA~10.0m elapsed=10.8m
+[sweep] 57/108 start task_mixed_shape_8x8_depth_4_k_4_act_relu_seed_2
+[sweep] 57/108 done task_mixed_shape_8x8_depth_4_k_4_act_relu_seed_2 (7.1s) geo_sparse=0.1884 dense_resrelu=0.2133 dense_respsann=0.2134 ETA~9.7m elapsed=10.9m
+[sweep] 58/108 start task_mixed_shape_8x8_depth_4_k_4_act_psann_seed_0
+[sweep] 58/108 done task_mixed_shape_8x8_depth_4_k_4_act_psann_seed_0 (7.1s) geo_sparse=0.1672 dense_resrelu=0.2292 dense_respsann=0.237 ETA~9.5m elapsed=11.0m
+[sweep] 59/108 start task_mixed_shape_8x8_depth_4_k_4_act_psann_seed_1
+[sweep] 59/108 done task_mixed_shape_8x8_depth_4_k_4_act_psann_seed_1 (6.8s) geo_sparse=0.2352 dense_resrelu=0.2362 dense_respsann=0.2395 ETA~9.2m elapsed=11.1m
+[sweep] 60/108 start task_mixed_shape_8x8_depth_4_k_4_act_psann_seed_2
+[sweep] 60/108 done task_mixed_shape_8x8_depth_4_k_4_act_psann_seed_2 (8.3s) geo_sparse=0.1257 dense_resrelu=0.2096 dense_respsann=0.2136 ETA~9.0m elapsed=11.2m
+[sweep] 61/108 start task_mixed_shape_8x8_depth_4_k_4_act_mixed_seed_0
+[sweep] 61/108 done task_mixed_shape_8x8_depth_4_k_4_act_mixed_seed_0 (6.4s) geo_sparse=0.2201 dense_resrelu=0.2355 dense_respsann=0.2377 ETA~8.7m elapsed=11.4m
+[sweep] 62/108 start task_mixed_shape_8x8_depth_4_k_4_act_mixed_seed_1
+[sweep] 62/108 done task_mixed_shape_8x8_depth_4_k_4_act_mixed_seed_1 (10.6s) geo_sparse=0.1646 dense_resrelu=0.2365 dense_respsann=0.2384 ETA~8.6m elapsed=11.5m
+[sweep] 63/108 start task_mixed_shape_8x8_depth_4_k_4_act_mixed_seed_2
+[sweep] 63/108 done task_mixed_shape_8x8_depth_4_k_4_act_mixed_seed_2 (7.6s) geo_sparse=0.1787 dense_resrelu=0.213 dense_respsann=0.2138 ETA~8.3m elapsed=11.7m
+[sweep] 64/108 start task_mixed_shape_8x8_depth_4_k_8_act_relu_seed_0
+[sweep] 64/108 done task_mixed_shape_8x8_depth_4_k_8_act_relu_seed_0 (6.0s) geo_sparse=0.1323 dense_resrelu=0.2151 dense_respsann=0.2368 ETA~8.1m elapsed=11.8m
+[sweep] 65/108 start task_mixed_shape_8x8_depth_4_k_8_act_relu_seed_1
+[sweep] 65/108 done task_mixed_shape_8x8_depth_4_k_8_act_relu_seed_1 (10.2s) geo_sparse=0.1581 dense_resrelu=0.2357 dense_respsann=0.2371 ETA~7.9m elapsed=11.9m
+[sweep] 66/108 start task_mixed_shape_8x8_depth_4_k_8_act_relu_seed_2
+[sweep] 66/108 done task_mixed_shape_8x8_depth_4_k_8_act_relu_seed_2 (8.0s) geo_sparse=0.1276 dense_resrelu=0.1752 dense_respsann=0.2143 ETA~7.7m elapsed=12.1m
+[sweep] 67/108 start task_mixed_shape_8x8_depth_4_k_8_act_psann_seed_0
+[sweep] 67/108 done task_mixed_shape_8x8_depth_4_k_8_act_psann_seed_0 (6.4s) geo_sparse=0.2041 dense_resrelu=0.1485 dense_respsann=0.2375 ETA~7.4m elapsed=12.2m
+[sweep] 68/108 start task_mixed_shape_8x8_depth_4_k_8_act_psann_seed_1
+[sweep] 68/108 done task_mixed_shape_8x8_depth_4_k_8_act_psann_seed_1 (6.4s) geo_sparse=0.1625 dense_resrelu=0.1689 dense_respsann=0.2382 ETA~7.2m elapsed=12.3m
+[sweep] 69/108 start task_mixed_shape_8x8_depth_4_k_8_act_psann_seed_2
+[sweep] 69/108 done task_mixed_shape_8x8_depth_4_k_8_act_psann_seed_2 (10.2s) geo_sparse=0.1192 dense_resrelu=0.2078 dense_respsann=0.2146 ETA~7.0m elapsed=12.4m
+[sweep] 70/108 start task_mixed_shape_8x8_depth_4_k_8_act_mixed_seed_0
+[sweep] 70/108 done task_mixed_shape_8x8_depth_4_k_8_act_mixed_seed_0 (8.5s) geo_sparse=0.1372 dense_resrelu=0.2176 dense_respsann=0.2362 ETA~6.8m elapsed=12.6m
+[sweep] 71/108 start task_mixed_shape_8x8_depth_4_k_8_act_mixed_seed_1
+[sweep] 71/108 done task_mixed_shape_8x8_depth_4_k_8_act_mixed_seed_1 (6.8s) geo_sparse=0.1476 dense_resrelu=0.1752 dense_respsann=0.2385 ETA~6.6m elapsed=12.7m
+[sweep] 72/108 start task_mixed_shape_8x8_depth_4_k_8_act_mixed_seed_2
+[sweep] 72/108 done task_mixed_shape_8x8_depth_4_k_8_act_mixed_seed_2 (9.1s) geo_sparse=0.107 dense_resrelu=0.1732 dense_respsann=0.2145 ETA~6.4m elapsed=12.8m
+[sweep] 73/108 start task_mixed_shape_8x8_depth_4_k_16_act_relu_seed_0
+[sweep] 73/108 done task_mixed_shape_8x8_depth_4_k_16_act_relu_seed_0 (5.7s) geo_sparse=0.08155 dense_resrelu=0.1468 dense_respsann=0.2362 ETA~6.2m elapsed=12.9m
+[sweep] 74/108 start task_mixed_shape_8x8_depth_4_k_16_act_relu_seed_1
+[sweep] 74/108 done task_mixed_shape_8x8_depth_4_k_16_act_relu_seed_1 (8.1s) geo_sparse=0.1071 dense_resrelu=0.1432 dense_respsann=0.2376 ETA~6.0m elapsed=13.1m
+[sweep] 75/108 start task_mixed_shape_8x8_depth_4_k_16_act_relu_seed_2
+[sweep] 75/108 done task_mixed_shape_8x8_depth_4_k_16_act_relu_seed_2 (7.9s) geo_sparse=0.0848 dense_resrelu=0.1471 dense_respsann=0.2129 ETA~5.8m elapsed=13.2m
+[sweep] 76/108 start task_mixed_shape_8x8_depth_4_k_16_act_psann_seed_0
+[sweep] 76/108 done task_mixed_shape_8x8_depth_4_k_16_act_psann_seed_0 (8.5s) geo_sparse=0.1331 dense_resrelu=0.1278 dense_respsann=0.2366 ETA~5.6m elapsed=13.3m
+[sweep] 77/108 start task_mixed_shape_8x8_depth_4_k_16_act_psann_seed_1
+[sweep] 77/108 done task_mixed_shape_8x8_depth_4_k_16_act_psann_seed_1 (7.5s) geo_sparse=0.1322 dense_resrelu=0.2234 dense_respsann=0.2398 ETA~5.4m elapsed=13.5m
+[sweep] 78/108 start task_mixed_shape_8x8_depth_4_k_16_act_psann_seed_2
+[sweep] 78/108 done task_mixed_shape_8x8_depth_4_k_16_act_psann_seed_2 (8.9s) geo_sparse=0.08486 dense_resrelu=0.1488 dense_respsann=0.2132 ETA~5.2m elapsed=13.6m
+[sweep] 79/108 start task_mixed_shape_8x8_depth_4_k_16_act_mixed_seed_0
+[sweep] 79/108 done task_mixed_shape_8x8_depth_4_k_16_act_mixed_seed_0 (11.5s) geo_sparse=0.08807 dense_resrelu=0.1395 dense_respsann=0.2371 ETA~5.1m elapsed=13.8m
+[sweep] 80/108 start task_mixed_shape_8x8_depth_4_k_16_act_mixed_seed_1
+[sweep] 80/108 done task_mixed_shape_8x8_depth_4_k_16_act_mixed_seed_1 (11.5s) geo_sparse=0.0934 dense_resrelu=0.1461 dense_respsann=0.2388 ETA~4.9m elapsed=14.0m
+[sweep] 81/108 start task_mixed_shape_8x8_depth_4_k_16_act_mixed_seed_2
+[sweep] 81/108 done task_mixed_shape_8x8_depth_4_k_16_act_mixed_seed_2 (7.8s) geo_sparse=0.04362 dense_resrelu=0.1454 dense_respsann=0.2139 ETA~4.7m elapsed=14.1m
+[sweep] 82/108 start task_mixed_shape_8x8_depth_8_k_4_act_relu_seed_0
+[sweep] 82/108 done task_mixed_shape_8x8_depth_8_k_4_act_relu_seed_0 (8.7s) geo_sparse=0.1269 dense_resrelu=0.224 dense_respsann=0.2368 ETA~4.5m elapsed=14.3m
+[sweep] 83/108 start task_mixed_shape_8x8_depth_8_k_4_act_relu_seed_1
+[sweep] 83/108 done task_mixed_shape_8x8_depth_8_k_4_act_relu_seed_1 (14.9s) geo_sparse=0.1783 dense_resrelu=0.2312 dense_respsann=0.2388 ETA~4.4m elapsed=14.5m
+[sweep] 84/108 start task_mixed_shape_8x8_depth_8_k_4_act_relu_seed_2
+[sweep] 84/108 done task_mixed_shape_8x8_depth_8_k_4_act_relu_seed_2 (8.9s) geo_sparse=0.1261 dense_resrelu=0.2124 dense_respsann=0.2143 ETA~4.2m elapsed=14.7m
+[sweep] 85/108 start task_mixed_shape_8x8_depth_8_k_4_act_psann_seed_0
+[sweep] 85/108 done task_mixed_shape_8x8_depth_8_k_4_act_psann_seed_0 (23.8s) geo_sparse=0.09769 dense_resrelu=0.1786 dense_respsann=0.2381 ETA~4.1m elapsed=15.1m
+[sweep] 86/108 start task_mixed_shape_8x8_depth_8_k_4_act_psann_seed_1
+[sweep] 86/108 done task_mixed_shape_8x8_depth_8_k_4_act_psann_seed_1 (9.5s) geo_sparse=0.1543 dense_resrelu=0.1943 dense_respsann=0.2386 ETA~3.9m elapsed=15.2m
+[sweep] 87/108 start task_mixed_shape_8x8_depth_8_k_4_act_psann_seed_2
+[sweep] 87/108 done task_mixed_shape_8x8_depth_8_k_4_act_psann_seed_2 (11.4s) geo_sparse=0.09594 dense_resrelu=0.1524 dense_respsann=0.2134 ETA~3.7m elapsed=15.4m
+[sweep] 88/108 start task_mixed_shape_8x8_depth_8_k_4_act_mixed_seed_0
+[sweep] 88/108 done task_mixed_shape_8x8_depth_8_k_4_act_mixed_seed_0 (10.2s) geo_sparse=0.1114 dense_resrelu=0.212 dense_respsann=0.2373 ETA~3.5m elapsed=15.6m
+[sweep] 89/108 start task_mixed_shape_8x8_depth_8_k_4_act_mixed_seed_1
+[sweep] 89/108 done task_mixed_shape_8x8_depth_8_k_4_act_mixed_seed_1 (17.0s) geo_sparse=0.1628 dense_resrelu=0.1876 dense_respsann=0.2381 ETA~3.4m elapsed=15.9m
+[sweep] 90/108 start task_mixed_shape_8x8_depth_8_k_4_act_mixed_seed_2
+[sweep] 90/108 done task_mixed_shape_8x8_depth_8_k_4_act_mixed_seed_2 (9.1s) geo_sparse=0.1329 dense_resrelu=0.2092 dense_respsann=0.2138 ETA~3.2m elapsed=16.0m
+[sweep] 91/108 start task_mixed_shape_8x8_depth_8_k_8_act_relu_seed_0
+[sweep] 91/108 done task_mixed_shape_8x8_depth_8_k_8_act_relu_seed_0 (14.5s) geo_sparse=0.09987 dense_resrelu=0.1883 dense_respsann=0.2361 ETA~3.0m elapsed=16.3m
+[sweep] 92/108 start task_mixed_shape_8x8_depth_8_k_8_act_relu_seed_1
+[sweep] 92/108 done task_mixed_shape_8x8_depth_8_k_8_act_relu_seed_1 (16.4s) geo_sparse=0.1077 dense_resrelu=0.2103 dense_respsann=0.2364 ETA~2.9m elapsed=16.5m
+[sweep] 93/108 start task_mixed_shape_8x8_depth_8_k_8_act_relu_seed_2
+[sweep] 93/108 done task_mixed_shape_8x8_depth_8_k_8_act_relu_seed_2 (12.9s) geo_sparse=0.1118 dense_resrelu=0.2071 dense_respsann=0.2148 ETA~2.7m elapsed=16.8m
+[sweep] 94/108 start task_mixed_shape_8x8_depth_8_k_8_act_psann_seed_0
+[sweep] 94/108 done task_mixed_shape_8x8_depth_8_k_8_act_psann_seed_0 (17.1s) geo_sparse=0.1482 dense_resrelu=0.1391 dense_respsann=0.2376 ETA~2.5m elapsed=17.0m
+[sweep] 95/108 start task_mixed_shape_8x8_depth_8_k_8_act_psann_seed_1
+[sweep] 95/108 done task_mixed_shape_8x8_depth_8_k_8_act_psann_seed_1 (8.6s) geo_sparse=0.1309 dense_resrelu=0.2318 dense_respsann=0.2385 ETA~2.4m elapsed=17.2m
+[sweep] 96/108 start task_mixed_shape_8x8_depth_8_k_8_act_psann_seed_2
+[sweep] 96/108 done task_mixed_shape_8x8_depth_8_k_8_act_psann_seed_2 (10.3s) geo_sparse=0.1065 dense_resrelu=0.1308 dense_respsann=0.2096 ETA~2.2m elapsed=17.4m
+[sweep] 97/108 start task_mixed_shape_8x8_depth_8_k_8_act_mixed_seed_0
+[sweep] 97/108 done task_mixed_shape_8x8_depth_8_k_8_act_mixed_seed_0 (10.3s) geo_sparse=0.1072 dense_resrelu=0.194 dense_respsann=0.2364 ETA~2.0m elapsed=17.5m
+[sweep] 98/108 start task_mixed_shape_8x8_depth_8_k_8_act_mixed_seed_1
+[sweep] 98/108 done task_mixed_shape_8x8_depth_8_k_8_act_mixed_seed_1 (10.4s) geo_sparse=0.1094 dense_resrelu=0.2255 dense_respsann=0.2368 ETA~1.8m elapsed=17.7m
+[sweep] 99/108 start task_mixed_shape_8x8_depth_8_k_8_act_mixed_seed_2
+[sweep] 99/108 done task_mixed_shape_8x8_depth_8_k_8_act_mixed_seed_2 (9.6s) geo_sparse=0.07401 dense_resrelu=0.1373 dense_respsann=0.2142 ETA~1.6m elapsed=17.9m
+[sweep] 100/108 start task_mixed_shape_8x8_depth_8_k_16_act_relu_seed_0
+[sweep] 100/108 done task_mixed_shape_8x8_depth_8_k_16_act_relu_seed_0 (13.5s) geo_sparse=0.07224 dense_resrelu=0.145 dense_respsann=0.2342 ETA~1.4m elapsed=18.1m
+[sweep] 101/108 start task_mixed_shape_8x8_depth_8_k_16_act_relu_seed_1
+[sweep] 101/108 done task_mixed_shape_8x8_depth_8_k_16_act_relu_seed_1 (10.5s) geo_sparse=0.07485 dense_resrelu=0.1267 dense_respsann=0.2393 ETA~1.3m elapsed=18.3m
+[sweep] 102/108 start task_mixed_shape_8x8_depth_8_k_16_act_relu_seed_2
+[sweep] 102/108 done task_mixed_shape_8x8_depth_8_k_16_act_relu_seed_2 (14.2s) geo_sparse=0.07636 dense_resrelu=0.1311 dense_respsann=0.2139 ETA~1.1m elapsed=18.5m
+[sweep] 103/108 start task_mixed_shape_8x8_depth_8_k_16_act_psann_seed_0
+[sweep] 103/108 done task_mixed_shape_8x8_depth_8_k_16_act_psann_seed_0 (13.7s) geo_sparse=0.06026 dense_resrelu=0.1282 dense_respsann=0.2367 ETA~0.9m elapsed=18.7m
+[sweep] 104/108 start task_mixed_shape_8x8_depth_8_k_16_act_psann_seed_1
+[sweep] 104/108 done task_mixed_shape_8x8_depth_8_k_16_act_psann_seed_1 (11.8s) geo_sparse=0.08098 dense_resrelu=0.1292 dense_respsann=0.2356 ETA~0.7m elapsed=18.9m
+[sweep] 105/108 start task_mixed_shape_8x8_depth_8_k_16_act_psann_seed_2
+[sweep] 105/108 done task_mixed_shape_8x8_depth_8_k_16_act_psann_seed_2 (10.3s) geo_sparse=0.1204 dense_resrelu=0.1375 dense_respsann=0.2138 ETA~0.5m elapsed=19.1m
+[sweep] 106/108 start task_mixed_shape_8x8_depth_8_k_16_act_mixed_seed_0
+[sweep] 106/108 done task_mixed_shape_8x8_depth_8_k_16_act_mixed_seed_0 (19.7s) geo_sparse=0.02886 dense_resrelu=0.1467 dense_respsann=0.2328 ETA~0.4m elapsed=19.4m
+[sweep] 107/108 start task_mixed_shape_8x8_depth_8_k_16_act_mixed_seed_1
+[sweep] 107/108 done task_mixed_shape_8x8_depth_8_k_16_act_mixed_seed_1 (9.7s) geo_sparse=0.04654 dense_resrelu=0.1239 dense_respsann=0.2393 ETA~0.2m elapsed=19.6m
+[sweep] 108/108 start task_mixed_shape_8x8_depth_8_k_16_act_mixed_seed_2
+[sweep] 108/108 done task_mixed_shape_8x8_depth_8_k_16_act_mixed_seed_2 (9.8s) geo_sparse=0.07786 dense_resrelu=0.133 dense_respsann=0.213 ETA~0.0m elapsed=19.7m
+Wrote sweep results to /home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse_sweep
+$ /home/nickm1128/venvs/psann/bin/python scripts/benchmark_geo_sparse_micro.py --shape 12x12 --k 8 --steps 50 --warmup 10 --device cuda --out /home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse_micro
+/home/nickm1128/venvs/psann/lib/python3.12/site-packages/torch/cuda/__init__.py:435: UserWarning: 
+    Found GPU0 NVIDIA GB10 which is of cuda capability 12.1.
+    Minimum and Maximum cuda capability supported by this version of PyTorch is
+    (8.0) - (12.0)
+    
+  queued_call()
+/home/nickm1128/psann/scripts/benchmark_geo_sparse_micro.py:113: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler = torch.cuda.amp.GradScaler(enabled=use_scaler)
+Wrote results to /home/nickm1128/psann/reports/full_suite/20260205_194552/geo_sparse_micro
