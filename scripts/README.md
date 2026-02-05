@@ -72,6 +72,10 @@ When adding or updating scripts under `scripts/`:
   ```bash
   python scripts/run_full_suite.py --device cuda --git-commit
   ```
+- `postprocess_full_suite.py` - generates compact CSV tables and plots for a full-suite run:
+  ```bash
+  python scripts/postprocess_full_suite.py --run reports/full_suite/<timestamp>
+  ```
 - `aggregate_benchmarks.py` - aggregates GPU validation outputs into
   `throughput.csv` and `memory.json` under a benchmark directory.
 - `microbench_psann.py` - microbenchmarks PSANN vs dense/transformer baselines for

@@ -177,6 +177,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip light-probe tasks if required datasets are missing.",
     )
+    ap.add_argument(
+        "--scale-y",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Standardize target values in all suite runs (metrics stay in original scale).",
+    )
     ap.add_argument("--skip-light-probes", action="store_true")
     ap.add_argument("--skip-ablations", action="store_true")
     ap.add_argument("--skip-geo-bench", action="store_true")
@@ -298,6 +304,7 @@ def main() -> None:
         "timestamp": stamp,
         "out_root": str(out_root),
         "device": args.device,
+        "scale_y": bool(args.scale_y),
         "env": _collect_env_info(),
         "git": _git_info(REPO_ROOT),
         "commands": [],
@@ -332,6 +339,8 @@ def main() -> None:
                 cmd.append("--match-params")
             else:
                 cmd.append("--no-match-params")
+            if args.scale_y:
+                cmd.append("--scale-y")
             if args.light_probe_skip_deps:
                 cmd.append("--skip-deps")
             suite_manifest["commands"].append(cmd)
@@ -367,6 +376,8 @@ def main() -> None:
             cmd.extend(["--models", args.ablations_models])
         if args.ablations_resume:
             cmd.append("--resume")
+        if args.scale_y:
+            cmd.append("--scale-y")
         suite_manifest["commands"].append(cmd)
         _run_cmd(cmd, cwd=REPO_ROOT, log_path=log_path, dry_run=args.dry_run)
     else:
@@ -409,6 +420,8 @@ def main() -> None:
             "--out",
             str(out_root / "geo_sparse"),
         ]
+        if args.scale_y:
+            cmd.append("--scale-y")
         suite_manifest["commands"].append(cmd)
         _run_cmd(cmd, cwd=REPO_ROOT, log_path=log_path, dry_run=args.dry_run)
     else:
@@ -449,6 +462,8 @@ def main() -> None:
         ]
         if args.geo_sweep_resume:
             cmd.append("--resume")
+        if args.scale_y:
+            cmd.append("--scale-y")
         suite_manifest["commands"].append(cmd)
         _run_cmd(cmd, cwd=REPO_ROOT, log_path=log_path, dry_run=args.dry_run)
     else:

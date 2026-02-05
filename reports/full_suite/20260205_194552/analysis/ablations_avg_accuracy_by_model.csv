@@ -1,0 +1,13 @@
+model,avg_test_accuracy,datasets
+wrn_base,0.992,2
+wrn_no_film,0.992,2
+wrn_no_phase,0.992,2
+wrn_spec_gate_feats,0.992,2
+wrn_spec_gate_rfft,0.992,2
+res_base,0.9876666666666667,2
+res_drop_path,0.9866666666666666,2
+res_no_norm,0.9793333333333334,2
+sgr_no_phase,0.828,2
+sgr_base,0.8109999999999999,2
+sgr_fourier_feats,0.7683333333333333,2
+sgr_no_gate,0.7476666666666667,2

@@ -25,6 +25,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.metrics import mean_absolute_error, r2_score
+from sklearn.preprocessing import StandardScaler
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SRC_ROOT = _REPO_ROOT / "src"
@@ -277,6 +278,29 @@ def _regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
         "smape": _smape(y_true, y_pred),
         "r2": float(r2_score(y_true, y_pred)),
     }
+
+
+def _fit_y_scaler(y_train: np.ndarray) -> StandardScaler:
+    y_arr = np.asarray(y_train, dtype=np.float32)
+    if y_arr.ndim == 1:
+        y_arr = y_arr.reshape(-1, 1)
+    return StandardScaler().fit(y_arr)
+
+
+def _apply_y_scaler(y: np.ndarray, scaler: StandardScaler) -> np.ndarray:
+    y_arr = np.asarray(y, dtype=np.float32)
+    if y_arr.ndim == 1:
+        return scaler.transform(y_arr.reshape(-1, 1)).reshape(-1).astype(np.float32, copy=False)
+    return scaler.transform(y_arr).astype(np.float32, copy=False)
+
+
+def _inverse_y_scaler(y: np.ndarray, scaler: StandardScaler) -> np.ndarray:
+    y_arr = np.asarray(y, dtype=np.float32)
+    if y_arr.ndim == 1:
+        return (
+            scaler.inverse_transform(y_arr.reshape(-1, 1)).reshape(-1).astype(np.float32, copy=False)
+        )
+    return scaler.inverse_transform(y_arr).astype(np.float32, copy=False)
 
 
 def _loss_curve_volatility(losses: List[float]) -> float:
@@ -567,13 +591,23 @@ def train_regressor(
 
 
 def evaluate_regressor(
-    model: nn.Module, test_X: np.ndarray, test_y: np.ndarray, device: torch.device
+    model: nn.Module,
+    test_X: np.ndarray,
+    test_y: np.ndarray,
+    device: torch.device,
+    y_scaler: Optional[StandardScaler] = None,
+    y_unscaled: Optional[np.ndarray] = None,
 ):
     model.eval()
     with torch.no_grad():
         preds = model(torch.from_numpy(test_X).float().to(device)).cpu().numpy()
     preds = preds.reshape(test_y.shape)
-    return _regression_metrics(test_y, preds)
+    if y_scaler is None:
+        return _regression_metrics(test_y, preds)
+    if y_unscaled is None:
+        y_unscaled = _inverse_y_scaler(test_y, y_scaler)
+    preds_unscaled = _inverse_y_scaler(preds, y_scaler)
+    return _regression_metrics(y_unscaled, preds_unscaled)
 
 
 def _prefix_metrics(prefix: str, metrics: dict) -> dict:
@@ -637,12 +671,22 @@ def run_light_task(
     epochs: int,
     pr_snapshots: bool,
     match_params: bool,
+    scale_y: bool,
     metrics_rows: List[dict],
     history_rows: List[dict],
 ) -> None:
     if task == "jena":
         train_X, train_y, val_X, val_y, test_X, test_y = load_jena_light(72, 36, 120)
         in_ch, horizon = train_X.shape[-1], train_y.shape[-1]
+        y_scaler = None
+        train_y_unscaled = train_y
+        val_y_unscaled = val_y
+        test_y_unscaled = test_y
+        if scale_y:
+            y_scaler = _fit_y_scaler(train_y)
+            train_y = _apply_y_scaler(train_y, y_scaler)
+            val_y = _apply_y_scaler(val_y, y_scaler)
+            test_y = _apply_y_scaler(test_y, y_scaler)
         specs = [
             (
                 "psann_conv",
@@ -673,9 +717,15 @@ def run_light_task(
                 model, info = train_regressor(model, train_X, train_y, val_X, val_y, spec, device)
                 info = dict(info)
                 history = info.pop("history", [])
-                train_metrics = evaluate_regressor(model, train_X, train_y, device)
-                val_metrics = evaluate_regressor(model, val_X, val_y, device)
-                test_metrics = evaluate_regressor(model, test_X, test_y, device)
+                train_metrics = evaluate_regressor(
+                    model, train_X, train_y, device, y_scaler, train_y_unscaled
+                )
+                val_metrics = evaluate_regressor(
+                    model, val_X, val_y, device, y_scaler, val_y_unscaled
+                )
+                test_metrics = evaluate_regressor(
+                    model, test_X, test_y, device, y_scaler, test_y_unscaled
+                )
                 params_total = count_params(model)
                 params_trainable = count_params(model, trainable_only=True)
                 history_rows.extend(
@@ -706,6 +756,14 @@ def run_light_task(
                         "val_size": int(val_X.shape[0]),
                         "test_size": int(test_X.shape[0]),
                         "input_shape": list(train_X.shape[1:]),
+                        "scale_y": bool(scale_y),
+                        "y_scaler": "standard" if y_scaler is not None else None,
+                        "y_scaler_mean": float(y_scaler.mean_.reshape(-1)[0])
+                        if y_scaler is not None
+                        else None,
+                        "y_scaler_std": float(y_scaler.scale_.reshape(-1)[0])
+                        if y_scaler is not None
+                        else None,
                         **info,
                         **_prefix_metrics("train", train_metrics),
                         **_prefix_metrics("val", val_metrics),
@@ -737,6 +795,15 @@ def run_light_task(
     elif task == "beijing":
         train_X, train_y, val_X, val_y, test_X, test_y = load_beijing_light("Guanyuan", 24, 6, 120)
         in_ch, horizon = train_X.shape[-1], train_y.shape[-1]
+        y_scaler = None
+        train_y_unscaled = train_y
+        val_y_unscaled = val_y
+        test_y_unscaled = test_y
+        if scale_y:
+            y_scaler = _fit_y_scaler(train_y)
+            train_y = _apply_y_scaler(train_y, y_scaler)
+            val_y = _apply_y_scaler(val_y, y_scaler)
+            test_y = _apply_y_scaler(test_y, y_scaler)
         specs = [
             (
                 "psann_conv",
@@ -800,6 +867,14 @@ def run_light_task(
                         "val_size": int(val_X.shape[0]),
                         "test_size": int(test_X.shape[0]),
                         "input_shape": list(train_X.shape[1:]),
+                        "scale_y": bool(scale_y),
+                        "y_scaler": "standard" if y_scaler is not None else None,
+                        "y_scaler_mean": float(y_scaler.mean_.reshape(-1)[0])
+                        if y_scaler is not None
+                        else None,
+                        "y_scaler_std": float(y_scaler.scale_.reshape(-1)[0])
+                        if y_scaler is not None
+                        else None,
                         **info,
                         **_prefix_metrics("train", train_metrics),
                         **_prefix_metrics("val", val_metrics),
@@ -810,6 +885,15 @@ def run_light_task(
     elif task == "eaf":
         train_X, train_y, val_X, val_y, test_X, test_y = load_eaf_temp_lite(16, 1, 5, 120)
         in_ch, horizon = train_X.shape[-1], train_y.shape[-1]
+        y_scaler = None
+        train_y_unscaled = train_y
+        val_y_unscaled = val_y
+        test_y_unscaled = test_y
+        if scale_y:
+            y_scaler = _fit_y_scaler(train_y)
+            train_y = _apply_y_scaler(train_y, y_scaler)
+            val_y = _apply_y_scaler(val_y, y_scaler)
+            test_y = _apply_y_scaler(test_y, y_scaler)
         specs = [
             (
                 "psann_conv",
@@ -873,6 +957,14 @@ def run_light_task(
                         "val_size": int(val_X.shape[0]),
                         "test_size": int(test_X.shape[0]),
                         "input_shape": list(train_X.shape[1:]),
+                        "scale_y": bool(scale_y),
+                        "y_scaler": "standard" if y_scaler is not None else None,
+                        "y_scaler_mean": float(y_scaler.mean_.reshape(-1)[0])
+                        if y_scaler is not None
+                        else None,
+                        "y_scaler_std": float(y_scaler.scale_.reshape(-1)[0])
+                        if y_scaler is not None
+                        else None,
                         **info,
                         **_prefix_metrics("train", train_metrics),
                         **_prefix_metrics("val", val_metrics),
@@ -884,7 +976,7 @@ def run_light_task(
         raise ValueError(f"Unknown task: {task}")
 
 
-def run_all(tasks, seeds, epochs, device_str, pr_snapshots, match_params: bool):
+def run_all(tasks, seeds, epochs, device_str, pr_snapshots, match_params: bool, scale_y: bool):
     maybe_extract_datasets_zip()
     device = pick_device(device_str)
     print(f"[env] DATA_ROOT={DATA_ROOT}")
@@ -904,6 +996,8 @@ def run_all(tasks, seeds, epochs, device_str, pr_snapshots, match_params: bool):
         "epochs": int(epochs),
         "device": str(device),
         "match_params": bool(match_params),
+        "scale_y": bool(scale_y),
+        "y_scaler": "standard" if scale_y else None,
         "data_root": str(DATA_ROOT),
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -919,6 +1013,7 @@ def run_all(tasks, seeds, epochs, device_str, pr_snapshots, match_params: bool):
             epochs,
             pr_snapshots,
             match_params,
+            scale_y,
             metrics_rows,
             history_rows,
         )
@@ -994,6 +1089,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         help="Match MLP hidden width to PSANN parameter count.",
     )
     parser.add_argument(
+        "--scale-y",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Standardize target values using train split (metrics stay in original scale).",
+    )
+    parser.add_argument(
         "--skip-deps", action="store_true", help="Skip dependency installation checks."
     )
     parser.add_argument(
@@ -1018,6 +1119,7 @@ def main(argv: Optional[List[str]] = None) -> None:
         args.device,
         args.pr_snapshots,
         args.match_params,
+        args.scale_y,
     )
 
 

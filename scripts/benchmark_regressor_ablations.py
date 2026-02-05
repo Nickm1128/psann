@@ -741,6 +741,7 @@ def _run_single(
     batch_size: int,
     lr: float,
     val_fraction: float,
+    scale_y: bool,
     save_model_path: Optional[Path] = None,
     save_preds_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
@@ -755,6 +756,7 @@ def _run_single(
             "lr": float(lr),
             "device": device,
             "random_state": int(seed),
+            "target_scaler": "standard" if scale_y else None,
         }
     )
     estimator = model.estimator(**params)
@@ -778,6 +780,7 @@ def _run_single(
         "train_size": int(X_train.shape[0]),
         "val_size": int(X_val.shape[0]),
         "test_size": int(dataset.X_test.shape[0]),
+        "scale_y": bool(scale_y),
     }
     history = getattr(estimator, "history_", []) or []
     result.update(_history_stats(history))
@@ -860,6 +863,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.15,
         help="Fraction of training data held out for validation (0 disables).",
+    )
+    parser.add_argument(
+        "--scale-y",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Standardize target values using train split (metrics stay in original scale).",
     )
     parser.add_argument("--out", type=str, default=None, help="Output directory.")
     parser.add_argument(
@@ -1031,6 +1040,8 @@ def main() -> None:
         "batch_size": int(args.batch_size),
         "lr": float(args.lr),
         "val_fraction": float(args.val_fraction),
+        "scale_y": bool(args.scale_y),
+        "target_scaler": "standard" if args.scale_y else None,
         "save_models": bool(args.save_models),
         "save_preds": bool(args.save_preds),
         "resume": bool(args.resume),
@@ -1090,6 +1101,7 @@ def main() -> None:
                         batch_size=args.batch_size,
                         lr=args.lr,
                         val_fraction=args.val_fraction,
+                        scale_y=bool(args.scale_y),
                         save_model_path=model_path,
                         save_preds_path=preds_path,
                     )

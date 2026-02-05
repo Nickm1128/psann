@@ -82,6 +82,11 @@ eaf_temp_lite,mlp,8,3985,20,1.2586772441864014,20,97,1.4548237323760986,0.729034
 Notes
 - EAF lite split is tiny and noisy; negative R2 indicates limited predictability at this granularity; the loader already falls back to top heats when none meet the 120-row minimum.
 - For Jena and Beijing, PSANN+Conv spine consistently outperforms MLP under the same epoch budget.
+- GPU full-suite update (2026-02-05, 5 seeds; CUDA):
+  - Artifacts: `reports/full_suite/20260205_194552/light_probes/summary.csv` plus analysis tables/plots under `reports/full_suite/20260205_194552/analysis/`.
+  - Jena: PSANN RMSE 0.241 vs MLP 0.281 (R2 0.751 vs 0.660).
+  - Beijing: PSANN RMSE 0.441 vs MLP 0.611 (R2 0.541 vs 0.119).
+  - EAF-lite: MLP slightly better (RMSE 1.471 vs 1.510; both R2 < 0).
 
 **GPU sweep status (Colab first, runpod fallback)**
 - Tooling: primary path remains the Colab notebook `notebooks/HISSO_Logging_GPU_Run.ipynb`, which installs the released wheel, stages configs/data under `/content/hisso_*`, and runs `python -m psann.scripts.hisso_log_run --config <yaml> --output-dir <dir> --run-name <tag> --device cuda:0`. Same invocation ports to runpod for longer CUDA windows.
@@ -277,6 +282,7 @@ This revision aligns the original plan to the datasets described in the companio
 
 **Local Artifact Inventory (2026-02-05)**
 - Light probes: results are embedded above; `colab_results_light/metrics.csv` is not present locally (rerun `scripts/run_light_probes.py` to regenerate).
+- Full-suite GPU run: `reports/full_suite/20260205_194552/` (CUDA on GB10). Includes light probes, ablations, GeoSparse bench/sweep/micro, and postprocessed tables/plots in `analysis/`.
 - Synthetic ablations: `reports/ablations/20260205_110015/` (5 seeds; `results.jsonl`, `summary.csv`, `seed_summary.csv`, `env.json`, `manifest.json`).
 - GeoSparse mixed benchmark: `reports/geo_sparse/20260205_131142/` (task=mixed, activation=mixed, shape=12x12 k=8; dense_respsann mismatch <1%; `results.json`, `summary.csv`, `manifest.json`).
 - Prior GeoSparse mixed benchmark: `reports/geo_sparse/20260205_121543/` (shape=8x8; dense_respsann mismatch ~2.8%).
