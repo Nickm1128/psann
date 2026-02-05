@@ -1,0 +1,92 @@
+{
+  "environment": {
+    "device_type": "cuda",
+    "executables": {
+      "nvcc": {
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "nvcc: NVIDIA (R) Cuda compiler driver\nCopyright (c) 2005-2025 NVIDIA Corporation\nBuilt on Wed_Aug_20_01:57:39_PM_PDT_2025\nCuda compilation tools, release 13.0, V13.0.88\nBuild cuda_13.0.r13.0/compiler.36424714_0"
+      },
+      "nvidia-smi": {
+        "returncode": 0,
+        "stderr": "",
+        "stdout": "NVIDIA GB10, 580.95.05, 49, [N/A], [N/A]"
+      }
+    },
+    "gpu": {
+      "torch_cuda_devices": [
+        {
+          "capability": [
+            12,
+            1
+          ],
+          "index": 0,
+          "memory_free_bytes": 19630739456,
+          "memory_total_bytes": 128457015296,
+          "name": "NVIDIA GB10"
+        }
+      ]
+    },
+    "hostname": "gx10-6c52",
+    "libraries": {
+      "bitsandbytes": {
+        "import_error": "No module named 'bitsandbytes'"
+      },
+      "torch": {
+        "cuda_available": true,
+        "cuda_version": "12.8",
+        "cudnn_version": 91002,
+        "device_count": 1,
+        "version": "2.10.0+cu128"
+      },
+      "transformers": {
+        "import_error": "No module named 'transformers'"
+      }
+    },
+    "platform": "Linux-6.14.0-1013-nvidia-aarch64-with-glibc2.39",
+    "python": "3.12.3 (main, Nov  6 2025, 13:44:16) [GCC 13.3.0]",
+    "selected_device": "cuda",
+    "timestamp": "2026-02-05T21:50:59.738538Z"
+  },
+  "manifest": {
+    "amp": false,
+    "amp_dtype": "bfloat16",
+    "amp_dtype_effective": "torch.bfloat16",
+    "batch_size": 256,
+    "compile": false,
+    "compile_backend": "inductor",
+    "compile_mode": "default",
+    "compute_mode": "gather",
+    "compute_modes": [
+      "gather"
+    ],
+    "device": "cuda",
+    "dtype": "float32",
+    "features": 144,
+    "k": 8,
+    "pattern": "local",
+    "radius": 1,
+    "seed": 0,
+    "shape": [
+      12,
+      12
+    ],
+    "steps": 50,
+    "tf32": false,
+    "warmup": 10,
+    "wrap_mode": "clamp"
+  },
+  "recommended_compute_mode": null,
+  "results": [
+    {
+      "forward_backward_ms": 0.1596985626220703,
+      "forward_ms": 0.024965760707855226,
+      "name": "geo_sparse_linear_gather"
+    },
+    {
+      "forward_backward_ms": 0.38349822998046873,
+      "forward_ms": 0.08705151557922364,
+      "name": "geo_sparse_block_gather"
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "activation_config": {
+    "activation_ratios": [
+      0.25,
+      0.75
+    ],
+    "activation_types": [
+      "psann",
+      "relu"
+    ],
+    "mix_layout": "random",
+    "ratio_sum_tol": 0.001
+  },
+  "amp": false,
+  "amp_dtype": "bfloat16",
+  "amp_dtype_effective": "torch.bfloat16",
+  "batch_size": 128,
+  "compile": false,
+  "compile_backend": "inductor",
+  "compile_mode": "default",
+  "dataset_meta": {
+    "features": 64,
+    "scale_x": false,
+    "scale_y": true,
+    "task": "mixed",
+    "test_size": 1024,
+    "train_size": 4096,
+    "val_size": 410,
+    "x_scaler": null,
+    "y_scaler": "standard",
+    "y_scaler_mean": 0.054915886372327805,
+    "y_scaler_std": 0.5318105816841125
+  },
+  "dense_depth": 4,
+  "dense_respsann_width": 20,
+  "dense_resrelu_width": 20,
+  "depth_sparse": 4,
+  "dtype": "float32",
+  "epochs": 10,
+  "features": 64,
+  "k": 8,
+  "lr": 0.001,
+  "match_tolerance": 0.01,
+  "pattern": "local",
+  "radius": 1,
+  "seed": 1,
+  "shape": [
+    8,
+    8
+  ],
+  "sparse_activation": "relu",
+  "task": "mixed",
+  "test_size": 1024,
+  "tf32": false,
+  "timing_epochs": 1,
+  "timing_warmup_steps": 2,
+  "train_size": 4096,
+  "val_fraction": 0.1,
+  "val_size": 410,
+  "weight_decay": 0.0,
+  "wrap_mode": "clamp"
+}

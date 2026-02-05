@@ -1,0 +1,4 @@
+[bench] start time=2026-02-05 21:40:57 device=cuda seed=2 shape=4x4 depth=8 k=16 task=mixed out=/home/nickm1128/psann/reports/full_suite/20260205_210744/geo_sparse_sweep/task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_2
+[bench] torch=2.10.0+cu128 numpy=2.3.5 tf32=False amp=False
+Warning: dense_resrelu parameter mismatch exceeds tolerance (0.0383 > 0.0100).
+Wrote results to /home/nickm1128/psann/reports/full_suite/20260205_210744/geo_sparse_sweep/task_mixed_shape_4x4_depth_8_k_16_act_mixed_seed_2

@@ -1,0 +1,46 @@
+{
+  "batch_size": 128,
+  "datasets": [
+    "tabular_sine",
+    "tabular_shifted",
+    "classification_clusters",
+    "context_rotating_moons",
+    "ts_periodic",
+    "ts_regime_switch",
+    "ts_drift",
+    "ts_shock"
+  ],
+  "device": "cuda",
+  "epochs": 25,
+  "lr": 0.001,
+  "models": [
+    "res_base",
+    "res_drop_path",
+    "res_no_norm",
+    "wrn_base",
+    "wrn_no_phase",
+    "wrn_no_film",
+    "wrn_spec_gate_rfft",
+    "wrn_spec_gate_feats",
+    "sgr_base",
+    "sgr_no_gate",
+    "sgr_fourier_feats",
+    "sgr_no_phase"
+  ],
+  "numpy_version": "2.3.5",
+  "resume": true,
+  "save_models": false,
+  "save_preds": false,
+  "scale_y": true,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "target_scaler": "standard",
+  "timestamp": "2026-02-05 21:08:28",
+  "torch_version": "2.10.0+cu128",
+  "val_fraction": 0.1
+}
