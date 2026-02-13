@@ -45,15 +45,33 @@ jobs:
             --epochs 4 \
             --devices cpu \
             --variants dense,conv \
+            --modes compat,fast \
+            --compat-batch-episodes 1 \
+            --compat-updates-per-epoch 32 \
+            --fast-batch-episodes 8 \
+            --fast-updates-per-epoch 4 \
             --output benchmark_artifacts/hisso_variants_portfolio_cpu.json
 
-      - name: Compare against baseline snapshot
+      - name: Compare compat mode against baseline snapshot
         run: |
           python -m scripts.compare_hisso_benchmarks \
             docs/benchmarks/hisso_variants_portfolio_cpu.json \
             benchmark_artifacts/hisso_variants_portfolio_cpu.json \
+            --modes compat \
             --reward-rtol 0.5 \
             --reward-atol 5e-3 \
             --wall-rtol 0.8 \
             --wall-atol 5.0
+
+      - name: Compare fast mode trend (non-blocking)
+        continue-on-error: true
+        run: |
+          python -m scripts.compare_hisso_benchmarks \
+            docs/benchmarks/hisso_variants_portfolio_cpu.json \
+            benchmark_artifacts/hisso_variants_portfolio_cpu.json \
+            --modes fast \
+            --reward-rtol 0.75 \
+            --reward-atol 1e-2 \
+            --wall-rtol 1.0 \
+            --wall-atol 8.0
 

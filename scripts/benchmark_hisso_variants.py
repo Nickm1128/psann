@@ -94,6 +94,14 @@ class DatasetSpec:
         return variant in self.variants
 
 
+@dataclass(frozen=True)
+class ScheduleSpec:
+    name: str
+    batch_episodes: int
+    updates_per_epoch: int
+    description: str
+
+
 def _load_portfolio_prices(path: Path) -> np.ndarray:
     data = np.loadtxt(path, delimiter=",", skiprows=1, usecols=(1, 2), dtype=np.float32)
     if data.ndim != 2 or data.shape[1] < 2:
@@ -259,12 +267,27 @@ def _summarise_runs(runs: List[Dict[str, List[float] | float | int]]) -> Dict[st
             "reward_trend_std": [],
             "episodes_per_epoch_mean": [],
             "episodes_per_epoch_std": [],
+            "mean_episodes_per_run": math.nan,
+            "std_episodes_per_run": math.nan,
+            "mean_wall_throughput_eps_per_s": math.nan,
+            "std_wall_throughput_eps_per_s": math.nan,
+            "mean_profile_throughput_eps_per_s": math.nan,
+            "std_profile_throughput_eps_per_s": math.nan,
             "final_reward_mean": math.nan,
             "final_reward_std": math.nan,
         }
 
     wall_times = np.array([run["wall_time_s"] for run in runs], dtype=np.float64)
     profile_times = np.array([run["profile_time_s"] for run in runs], dtype=np.float64)
+    episodes_total = np.array([run["episodes_total"] for run in runs], dtype=np.float64)
+    wall_throughput = np.array(
+        [run["wall_throughput_eps_per_s"] for run in runs],
+        dtype=np.float64,
+    )
+    profile_throughput = np.array(
+        [run["profile_throughput_eps_per_s"] for run in runs],
+        dtype=np.float64,
+    )
     final_rewards = np.array([run["final_reward"] for run in runs], dtype=np.float64)
     reward_matrix = np.array([run["reward_trend"] for run in runs], dtype=np.float64)
     episodes_matrix = np.array([run["episodes_per_epoch"] for run in runs], dtype=np.float64)
@@ -291,6 +314,24 @@ def _summarise_runs(runs: List[Dict[str, List[float] | float | int]]) -> Dict[st
             if len(runs) > 1
             else [0.0] * episodes_matrix.shape[1]
         ),
+        "mean_episodes_per_run": (
+            float(episodes_total.mean()) if episodes_total.size else math.nan
+        ),
+        "std_episodes_per_run": (
+            float(episodes_total.std(ddof=0)) if episodes_total.size > 1 else 0.0
+        ),
+        "mean_wall_throughput_eps_per_s": (
+            float(np.nanmean(wall_throughput)) if wall_throughput.size else math.nan
+        ),
+        "std_wall_throughput_eps_per_s": (
+            float(np.nanstd(wall_throughput)) if wall_throughput.size > 1 else 0.0
+        ),
+        "mean_profile_throughput_eps_per_s": (
+            float(np.nanmean(profile_throughput)) if profile_throughput.size else math.nan
+        ),
+        "std_profile_throughput_eps_per_s": (
+            float(np.nanstd(profile_throughput)) if profile_throughput.size > 1 else 0.0
+        ),
         "final_reward_mean": final_reward_mean,
         "final_reward_std": final_reward_std,
     }
@@ -301,6 +342,7 @@ def _benchmark_variant(
     variant: str,
     device: str,
     *,
+    schedule: ScheduleSpec,
     epochs: int,
     repeats: int,
     window: int,
@@ -313,6 +355,9 @@ def _benchmark_variant(
     allow_full_window = True
     episode_length_seen: Optional[int] = None
     feature_shape: Optional[Tuple[int, ...]] = None
+    resolved_episode_batch_size: Optional[int] = None
+    resolved_updates_per_epoch: Optional[int] = None
+    resolved_episodes_per_epoch: Optional[int] = None
 
     for repeat in range(repeats):
         seed = base_seed + repeat
@@ -340,6 +385,8 @@ def _benchmark_variant(
             y,
             hisso=True,
             hisso_window=window,
+            hisso_batch_episodes=int(schedule.batch_episodes),
+            hisso_updates_per_epoch=int(schedule.updates_per_epoch),
             hisso_reward_fn=_reward_fn,
             hisso_primary_transform="tanh",
             hisso_transition_penalty=transition_penalty,
@@ -360,17 +407,33 @@ def _benchmark_variant(
 
         reward_trend = _nan_series(entry.get("reward") for entry in trainer.history)
         episodes = [int(entry.get("episodes", 0) or 0) for entry in trainer.history]
+        episodes_total = int(sum(episodes))
+        profile_time = float(trainer.profile.get("total_time_s", float("nan")))
+        wall_throughput = float(episodes_total / max(float(elapsed), 1e-9))
+        profile_throughput = float(
+            episodes_total / max(profile_time, 1e-9)
+        ) if math.isfinite(profile_time) else math.nan
 
         allow_full_window = allow_full_window and getattr(cfg, "episode_length", window) == window
         episode_length_seen = getattr(cfg, "episode_length", window)
         feature_shape = tuple(int(dim) for dim in X.shape[1:])
+        resolved_episode_batch_size = int(
+            trainer.profile.get("episode_batch_size", getattr(cfg, "episode_batch_size", 1) or 1)
+        )
+        resolved_updates_per_epoch = int(
+            trainer.profile.get("updates_per_epoch", getattr(cfg, "updates_per_epoch", 1) or 1)
+        )
+        resolved_episodes_per_epoch = int(getattr(cfg, "episodes_per_batch", episodes_total))
 
         run_stats.append(
             {
                 "wall_time_s": float(elapsed),
-                "profile_time_s": float(trainer.profile.get("total_time_s", float("nan"))),
+                "profile_time_s": profile_time,
                 "reward_trend": reward_trend,
                 "episodes_per_epoch": episodes,
+                "episodes_total": episodes_total,
+                "wall_throughput_eps_per_s": wall_throughput,
+                "profile_throughput_eps_per_s": profile_throughput,
                 "final_reward": float(reward_trend[-1]) if reward_trend else math.nan,
                 "series_length": int(X.shape[0]),
                 "episode_length": int(getattr(cfg, "episode_length", window)),
@@ -386,12 +449,64 @@ def _benchmark_variant(
             "episode_length": (
                 int(episode_length_seen) if episode_length_seen is not None else int(window)
             ),
+            "configured_batch_episodes": int(schedule.batch_episodes),
+            "configured_updates_per_epoch": int(schedule.updates_per_epoch),
+            "resolved_episode_batch_size": (
+                int(resolved_episode_batch_size) if resolved_episode_batch_size is not None else math.nan
+            ),
+            "resolved_updates_per_epoch": (
+                int(resolved_updates_per_epoch) if resolved_updates_per_epoch is not None else math.nan
+            ),
+            "resolved_episodes_per_epoch": (
+                int(resolved_episodes_per_epoch) if resolved_episodes_per_epoch is not None else math.nan
+            ),
             "series_length": int(run_stats[0]["series_length"]) if run_stats else math.nan,
             "primary_dim": int(run_stats[0]["primary_dim"]) if run_stats else math.nan,
             "feature_shape": list(feature_shape) if feature_shape is not None else None,
         }
     )
     return summary
+
+
+def _resolve_schedules(
+    raw: str,
+    *,
+    compat_batch_episodes: int,
+    compat_updates_per_epoch: int,
+    fast_batch_episodes: int,
+    fast_updates_per_epoch: int,
+) -> List[ScheduleSpec]:
+    entries = [item.strip().lower() for item in raw.split(",") if item.strip()]
+    if not entries:
+        entries = ["compat", "fast"]
+
+    schedules: List[ScheduleSpec] = []
+    for mode in entries:
+        if mode in {"compat", "compatibility", "baseline"}:
+            schedules.append(
+                ScheduleSpec(
+                    name="compat",
+                    batch_episodes=max(1, int(compat_batch_episodes)),
+                    updates_per_epoch=max(1, int(compat_updates_per_epoch)),
+                    description="Legacy-compatible HISSO cadence (one episode per update).",
+                )
+            )
+            continue
+        if mode in {"fast", "vectorized"}:
+            schedules.append(
+                ScheduleSpec(
+                    name="fast",
+                    batch_episodes=max(1, int(fast_batch_episodes)),
+                    updates_per_epoch=max(1, int(fast_updates_per_epoch)),
+                    description="Vectorized HISSO cadence (multiple episodes per update).",
+                )
+            )
+            continue
+        raise ValueError(
+            f"Unsupported mode '{mode}'. Expected a comma-separated subset of compat,fast."
+        )
+    unique = {schedule.name: schedule for schedule in schedules}
+    return list(unique.values())
 
 
 # ---------------------------------------------------------------------------
@@ -448,6 +563,36 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated subset of variants to benchmark (e.g., 'dense' or 'dense,conv').",
     )
     parser.add_argument(
+        "--modes",
+        type=str,
+        default="compat,fast",
+        help="Comma-separated HISSO schedules to run (compat,fast).",
+    )
+    parser.add_argument(
+        "--compat-batch-episodes",
+        type=int,
+        default=1,
+        help="Episodes per HISSO update for compat mode (default 1).",
+    )
+    parser.add_argument(
+        "--compat-updates-per-epoch",
+        type=int,
+        default=32,
+        help="Updates per epoch for compat mode (default 32).",
+    )
+    parser.add_argument(
+        "--fast-batch-episodes",
+        type=int,
+        default=8,
+        help="Episodes per HISSO update for fast mode (default 8).",
+    )
+    parser.add_argument(
+        "--fast-updates-per-epoch",
+        type=int,
+        default=4,
+        help="Updates per epoch for fast mode (default 4).",
+    )
+    parser.add_argument(
         "--output",
         type=str,
         default=None,
@@ -464,32 +609,42 @@ def main() -> None:
         raise ValueError("No variants specified; provide at least one via --variants.")
 
     dataset = resolve_dataset(args.dataset, args.dataset_path)
+    schedules = _resolve_schedules(
+        args.modes,
+        compat_batch_episodes=max(1, int(args.compat_batch_episodes)),
+        compat_updates_per_epoch=max(1, int(args.compat_updates_per_epoch)),
+        fast_batch_episodes=max(1, int(args.fast_batch_episodes)),
+        fast_updates_per_epoch=max(1, int(args.fast_updates_per_epoch)),
+    )
 
     results = []
     for device in devices:
-        for variant in variants:
-            if not dataset.supports(variant):
-                print(f"Skipping variant '{variant}' for dataset '{dataset.name}' (unsupported).")
-                continue
-            summary = _benchmark_variant(
-                variant,
-                device,
-                epochs=max(1, int(args.epochs)),
-                repeats=max(1, int(args.repeats)),
-                window=max(1, int(args.window)),
-                transition_penalty=float(args.transition_penalty),
-                warmstart_epochs=max(1, int(args.epochs // 2)),
-                base_seed=int(args.seed),
-                dataset=dataset,
-            )
-            results.append(
-                {
-                    "variant": variant,
-                    "device": device,
-                    "dataset": dataset.name,
-                    **summary,
-                }
-            )
+        for schedule in schedules:
+            for variant in variants:
+                if not dataset.supports(variant):
+                    print(f"Skipping variant '{variant}' for dataset '{dataset.name}' (unsupported).")
+                    continue
+                summary = _benchmark_variant(
+                    variant,
+                    device,
+                    schedule=schedule,
+                    epochs=max(1, int(args.epochs)),
+                    repeats=max(1, int(args.repeats)),
+                    window=max(1, int(args.window)),
+                    transition_penalty=float(args.transition_penalty),
+                    warmstart_epochs=max(1, int(args.epochs // 2)),
+                    base_seed=int(args.seed),
+                    dataset=dataset,
+                )
+                results.append(
+                    {
+                        "variant": variant,
+                        "mode": schedule.name,
+                        "device": device,
+                        "dataset": dataset.name,
+                        **summary,
+                    }
+                )
 
     payload = {
         "metadata": {
@@ -500,6 +655,7 @@ def main() -> None:
             "devices": devices,
             "torch_cuda_available": bool(torch.cuda.is_available()),
             "variants": variants,
+            "modes": [schedule.name for schedule in schedules],
             "dataset": dataset.name,
         },
         "dataset": {
@@ -507,6 +663,15 @@ def main() -> None:
             "description": dataset.description,
             **dataset.metadata,
         },
+        "schedules": [
+            {
+                "name": schedule.name,
+                "batch_episodes": int(schedule.batch_episodes),
+                "updates_per_epoch": int(schedule.updates_per_epoch),
+                "description": schedule.description,
+            }
+            for schedule in schedules
+        ],
         "results": results,
     }
     output = args.output

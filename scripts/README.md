@@ -39,12 +39,13 @@ When adding or updating scripts under `scripts/`:
   a synthetic MLP.
 - `benchmark_hisso_variants.py` - benchmarks residual dense vs. convolutional
   HISSO estimators, reporting wall-clock time and reward trends for each device
-  (CPU/GPU if available). Supports `--dataset` (`synthetic` or `portfolio`) and
-  `--output` to persist JSON summaries for docs/CI:
+  (CPU/GPU if available). Supports `--dataset` (`synthetic` or `portfolio`),
+  schedule `--modes` (`compat`, `fast`) with explicit B/U knobs, and `--output`
+  to persist JSON summaries for docs/CI:
   ```bash
-  python -m scripts.benchmark_hisso_variants --dataset portfolio --epochs 8 --devices cpu --output docs/benchmarks/hisso_variants_portfolio_cpu.json
+  python -m scripts.benchmark_hisso_variants --dataset portfolio --epochs 4 --devices cpu --variants dense,conv --modes compat,fast --compat-batch-episodes 1 --compat-updates-per-epoch 32 --fast-batch-episodes 8 --fast-updates-per-epoch 4 --output docs/benchmarks/hisso_variants_portfolio_cpu.json
   ```
-- `compare_hisso_benchmarks.py` - compares two benchmark payloads with configurable tolerances; used by CI to detect HISSO performance regressions.
+- `compare_hisso_benchmarks.py` - compares two benchmark payloads with configurable tolerances (and optional `--modes` filtering such as `compat` or `fast`); used by CI to detect HISSO performance regressions.
 - `fetch_benchmark_data.py` - downloads the trimmed AAPL price series (or any
   other ticker/date range) and writes a `date,open,close` CSV for HISSO runs.
 - `run_light_probes.py` - executes the lightweight Colab probes locally. Use

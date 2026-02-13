@@ -10,6 +10,10 @@
       "cpu"
     ],
     "epochs": 4,
+    "modes": [
+      "compat",
+      "fast"
+    ],
     "repeats": 1,
     "torch_cuda_available": false,
     "transition_penalty": 0.02,
@@ -22,6 +26,8 @@
   "results": [
     {
       "allow_full_window": true,
+      "configured_batch_episodes": 1,
+      "configured_updates_per_epoch": 32,
       "dataset": "portfolio",
       "device": "cpu",
       "episode_length": 64,
@@ -42,9 +48,16 @@
       ],
       "final_reward_mean": -4.5239562451726556e-07,
       "final_reward_std": 0.0,
-      "mean_profile_time_s": 3.159859500359744,
-      "mean_wall_time_s": 4.900755499955267,
+      "mean_episodes_per_run": 128.0,
+      "mean_profile_throughput_eps_per_s": 124.32048655922588,
+      "mean_profile_time_s": 1.0295970000006491,
+      "mean_wall_throughput_eps_per_s": 52.09980955893783,
+      "mean_wall_time_s": 2.4568227999989176,
+      "mode": "compat",
       "primary_dim": 2,
+      "resolved_episode_batch_size": 1,
+      "resolved_episodes_per_epoch": 32,
+      "resolved_updates_per_epoch": 32,
       "reward_trend_mean": [
         -0.07921785126836767,
         -0.00035146705528177336,
@@ -59,12 +72,17 @@
       ],
       "runs": 1,
       "series_length": 506,
+      "std_episodes_per_run": 0.0,
+      "std_profile_throughput_eps_per_s": 0.0,
       "std_profile_time_s": 0.0,
+      "std_wall_throughput_eps_per_s": 0.0,
       "std_wall_time_s": 0.0,
       "variant": "dense"
     },
     {
       "allow_full_window": true,
+      "configured_batch_episodes": 1,
+      "configured_updates_per_epoch": 32,
       "dataset": "portfolio",
       "device": "cpu",
       "episode_length": 64,
@@ -87,9 +105,16 @@
       ],
       "final_reward_mean": -3.4650755225129615e-06,
       "final_reward_std": 0.0,
-      "mean_profile_time_s": 8.643131299875677,
-      "mean_wall_time_s": 9.783348300028592,
+      "mean_episodes_per_run": 128.0,
+      "mean_profile_throughput_eps_per_s": 57.77694623083828,
+      "mean_profile_time_s": 2.2154165000101784,
+      "mean_wall_throughput_eps_per_s": 48.71409072195064,
+      "mean_wall_time_s": 2.6275765000027604,
+      "mode": "compat",
       "primary_dim": 2,
+      "resolved_episode_batch_size": 1,
+      "resolved_episodes_per_epoch": 32,
+      "resolved_updates_per_epoch": 32,
       "reward_trend_mean": [
         -0.002395254917814782,
         -5.396845122618288e-05,
@@ -104,9 +129,138 @@
       ],
       "runs": 1,
       "series_length": 490,
+      "std_episodes_per_run": 0.0,
+      "std_profile_throughput_eps_per_s": 0.0,
       "std_profile_time_s": 0.0,
+      "std_wall_throughput_eps_per_s": 0.0,
       "std_wall_time_s": 0.0,
       "variant": "conv"
+    },
+    {
+      "allow_full_window": true,
+      "configured_batch_episodes": 8,
+      "configured_updates_per_epoch": 4,
+      "dataset": "portfolio",
+      "device": "cpu",
+      "episode_length": 64,
+      "episodes_per_epoch_mean": [
+        32.0,
+        32.0,
+        32.0,
+        32.0
+      ],
+      "episodes_per_epoch_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "feature_shape": [
+        2
+      ],
+      "final_reward_mean": -0.03950019180774689,
+      "final_reward_std": 0.0,
+      "mean_episodes_per_run": 128.0,
+      "mean_profile_throughput_eps_per_s": 745.5336419949198,
+      "mean_profile_time_s": 0.17168909998144954,
+      "mean_wall_throughput_eps_per_s": 533.8366968538438,
+      "mean_wall_time_s": 0.23977369999920484,
+      "mode": "fast",
+      "primary_dim": 2,
+      "resolved_episode_batch_size": 8,
+      "resolved_episodes_per_epoch": 32,
+      "resolved_updates_per_epoch": 4,
+      "reward_trend_mean": [
+        -0.37377478182315826,
+        -0.1791029255837202,
+        -0.015207290824037045,
+        -0.03950019180774689
+      ],
+      "reward_trend_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "runs": 1,
+      "series_length": 506,
+      "std_episodes_per_run": 0.0,
+      "std_profile_throughput_eps_per_s": 0.0,
+      "std_profile_time_s": 0.0,
+      "std_wall_throughput_eps_per_s": 0.0,
+      "std_wall_time_s": 0.0,
+      "variant": "dense"
+    },
+    {
+      "allow_full_window": true,
+      "configured_batch_episodes": 8,
+      "configured_updates_per_epoch": 4,
+      "dataset": "portfolio",
+      "device": "cpu",
+      "episode_length": 64,
+      "episodes_per_epoch_mean": [
+        32.0,
+        32.0,
+        32.0,
+        32.0
+      ],
+      "episodes_per_epoch_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "feature_shape": [
+        2,
+        4,
+        4
+      ],
+      "final_reward_mean": -0.0006250883534448803,
+      "final_reward_std": 0.0,
+      "mean_episodes_per_run": 128.0,
+      "mean_profile_throughput_eps_per_s": 94.57755825226238,
+      "mean_profile_time_s": 1.3533866000070702,
+      "mean_wall_throughput_eps_per_s": 81.46743212113265,
+      "mean_wall_time_s": 1.5711799999990035,
+      "mode": "fast",
+      "primary_dim": 2,
+      "resolved_episode_batch_size": 8,
+      "resolved_episodes_per_epoch": 32,
+      "resolved_updates_per_epoch": 4,
+      "reward_trend_mean": [
+        -0.011570738213777076,
+        -0.0040787873203953495,
+        -0.001324999483585998,
+        -0.0006250883534448803
+      ],
+      "reward_trend_std": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "runs": 1,
+      "series_length": 490,
+      "std_episodes_per_run": 0.0,
+      "std_profile_throughput_eps_per_s": 0.0,
+      "std_profile_time_s": 0.0,
+      "std_wall_throughput_eps_per_s": 0.0,
+      "std_wall_time_s": 0.0,
+      "variant": "conv"
+    }
+  ],
+  "schedules": [
+    {
+      "batch_episodes": 1,
+      "description": "Legacy-compatible HISSO cadence (one episode per update).",
+      "name": "compat",
+      "updates_per_epoch": 32
+    },
+    {
+      "batch_episodes": 8,
+      "description": "Vectorized HISSO cadence (multiple episodes per update).",
+      "name": "fast",
+      "updates_per_epoch": 4
     }
   ]
 }

@@ -82,6 +82,12 @@ def _serialize_hisso_cfg(cfg: Optional[HISSOTrainerConfig]) -> Optional[Dict[str
     return {
         "episode_length": int(cfg.episode_length),
         "episodes_per_batch": int(cfg.episodes_per_batch),
+        "episode_batch_size": (
+            int(cfg.episode_batch_size) if cfg.episode_batch_size is not None else None
+        ),
+        "updates_per_epoch": (
+            int(cfg.updates_per_epoch) if cfg.updates_per_epoch is not None else None
+        ),
         "primary_dim": int(cfg.primary_dim),
         "primary_transform": cfg.primary_transform,
         "random_state": cfg.random_state,
@@ -104,6 +110,10 @@ def _serialize_hisso_options(options: Optional[HISSOOptions]) -> Optional[Dict[s
         return None
     return {
         "episode_length": int(options.episode_length),
+        "batch_episodes": int(options.batch_episodes),
+        "updates_per_epoch": (
+            int(options.updates_per_epoch) if options.updates_per_epoch is not None else None
+        ),
         "transition_penalty": float(options.transition_penalty),
         "primary_transform": options.primary_transform,
         "reward_fn": options.reward_fn,
@@ -119,8 +129,13 @@ def _deserialize_hisso_options(data: Any) -> Optional[HISSOOptions]:
     if isinstance(data, HISSOOptions):
         return data
     if isinstance(data, Mapping):
+        updates_per_epoch_raw = data.get("updates_per_epoch")
         return HISSOOptions(
             episode_length=int(data.get("episode_length", 64)),
+            batch_episodes=int(data.get("batch_episodes", data.get("episodes_per_batch", 32))),
+            updates_per_epoch=(
+                int(updates_per_epoch_raw) if updates_per_epoch_raw is not None else None
+            ),
             transition_penalty=float(data.get("transition_penalty", 0.0)),
             primary_transform=str(data.get("primary_transform", "identity")),
             reward_fn=data.get("reward_fn"),
@@ -1765,6 +1780,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         noisy: Optional[NoiseSpec] = None,
         hisso: bool = False,
         hisso_window: Optional[int] = None,
+        hisso_batch_episodes: Optional[int] = None,
+        hisso_updates_per_epoch: Optional[int] = None,
         hisso_reward_fn: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
         hisso_context_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         hisso_primary_transform: Optional[str] = None,
@@ -1791,6 +1808,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
         - hisso_supervised: optional bool or dict to run a supervised warm start before HISSO (requires providing 'y')
         - hisso: if True, train via Horizon-Informed Sampling Strategy Optimization (episodic reward)
         - hisso_window: episode/window length for HISSO (default 64)
+        - hisso_batch_episodes: number of episodes sampled per HISSO optimizer update (default 32)
+        - hisso_updates_per_epoch: number of HISSO optimizer updates per epoch (defaults to compatibility schedule when omitted)
         - hisso_primary_transform: optional transform ('identity' | 'softmax' | 'tanh') applied to primary outputs before reward evaluation
         - hisso_transition_penalty: optional float penalty applied between HISSO steps (deprecated alias `hisso_trans_cost` still accepted)
         """
@@ -1830,6 +1849,8 @@ class PSANNRegressor(BaseEstimator, RegressorMixin):
             hisso=hisso,
             hisso_kwargs={
                 "hisso_window": hisso_window,
+                "hisso_batch_episodes": hisso_batch_episodes,
+                "hisso_updates_per_epoch": hisso_updates_per_epoch,
                 "hisso_reward_fn": hisso_reward_fn,
                 "hisso_context_extractor": hisso_context_extractor,
                 "hisso_primary_transform": hisso_primary_transform,
@@ -3793,6 +3814,8 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         noisy: Optional[NoiseSpec] = None,
         hisso: bool = False,
         hisso_window: Optional[int] = None,
+        hisso_batch_episodes: Optional[int] = None,
+        hisso_updates_per_epoch: Optional[int] = None,
         hisso_reward_fn: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
         hisso_context_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         hisso_primary_transform: Optional[str] = None,
@@ -3811,6 +3834,8 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
                 noisy=noisy,
                 hisso=False,
                 hisso_window=hisso_window,
+                hisso_batch_episodes=hisso_batch_episodes,
+                hisso_updates_per_epoch=hisso_updates_per_epoch,
                 hisso_reward_fn=hisso_reward_fn,
                 hisso_context_extractor=hisso_context_extractor,
                 hisso_primary_transform=hisso_primary_transform,
@@ -3838,6 +3863,8 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
             hisso=True,
             hisso_kwargs={
                 "hisso_window": hisso_window,
+                "hisso_batch_episodes": hisso_batch_episodes,
+                "hisso_updates_per_epoch": hisso_updates_per_epoch,
                 "hisso_reward_fn": hisso_reward_fn,
                 "hisso_context_extractor": hisso_context_extractor,
                 "hisso_primary_transform": hisso_primary_transform,

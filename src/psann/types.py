@@ -52,6 +52,8 @@ ScalerSpec = Union[str, TransformerProtocol]
 
 class HISSOFitParams(TypedDict, total=False):
     hisso_window: Optional[int]
+    hisso_batch_episodes: Optional[int]
+    hisso_updates_per_epoch: Optional[int]
     hisso_reward_fn: Optional[RewardFn]
     hisso_context_extractor: Optional[ContextExtractor]
     hisso_primary_transform: Optional[str]

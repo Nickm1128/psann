@@ -8,7 +8,7 @@ import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class ResultKey:
     dataset: str
     device: str
     variant: str
+    mode: str
 
 
 def _load_results(path: Path) -> Tuple[Mapping[str, object], Dict[ResultKey, Mapping[str, object]]]:
@@ -26,13 +27,26 @@ def _load_results(path: Path) -> Tuple[Mapping[str, object], Dict[ResultKey, Map
             dataset=str(entry.get("dataset") or data.get("metadata", {}).get("dataset", "")),
             device=str(entry.get("device")),
             variant=str(entry.get("variant")),
+            mode=str(entry.get("mode", "default")),
         )
         results[key] = entry
     return data, results
 
 
 def _format_key(key: ResultKey) -> str:
-    return f"{key.dataset}:{key.device}:{key.variant}"
+    return f"{key.dataset}:{key.device}:{key.variant}:{key.mode}"
+
+
+def _normalise_modes(value: Optional[Sequence[str] | str]) -> Optional[Tuple[str, ...]]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        parts = [item.strip().lower() for item in value.split(",") if item.strip()]
+    else:
+        parts = [str(item).strip().lower() for item in value if str(item).strip()]
+    if not parts:
+        return None
+    return tuple(dict.fromkeys(parts))
 
 
 def _approx_equal(
@@ -53,6 +67,7 @@ def compare_benchmarks(
     baseline: Path,
     candidate: Path,
     *,
+    modes: Optional[Sequence[str] | str],
     reward_rtol: float,
     reward_atol: float,
     wall_rtol: float,
@@ -61,6 +76,14 @@ def compare_benchmarks(
 ) -> List[str]:
     baseline_meta, baseline_results = _load_results(baseline)
     candidate_meta, candidate_results = _load_results(candidate)
+    selected_modes = _normalise_modes(modes)
+    if selected_modes is not None:
+        baseline_results = {
+            key: value for key, value in baseline_results.items() if key.mode in selected_modes
+        }
+        candidate_results = {
+            key: value for key, value in candidate_results.items() if key.mode in selected_modes
+        }
 
     messages: List[str] = []
 
@@ -89,6 +112,23 @@ def compare_benchmarks(
             if b_val != c_val:
                 messages.append(
                     f"{_format_key(key)} field '{field}' mismatch: baseline={b_val} candidate={c_val}"
+                )
+
+        for field in (
+            "configured_batch_episodes",
+            "configured_updates_per_epoch",
+            "resolved_episode_batch_size",
+            "resolved_updates_per_epoch",
+            "resolved_episodes_per_epoch",
+        ):
+            b_val = base_entry.get(field)
+            c_val = candidate_entry.get(field)
+            if b_val is None and c_val is None:
+                continue
+            if b_val != c_val:
+                messages.append(
+                    f"{_format_key(key)} schedule field '{field}' mismatch: "
+                    f"baseline={b_val} candidate={c_val}"
                 )
 
         if list(base_entry.get("feature_shape") or []) != list(
@@ -152,6 +192,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip variants that exist in baseline but not in candidate.",
     )
+    parser.add_argument(
+        "--modes",
+        type=str,
+        default=None,
+        help="Optional comma-separated schedule modes to compare (e.g., compat or compat,fast).",
+    )
     return parser.parse_args()
 
 
@@ -160,6 +206,7 @@ def main() -> None:
     failures = compare_benchmarks(
         args.baseline,
         args.candidate,
+        modes=args.modes,
         reward_rtol=float(args.reward_rtol),
         reward_atol=float(args.reward_atol),
         wall_rtol=float(args.wall_rtol),

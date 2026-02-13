@@ -162,6 +162,8 @@ def test_save_load_roundtrip_preserves_hisso_metadata(tmp_path):
         verbose=0,
         hisso=True,
         hisso_window=4,
+        hisso_batch_episodes=3,
+        hisso_updates_per_epoch=2,
         hisso_reward_fn=multiplicative_return_reward,
         hisso_primary_transform="tanh",
         hisso_transition_penalty=0.05,
@@ -194,8 +196,12 @@ def test_save_load_roundtrip_preserves_hisso_metadata(tmp_path):
     assert cfg_after.primary_dim == cfg_before.primary_dim
     assert cfg_after.primary_transform == cfg_before.primary_transform
     assert cfg_after.episodes_per_batch == cfg_before.episodes_per_batch
+    assert cfg_after.episode_batch_size == cfg_before.episode_batch_size
+    assert cfg_after.updates_per_epoch == cfg_before.updates_per_epoch
 
     assert options_after.primary_transform == options_before.primary_transform
+    assert options_after.batch_episodes == options_before.batch_episodes
+    assert options_after.updates_per_epoch == options_before.updates_per_epoch
     assert options_after.transition_penalty == pytest.approx(options_before.transition_penalty)
     if isinstance(options_after.supervised, Mapping):
         assert isinstance(options_before.supervised, Mapping)

@@ -383,6 +383,8 @@ model.fit(X, targets, verbose=1)  # supervised warm start
 finance = get_reward_strategy("finance")
 options = HISSOOptions.from_kwargs(
     window=64,
+    batch_episodes=8,
+    updates_per_epoch=4,
     reward_fn=finance.reward_fn,
     context_extractor=finance.context_extractor,
     primary_transform="softmax",
@@ -396,6 +398,8 @@ model.fit(
     y=None,
     hisso=True,
     hisso_window=options.episode_length,
+    hisso_batch_episodes=options.batch_episodes,
+    hisso_updates_per_epoch=options.updates_per_epoch,
     hisso_reward_fn=options.reward_fn,
     hisso_context_extractor=options.context_extractor,
     hisso_primary_transform=options.primary_transform,
@@ -406,6 +410,8 @@ model.fit(
 ```
 
 `HISSOOptions` keeps reward, context, noise, and transformation choices in one place. The estimator records the resolved options after fitting so helpers such as `psann.hisso_infer_series` and `psann.hisso_evaluate_reward` can reuse them.
+Suggested HISSO schedule presets: CPU start with `hisso_batch_episodes=8` / `hisso_updates_per_epoch=4`; CUDA start with `hisso_batch_episodes=16` / `hisso_updates_per_epoch=4` and scale batch episodes with available VRAM.
+If a custom `hisso_context_extractor` only accepts NumPy arrays, HISSO emits a one-time warning because the fallback path can introduce host/device transfers.
 
 ### Context builders
 
@@ -447,7 +453,7 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 
 ## HISSO at a glance
 
-1. Call `HISSOOptions.from_kwargs(...)` (or supply equivalent kwargs to `fit`) to resolve episode length, reward function, primary transform, transition penalty, context extractor, and optional noise.
+1. Call `HISSOOptions.from_kwargs(...)` (or supply equivalent kwargs to `fit`) to resolve episode length, schedule knobs (`batch_episodes`, `updates_per_epoch`), reward function, primary transform, transition penalty, context extractor, and optional noise.
 2. Provide `hisso_supervised` to run a warm-start supervised phase before episodic optimisation.
 3. `PSANNRegressor.fit(..., hisso=True, ...)` builds the episodic trainer using the shared fit pipeline.
 4. After training, `hisso_infer_series(estimator, series)` and `hisso_evaluate_reward(estimator, series, targets=None)` reuse the cached configuration to score new data.
@@ -476,6 +482,7 @@ Logging directories:
 - Colab/Runpod: prefer `/content/hisso_logs/` so artifacts persist in the notebook workspace or can be zipped for download.
 The CLI intentionally requires an explicit `--output-dir`; no implicit defaults are applied.
 When `device` points to a CUDA target and the config enables `mixed_precision`, the trainer switches to AMP + GradScaler automatically.
+For schedule tuning in YAML configs, set `hisso.batch_episodes` and `hisso.updates_per_epoch` (both optional; omitted values keep compatibility defaults).
 
 Looking for a guided walkthrough? Use the paired notebooks (both ship with Colab badges):
 - `notebooks/HISSO_Logging_CLI_Walkthrough.ipynb` – CPU-first dry run with TODO placeholders.

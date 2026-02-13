@@ -22,6 +22,8 @@ def _write_config(path: Path) -> None:
         "hisso": {
             "enabled": True,
             "window": 12,
+            "batch_episodes": 3,
+            "updates_per_epoch": 2,
             "primary_transform": "softmax",
             "transition_penalty": 0.05,
             "mixed_precision": False,
@@ -88,6 +90,9 @@ def test_hisso_logging_cli_emits_metrics(tmp_path):
     assert hisso_metrics is not None
     assert hisso_metrics["best_epoch"] in (1, None)
     assert hisso_metrics["throughput_eps_per_sec"] is not None
+    profile = hisso_metrics.get("profile", {})
+    assert profile.get("episode_batch_size") == 3
+    assert profile.get("updates_per_epoch") == 2
     assert "portfolio_metrics" in metrics
 
     history_len = metrics.get("history_length", 0)
@@ -104,6 +109,8 @@ def test_hisso_logging_cli_emits_metrics(tmp_path):
 
     resolved_yaml = resolved_path.read_text(encoding="utf-8")
     assert "hisso:" in resolved_yaml
+    assert "batch_episodes:" in resolved_yaml
+    assert "updates_per_epoch:" in resolved_yaml
     assert "output_dir" in resolved_yaml
 
 

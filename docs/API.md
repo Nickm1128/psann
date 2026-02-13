@@ -57,11 +57,14 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 
 **HISSO configuration**
 - `hisso_window: int | None` - episode length when training with `hisso=True` (defaults to 64).
+- `hisso_batch_episodes: int | None` - number of episodes sampled per HISSO optimizer update (defaults to 32 when omitted).
+- `hisso_updates_per_epoch: int | None` - number of HISSO optimizer updates per epoch (defaults to compatibility behavior when omitted).
 - `hisso_reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None` - reward callback that consumes transformed primary outputs and context.
 - **Device tip:** HISSO runs entirely on the estimator’s current device. Set `device="cuda"` (or the desired `torch.device`) before calling `fit` to keep episodes on GPU, and supply float32 inputs/contexts to avoid host copies. On CPU-only machines that still install CUDA wheels the training loop is wrapped in a guard that suppresses `torch.cuda.is_current_stream_capturing()` failures when the runtime is missing, so HISSO can run without a GPU driver.
-- `hisso_context_extractor: Callable[[torch.Tensor], torch.Tensor] | None` - optional callable that derives context tensors from inputs; outputs are coerced onto the estimator’s device/dtype and aligned to the primary action width (singleton channels broadcast, wider contexts are trimmed or repeated). Temporal/episode mismatches raise a `ValueError` that reports both shapes.
+- `hisso_context_extractor: Callable[[torch.Tensor], torch.Tensor] | None` - optional callable that derives context tensors from inputs; outputs are coerced onto the estimator’s device/dtype and aligned to the primary action width (singleton channels broadcast, wider contexts are trimmed or repeated). Temporal/episode mismatches raise a `ValueError` that reports both shapes. If the extractor rejects tensor inputs and HISSO falls back to NumPy, a one-time runtime warning explains the potential host/device transfer cost and how to fix it.
 - `hisso_primary_transform: str | None` - transform applied to primary outputs before reward evaluation (`"identity"` | `"softmax"` | `"tanh"`).
-- `hisso_transition_penalty: float | None` - smoothness penalty applied between HISSO steps (alias `hisso_trans_cost` is tolerated for compatibility).
+- `hisso_transition_penalty: float | None` - smoothness penalty applied between HISSO steps (alias `hisso_trans_cost` is tolerated for compatibility). When the reward callback accepts `transition_penalty` (or legacy `trans_cost`), HISSO forwards this value automatically during training and `hisso_evaluate_reward`.
+- `stateful` / `state_reset` interaction: when `stateful=True`, HISSO mirrors supervised loop semantics (`state_reset="batch"` resets before each sampled episode, `"epoch"` resets once per epoch, `"none"` leaves state untouched). Staged state updates are committed after each HISSO optimizer step.
 - `hisso_supervised: Mapping[str, Any] | bool | None` - opt into a supervised warm start before HISSO (provide `{"y": targets}` to reuse labels).
 
 Predictive extras and their growth schedules have been removed; any legacy `extras_*` arguments are ignored with warnings.
@@ -79,6 +82,8 @@ def fit(
     noisy: Optional[NoiseSpec] = None,
     hisso: bool = False,
     hisso_window: Optional[int] = None,
+    hisso_batch_episodes: Optional[int] = None,
+    hisso_updates_per_epoch: Optional[int] = None,
     hisso_reward_fn: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
     hisso_context_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     hisso_primary_transform: Optional[str] = None,
@@ -96,6 +101,8 @@ def fit(
 - `validation_data`: `(X_val, y_val)` tuple used by early stopping; both arrays are coerced to `float32` internally.
 - `noisy`: optional Gaussian noise standard deviation applied to inputs during training (scalar or array-like).
 - `hisso`: switch to episodic Horizon-Informed Sampling Strategy Optimisation. When true the helper normalises reward/context/transform settings via `HISSOOptions.from_kwargs` before launching the episodic loop.
+- `hisso_batch_episodes` / `hisso_updates_per_epoch`: tune HISSO schedule (`episodes_per_batch` and update count) without changing model code.
+- Recommended starting presets: CPU `hisso_batch_episodes=8`, `hisso_updates_per_epoch=4`; CUDA `hisso_batch_episodes=16`, `hisso_updates_per_epoch=4` (increase batch size until memory limits).
 - `lr_max` / `lr_min`: optional bounds for one-cycle style schedulers.
 
 When HISSO is enabled and no targets are provided the primary dimension defaults to 1. If you provide `hisso_supervised={"y": targets}` the estimator runs a supervised warm start before episodic training.

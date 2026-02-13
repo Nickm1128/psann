@@ -152,4 +152,4 @@ def __dir__() -> list[str]:
     return sorted(list(globals().keys()) + list(_LAZY_ATTRS.keys()))
 
 
-__version__ = "0.12.2"
+__version__ = "0.12.3"

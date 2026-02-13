@@ -530,6 +530,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             fit_kwargs.update(
                 {
                     "hisso_window": hisso_cfg.get("window"),
+                    "hisso_batch_episodes": hisso_cfg.get(
+                        "batch_episodes", hisso_cfg.get("episodes_per_batch")
+                    ),
+                    "hisso_updates_per_epoch": hisso_cfg.get("updates_per_epoch"),
                     "hisso_reward_fn": reward_fn,
                     "hisso_context_extractor": context_extractor,
                     "hisso_primary_transform": hisso_cfg.get("primary_transform"),
@@ -664,12 +668,29 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 "hisso": {
                     "enabled": hisso_enabled,
                     "window": hisso_cfg.get("window"),
+                    "batch_episodes": hisso_cfg.get(
+                        "batch_episodes", hisso_cfg.get("episodes_per_batch")
+                    ),
+                    "updates_per_epoch": hisso_cfg.get("updates_per_epoch"),
                     "primary_transform": hisso_cfg.get("primary_transform"),
                     "transition_penalty": hisso_cfg.get("transition_penalty"),
                     "trans_cost": hisso_cfg.get("trans_cost"),
                     "episodes_per_batch": (
                         getattr(getattr(trainer, "cfg", None), "episodes_per_batch", None)
                         if trainer is not None
+                        else None
+                    ),
+                    "episode_batch_size": (
+                        getattr(getattr(trainer, "cfg", None), "episode_batch_size", None)
+                        if trainer is not None
+                        else None
+                    ),
+                    "resolved_updates_per_epoch": (
+                        int(getattr(getattr(trainer, "cfg", None), "resolved_updates_per_epoch")())
+                        if (
+                            trainer is not None
+                            and hasattr(getattr(trainer, "cfg", None), "resolved_updates_per_epoch")
+                        )
                         else None
                     ),
                     "mixed_precision": mixed_precision,

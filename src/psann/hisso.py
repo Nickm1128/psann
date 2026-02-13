@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import inspect
 import math
 import time
 import warnings
@@ -16,6 +17,8 @@ from .types import ArrayLike, ContextExtractor, NoiseSpec, RewardFn
 
 if TYPE_CHECKING:
     from .sklearn import PSANNRegressor
+
+_NUMPY_CONTEXT_FALLBACK_WARNED_IDS: set[int] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +73,8 @@ class HISSOOptions:
     """Canonical configuration for HISSO reward/context behaviour."""
 
     episode_length: int
+    batch_episodes: int
+    updates_per_epoch: Optional[int]
     transition_penalty: float
     primary_transform: str
     reward_fn: RewardFn
@@ -82,6 +87,8 @@ class HISSOOptions:
         cls,
         *,
         window: Optional[int],
+        batch_episodes: Optional[int],
+        updates_per_epoch: Optional[int],
         reward_fn: Optional[RewardFn],
         context_extractor: Optional[ContextExtractor],
         primary_transform: Optional[str],
@@ -91,6 +98,12 @@ class HISSOOptions:
         supervised: Optional[Mapping[str, Any] | bool],
     ) -> "HISSOOptions":
         episode_length = 64 if window is None else max(1, int(window))
+        resolved_batch_episodes = (
+            max(1, int(batch_episodes)) if batch_episodes is not None else 32
+        )
+        resolved_updates_per_epoch = (
+            max(1, int(updates_per_epoch)) if updates_per_epoch is not None else None
+        )
 
         penalty_raw = transition_penalty if transition_penalty is not None else trans_cost
         penalty = float(penalty_raw) if penalty_raw is not None else 0.0
@@ -118,6 +131,8 @@ class HISSOOptions:
 
         return cls(
             episode_length=episode_length,
+            batch_episodes=resolved_batch_episodes,
+            updates_per_epoch=resolved_updates_per_epoch,
             transition_penalty=penalty,
             primary_transform=transform,
             reward_fn=resolved_reward,
@@ -136,11 +151,31 @@ class HISSOOptions:
         *,
         primary_dim: int,
         random_state: Optional[int],
-        episodes_per_batch: int = 32,
+        episode_batch_size: Optional[int] = None,
+        updates_per_epoch: Optional[int] = None,
     ) -> "HISSOTrainerConfig":
+        resolved_episode_batch = (
+            int(episode_batch_size) if episode_batch_size is not None else int(self.batch_episodes)
+        )
+        resolved_updates_per_epoch = (
+            int(updates_per_epoch) if updates_per_epoch is not None else self.updates_per_epoch
+        )
+        explicit_vectorized = resolved_updates_per_epoch is not None
+        if explicit_vectorized:
+            total_episodes = max(1, resolved_episode_batch * int(resolved_updates_per_epoch))
+            cfg_episode_batch_size: Optional[int] = max(1, resolved_episode_batch)
+        else:
+            total_episodes = max(1, resolved_episode_batch)
+            cfg_episode_batch_size = None
         return HISSOTrainerConfig(
             episode_length=int(self.episode_length),
-            episodes_per_batch=int(episodes_per_batch),
+            episodes_per_batch=int(total_episodes),
+            episode_batch_size=cfg_episode_batch_size,
+            updates_per_epoch=(
+                int(resolved_updates_per_epoch)
+                if resolved_updates_per_epoch is not None
+                else None
+            ),
             primary_dim=int(primary_dim),
             primary_transform=str(self.primary_transform),
             random_state=random_state,
@@ -204,16 +239,48 @@ def _call_context_extractor(
     if extractor is None:
         return inputs.detach()
 
+    fallback_to_numpy = False
     try:
         context = extractor(inputs)
     except TypeError as first_exc:
         if not isinstance(inputs, torch.Tensor):
             raise first_exc
+        fallback_to_numpy = True
         inputs_np = inputs.detach().cpu().numpy()
         try:
             context = extractor(inputs_np)
         except Exception as second_exc:  # pragma: no cover - defensive fallback
             raise first_exc from second_exc
+
+    if fallback_to_numpy:
+        warning_key = id(extractor)
+        if warning_key not in _NUMPY_CONTEXT_FALLBACK_WARNED_IDS:
+            _NUMPY_CONTEXT_FALLBACK_WARNED_IDS.add(warning_key)
+            stacklevel = 2
+            stack = inspect.stack()
+            try:
+                for idx, frame_info in enumerate(stack[1:], start=1):
+                    module_name = str(frame_info.frame.f_globals.get("__name__", ""))
+                    file_name = str(frame_info.filename).replace("\\", "/").lower()
+                    is_psann_module = (
+                        module_name in {"psann", "src.psann"}
+                        or module_name.startswith("psann.")
+                        or module_name.startswith("src.psann.")
+                        or "/src/psann/" in file_name
+                    )
+                    if not is_psann_module:
+                        stacklevel = idx + 1
+                        break
+            finally:
+                del stack
+            warnings.warn(
+                "HISSO context_extractor fell back to NumPy input after rejecting torch.Tensor; "
+                "this can trigger host/device transfers (especially on CUDA). "
+                "Update the extractor to accept torch.Tensor and return a tensor on the same "
+                "device/dtype.",
+                RuntimeWarning,
+                stacklevel=stacklevel,
+            )
 
     if isinstance(context, tuple):
         context = context[0]
@@ -297,6 +364,55 @@ def _align_context_for_reward(actions: torch.Tensor, context: torch.Tensor) -> t
     repeats = math.ceil(target_dim / ctx_dim)
     expanded = context.repeat_interleave(repeats, dim=-1)
     return expanded[..., :target_dim]
+
+
+def _resolve_reward_kwarg(reward_fn: RewardFn) -> Optional[str]:
+    """Detect whether the reward accepts transition penalty keywords."""
+
+    try:
+        sig = inspect.signature(reward_fn)
+    except (TypeError, ValueError):
+        return None
+
+    params = sig.parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()):
+        return "transition_penalty"
+
+    transition = params.get("transition_penalty")
+    if transition is not None and transition.kind in (
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    ):
+        return "transition_penalty"
+
+    legacy = params.get("trans_cost")
+    if legacy is not None and legacy.kind in (
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    ):
+        return "trans_cost"
+
+    return None
+
+
+def _compute_reward(
+    reward_fn: RewardFn,
+    reward_kwarg: Optional[str],
+    actions: torch.Tensor,
+    context: torch.Tensor,
+    *,
+    transition_penalty: float,
+) -> Any:
+    """Call reward functions with compatibility for transition penalty aliases."""
+
+    if reward_kwarg is None:
+        return reward_fn(actions, context)
+    penalty = float(transition_penalty or 0.0)
+    if reward_kwarg == "transition_penalty":
+        return reward_fn(actions, context, transition_penalty=penalty)
+    if reward_kwarg == "trans_cost":
+        return reward_fn(actions, context, trans_cost=penalty)
+    return reward_fn(actions, context, **{reward_kwarg: penalty})
 
 
 def coerce_warmstart_config(
@@ -435,6 +551,8 @@ class HISSOTrainerConfig:
 
     episode_length: int = 64
     episodes_per_batch: int = 32
+    episode_batch_size: Optional[int] = None
+    updates_per_epoch: Optional[int] = None
     primary_dim: int = 1
     primary_transform: str = "identity"
     random_state: Optional[int] = None
@@ -442,6 +560,29 @@ class HISSOTrainerConfig:
 
     def resolved_transition_penalty(self) -> float:
         return float(self.transition_penalty or 0.0)
+
+    def resolved_episode_batch_size(self) -> int:
+        if self.episode_batch_size is None:
+            return 1
+        return max(1, int(self.episode_batch_size))
+
+    def resolved_updates_per_epoch(self) -> int:
+        if self.updates_per_epoch is not None:
+            return max(1, int(self.updates_per_epoch))
+        total_episodes = max(1, int(self.episodes_per_batch))
+        batch_size = self.resolved_episode_batch_size()
+        return max(1, math.ceil(total_episodes / batch_size))
+
+    def episodes_in_update(self, update_idx: int) -> int:
+        batch_size = self.resolved_episode_batch_size()
+        if self.updates_per_epoch is not None and self.episode_batch_size is not None:
+            return batch_size
+        total_episodes = max(1, int(self.episodes_per_batch))
+        consumed = int(update_idx) * batch_size
+        remaining = total_episodes - consumed
+        if remaining <= 0:
+            return 0
+        return min(batch_size, remaining)
 
 
 class HISSOTrainer:
@@ -457,6 +598,8 @@ class HISSOTrainer:
         reward_fn: Optional[RewardFn],
         context_extractor: Optional[ContextExtractor],
         input_noise_std: Optional[float],
+        stateful: bool = False,
+        state_reset: str = "batch",
         use_amp: bool = False,
         amp_dtype: Optional[torch.dtype] = None,
     ) -> None:
@@ -464,16 +607,29 @@ class HISSOTrainer:
         self.cfg = cfg
         self.device = device
         self.reward_fn = reward_fn or _default_reward_fn
+        self._reward_kwarg = _resolve_reward_kwarg(self.reward_fn)
         self.context_extractor = context_extractor
         self.input_noise_std = float(input_noise_std) if input_noise_std is not None else None
         self.primary_dim = int(cfg.primary_dim)
+        self.stateful = bool(stateful)
+        state_reset_value = str(state_reset or "batch").lower()
+        if state_reset_value not in {"batch", "epoch", "none"}:
+            raise ValueError(
+                f"Unsupported state_reset '{state_reset}'. Expected one of {{'batch', 'epoch', 'none'}}."
+            )
+        self.state_reset = state_reset_value
+        legacy_episodes_per_epoch = max(1, int(cfg.episodes_per_batch))
+        episode_batch_size = int(cfg.resolved_episode_batch_size())
+        updates_per_epoch = int(cfg.resolved_updates_per_epoch())
         self.history: list[dict[str, Any]] = []
         self.profile: dict[str, Any] = {
             "device": str(device),
             "epochs": 0,
             "total_time_s": 0.0,
             "episode_length": int(cfg.episode_length),
-            "batch_episodes": int(cfg.episodes_per_batch),
+            "batch_episodes": legacy_episodes_per_epoch,
+            "episode_batch_size": episode_batch_size,
+            "updates_per_epoch": updates_per_epoch,
             "dataset_bytes": 0,
             "dataset_transfer_batches": 0,
             "dataset_numpy_to_tensor_time_s": 0.0,
@@ -481,6 +637,11 @@ class HISSOTrainer:
             "episodes_sampled": 0,
             "episode_view_is_shared": None,
             "episode_time_s_total": 0.0,
+            "episode_gather_time_s_total": 0.0,
+            "forward_time_s_total": 0.0,
+            "reward_time_s_total": 0.0,
+            "backward_time_s_total": 0.0,
+            "optimizer_time_s_total": 0.0,
             "amp_enabled": False,
             "amp_dtype": None,
         }
@@ -533,15 +694,23 @@ class HISSOTrainer:
                 "dataset_transfer_batches": 1,
                 "dataset_numpy_to_tensor_time_s": max(numpy_to_tensor_time, 0.0),
                 "dataset_transfer_time_s": max(host_to_device_time, 0.0),
+                "episode_batch_size": int(self.cfg.resolved_episode_batch_size()),
+                "updates_per_epoch": int(self.cfg.resolved_updates_per_epoch()),
                 "episodes_sampled": 0,
                 "episode_view_is_shared": None,
                 "episode_time_s_total": 0.0,
+                "episode_gather_time_s_total": 0.0,
+                "forward_time_s_total": 0.0,
+                "reward_time_s_total": 0.0,
+                "backward_time_s_total": 0.0,
+                "optimizer_time_s_total": 0.0,
             }
         )
 
         episode_len = max(1, int(self.cfg.episode_length))
         total_steps = int(x_tensor.shape[0])
         episode_len = min(episode_len, total_steps)
+        single_window_only = total_steps <= episode_len
 
         self.model.to(self.device)
         self.history.clear()
@@ -549,18 +718,34 @@ class HISSOTrainer:
         with _guard_cuda_capture():
             for epoch_idx in range(max(1, int(epochs))):
                 self.model.train()
+                self._reset_state_if_needed("epoch")
                 epoch_start = time.perf_counter()
 
                 total_reward = 0.0
                 episode_count = 0
                 epoch_episode_time = 0.0
-
-                for start in self._episode_starts(total_steps, episode_len):
-                    end = start + episode_len
-                    episode = x_tensor[start:end]
+                updates_per_epoch = 1 if single_window_only else int(self.cfg.resolved_updates_per_epoch())
+                for update_idx in range(updates_per_epoch):
+                    if single_window_only:
+                        episode_batch = 1
+                    else:
+                        episode_batch = int(self.cfg.episodes_in_update(update_idx))
+                    if episode_batch <= 0:
+                        continue
 
                     batch_start = time.perf_counter()
-                    inputs = episode
+                    self._reset_state_if_needed("batch")
+                    gather_start = time.perf_counter()
+                    episodes, is_shared = self._sample_episode_batch(
+                        x_tensor,
+                        total_steps=total_steps,
+                        episode_length=episode_len,
+                        count=episode_batch,
+                    )
+                    gather_elapsed = time.perf_counter() - gather_start
+                    self.profile["episode_gather_time_s_total"] += gather_elapsed
+
+                    inputs = episodes
                     if self.input_noise_std:
                         noise = torch.randn_like(inputs) * float(self.input_noise_std)
                         inputs = inputs + noise
@@ -573,43 +758,54 @@ class HISSOTrainer:
                     )
                     self.optimizer.zero_grad(set_to_none=True)
                     with amp_ctx:
-                        outputs = self.model(inputs)
+                        forward_start = time.perf_counter()
+                        model_inputs = inputs.reshape(
+                            episode_batch * episode_len, *tuple(inputs.shape[2:])
+                        )
+                        outputs = self.model(model_inputs)
                         if isinstance(outputs, tuple):
                             outputs = outputs[0]
+                        if outputs.ndim == 1:
+                            outputs = outputs.reshape(-1, 1)
                         if outputs.ndim > 2:
                             outputs = outputs.view(outputs.shape[0], -1)
+                        outputs_bt = outputs.reshape(episode_batch, episode_len, -1)
+                        primary = self._apply_primary_transform(outputs_bt)
+                        self.profile["forward_time_s_total"] += time.perf_counter() - forward_start
 
-                        primary = self._apply_primary_transform(outputs)
+                        reward_start = time.perf_counter()
                         reward_tensor = self._coerce_reward(primary, context)
+                        self.profile["reward_time_s_total"] += time.perf_counter() - reward_start
                         loss = -reward_tensor.mean()
 
+                    backward_start = time.perf_counter()
                     if self.use_amp:
                         if self.scaler is None:  # pragma: no cover - defensive
                             raise RuntimeError("AMP enabled but GradScaler is unavailable.")
                         self.scaler.scale(loss).backward()
                         self.scaler.unscale_(self.optimizer)
                         clip_grad_norm_(self.model.parameters(), 1.0)
+                        self.profile["backward_time_s_total"] += time.perf_counter() - backward_start
+                        optim_start = time.perf_counter()
                         self.scaler.step(self.optimizer)
                         self.scaler.update()
                     else:
                         loss.backward()
                         clip_grad_norm_(self.model.parameters(), 1.0)
+                        self.profile["backward_time_s_total"] += time.perf_counter() - backward_start
+                        optim_start = time.perf_counter()
                         self.optimizer.step()
+                    self.profile["optimizer_time_s_total"] += time.perf_counter() - optim_start
+                    self._commit_state_if_any()
 
-                    total_reward += float(reward_tensor.detach().mean().item())
-                    episode_count += 1
+                    total_reward += float(reward_tensor.detach().mean().item()) * float(episode_batch)
+                    episode_count += int(episode_batch)
                     self.profile["episodes_sampled"] = (
-                        int(self.profile.get("episodes_sampled", 0)) + 1
+                        int(self.profile.get("episodes_sampled", 0)) + int(episode_batch)
                     )
 
                     if self.profile.get("episode_view_is_shared") is None:
-                        base_ptr = _storage_ptr(x_tensor)
-                        episode_ptr = _storage_ptr(episode)
-                        self.profile["episode_view_is_shared"] = (
-                            base_ptr is not None
-                            and episode_ptr is not None
-                            and base_ptr == episode_ptr
-                        )
+                        self.profile["episode_view_is_shared"] = bool(is_shared)
 
                     epoch_episode_time += time.perf_counter() - batch_start
 
@@ -635,14 +831,55 @@ class HISSOTrainer:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _episode_starts(self, total_steps: int, episode_length: int) -> Iterable[int]:
+    def _reset_state_if_needed(self, cadence: str) -> None:
+        if not self.stateful:
+            return
+        if self.state_reset != cadence:
+            return
+        if hasattr(self.model, "reset_state"):
+            try:
+                self.model.reset_state()
+            except Exception:
+                pass
+
+    def _commit_state_if_any(self) -> None:
+        if hasattr(self.model, "commit_state_updates"):
+            try:
+                self.model.commit_state_updates()
+            except Exception:
+                pass
+
+    def _sample_episode_batch(
+        self,
+        x_tensor: torch.Tensor,
+        *,
+        total_steps: int,
+        episode_length: int,
+        count: int,
+    ) -> tuple[torch.Tensor, bool]:
+        if count <= 0:
+            raise ValueError("episode batch size must be positive.")
         if total_steps <= episode_length:
-            return [0]
+            if count == 1:
+                return x_tensor[:episode_length].unsqueeze(0), True
+            episodes = x_tensor[:episode_length].unsqueeze(0).repeat(
+                count, *([1] * (x_tensor.ndim))
+            )
+            return episodes, False
+
         max_start = total_steps - episode_length
-        count = max(1, int(self.cfg.episodes_per_batch))
         starts = self._rng.integers(0, max_start + 1, size=count, endpoint=False)
-        starts_arr = np.atleast_1d(starts)
-        return [int(val) for val in starts_arr]
+        starts_arr = np.asarray(starts, dtype=np.int64).reshape(count)
+        if count == 1:
+            start = int(starts_arr[0])
+            return x_tensor[start : start + episode_length].unsqueeze(0), True
+
+        starts_t = torch.from_numpy(starts_arr).to(device=x_tensor.device)
+        offsets = torch.arange(episode_length, device=x_tensor.device, dtype=torch.int64)
+        indices = starts_t.unsqueeze(1) + offsets.unsqueeze(0)
+        gathered = x_tensor.index_select(0, indices.reshape(-1))
+        episodes = gathered.reshape(count, episode_length, *tuple(x_tensor.shape[1:]))
+        return episodes, False
 
     def _extract_context(self, inputs: torch.Tensor) -> torch.Tensor:
         return _call_context_extractor(self.context_extractor, inputs)
@@ -660,25 +897,40 @@ class HISSOTrainer:
     def _coerce_reward(self, primary: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
         actions = primary
         ctx = context
-        if ctx.ndim > 2:
-            ctx = ctx.reshape(ctx.shape[0], -1)
+        if actions.ndim > 3:
+            actions = actions.reshape(actions.shape[0], actions.shape[1], -1)
+        if ctx.ndim > 3:
+            ctx = ctx.reshape(ctx.shape[0], ctx.shape[1], -1)
         if actions.ndim == 1:
-            actions = actions.unsqueeze(0).unsqueeze(-1)
+            actions = actions.reshape(1, actions.shape[0], 1)
         elif actions.ndim == 2:
             actions = actions.unsqueeze(0)
         if ctx.ndim == 1:
-            ctx = ctx.unsqueeze(0).unsqueeze(-1)
+            ctx = ctx.reshape(1, ctx.shape[0], 1)
         elif ctx.ndim == 2:
-            ctx = ctx.unsqueeze(0)
+            if actions.ndim == 3 and ctx.shape[0] == actions.shape[0] and ctx.shape[1] == actions.shape[1]:
+                ctx = ctx.unsqueeze(-1)
+            elif actions.ndim == 3 and ctx.shape[0] == actions.shape[1]:
+                ctx = ctx.unsqueeze(0)
+            else:
+                ctx = ctx.unsqueeze(0)
         ctx = ctx.to(device=actions.device, dtype=actions.dtype)
         ctx = _align_context_for_reward(actions, ctx)
-        reward = self.reward_fn(actions, ctx)
+        reward = _compute_reward(
+            self.reward_fn,
+            self._reward_kwarg,
+            actions,
+            ctx,
+            transition_penalty=self.cfg.resolved_transition_penalty(),
+        )
         if isinstance(reward, torch.Tensor):
             reward_tensor = reward
         else:
             reward_tensor = torch.as_tensor(reward, dtype=torch.float32, device=primary.device)
         if reward_tensor.ndim == 0:
             reward_tensor = reward_tensor.reshape(1)
+        elif reward_tensor.ndim > 1:
+            reward_tensor = reward_tensor.reshape(reward_tensor.shape[0], -1).mean(dim=1)
         return reward_tensor
 
 
@@ -716,6 +968,8 @@ def run_hisso_training(
         reward_fn=reward_fn,
         context_extractor=context_fn,
         input_noise_std=input_noise_std,
+        stateful=bool(getattr(estimator, "stateful", False)),
+        state_reset=str(getattr(estimator, "state_reset", "batch")),
         use_amp=use_amp,
         amp_dtype=amp_dtype,
     )
@@ -842,7 +1096,19 @@ def hisso_evaluate_reward(
         context_t = context_t.reshape(context_t.shape[0], -1)
     context_t = _align_context_for_reward(primary_t, context_t)
 
-    reward = reward_fn(primary_t, context_t)
+    transition_penalty = 0.0
+    if cfg is not None:
+        transition_penalty = cfg.resolved_transition_penalty()
+    elif options is not None:
+        transition_penalty = float(options.transition_penalty or 0.0)
+    reward_kwarg = _resolve_reward_kwarg(reward_fn)
+    reward = _compute_reward(
+        reward_fn,
+        reward_kwarg,
+        primary_t,
+        context_t,
+        transition_penalty=transition_penalty,
+    )
     if isinstance(reward, torch.Tensor):
         reward_val = float(reward.mean().detach().cpu().item())
     else:
@@ -858,11 +1124,17 @@ def ensure_hisso_trainer_config(
     if isinstance(value, HISSOTrainerConfig):
         return value
     if isinstance(value, Mapping):
+        episode_batch_size_raw = value.get("episode_batch_size", None)
+        updates_per_epoch_raw = value.get("updates_per_epoch", None)
         return HISSOTrainerConfig(
             episode_length=int(value.get("episode_length", 64)),
             episodes_per_batch=int(
                 value.get("episodes_per_batch", value.get("batch_episodes", 32))
             ),
+            episode_batch_size=(
+                int(episode_batch_size_raw) if episode_batch_size_raw is not None else None
+            ),
+            updates_per_epoch=int(updates_per_epoch_raw) if updates_per_epoch_raw is not None else None,
             primary_dim=int(value.get("primary_dim", 1)),
             primary_transform=str(value.get("primary_transform", "identity")),
             random_state=value.get("random_state", None),

@@ -210,6 +210,8 @@ def normalise_fit_args(
     if hisso:
         hisso_options = HISSOOptions.from_kwargs(
             window=hisso_kwargs.get("hisso_window"),
+            batch_episodes=hisso_kwargs.get("hisso_batch_episodes"),
+            updates_per_epoch=hisso_kwargs.get("hisso_updates_per_epoch"),
             reward_fn=hisso_kwargs.get("hisso_reward_fn"),
             context_extractor=hisso_kwargs.get("hisso_context_extractor"),
             primary_transform=hisso_kwargs.get("hisso_primary_transform"),
