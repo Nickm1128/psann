@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run GeoSparse vs dense ReLU regression benchmarks with parameter matching."""
+"""Run GeoSparse activation variants vs dense ReLU regression benchmarks."""
 
 from __future__ import annotations
 
@@ -47,6 +47,7 @@ DATASET_NAMES = [
     "real_diabetes",
     "real_linnerud",
 ]
+DEFAULT_GEO_ACTIVATIONS = "psann,relu_sigmoid_psann"
 
 
 @dataclass
@@ -66,6 +67,10 @@ def seed_all(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def _parse_csv(value: str) -> List[str]:
+    return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
 def resolve_geo_shape(input_dim: int, shape: Optional[Tuple[int, int]] = None) -> Tuple[int, int]:
@@ -194,7 +199,11 @@ def count_geosparse_params(
     k: int,
     shape: Optional[Tuple[int, int]],
     activation_type: str,
+    activation_config_json: Optional[str] = None,
 ) -> int:
+    activation_config = (
+        json.loads(str(activation_config_json)) if activation_config_json is not None else None
+    )
     model = GeoSparseNet(
         int(input_dim),
         int(output_dim),
@@ -202,6 +211,7 @@ def count_geosparse_params(
         depth=int(depth),
         k=int(k),
         activation_type=activation_type,
+        activation_config=activation_config,
         norm="rms",
         drop_path_max=0.0,
         residual_alpha_init=0.0,
@@ -305,6 +315,8 @@ def match_dense_width_to_geosparse(
     geo_depth: int,
     geo_k: int,
     geo_shape: Optional[Tuple[int, int]],
+    geo_activation_type: str,
+    geo_activation_config_json: Optional[str],
     dense_depth: int,
     tol: float,
 ) -> Dict[str, Any]:
@@ -314,7 +326,8 @@ def match_dense_width_to_geosparse(
         depth=geo_depth,
         k=geo_k,
         shape=geo_shape,
-        activation_type="psann",
+        activation_type=geo_activation_type,
+        activation_config_json=geo_activation_config_json,
     )
     preferred = _best_dense_width_for_target(
         input_dim=input_dim,
@@ -393,6 +406,7 @@ def build_geosparse_estimator(
     geo_depth: int,
     geo_k: int,
     activation_type: str,
+    activation_config: Optional[Dict[str, Any]],
     amp: bool,
     amp_dtype: str,
     compile: bool,
@@ -409,6 +423,7 @@ def build_geosparse_estimator(
     return GeoSparseRegressor(
         hidden_layers=geo_depth,
         activation_type=activation_type,
+        activation=activation_config,
         shape=resolve_geo_shape(input_dim, shape),
         k=geo_k,
         compute_mode="gather",
@@ -597,6 +612,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", default=None)
     parser.add_argument("--geo-depth", type=int, default=4)
     parser.add_argument("--geo-k", type=int, default=8)
+    parser.add_argument(
+        "--geo-activations",
+        default=DEFAULT_GEO_ACTIVATIONS,
+        help=(
+            "Comma-separated GeoSparse activation types to benchmark "
+            "(e.g. psann,relu_sigmoid_psann)."
+        ),
+    )
+    parser.add_argument(
+        "--geo-activation-config",
+        default=None,
+        help="Optional JSON object forwarded as GeoSparseRegressor activation config.",
+    )
     parser.add_argument("--dense-depth", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--param-tol", type=float, default=0.01)
@@ -620,8 +648,33 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    dataset_list = [d.strip() for d in args.datasets.split(",") if d.strip()]
-    seeds = [int(s) for s in args.seeds.split(",") if s.strip()]
+    dataset_list = _parse_csv(args.datasets)
+    seeds = [int(s) for s in _parse_csv(args.seeds)]
+    geo_activations = _parse_csv(args.geo_activations)
+    if not geo_activations:
+        raise SystemExit("--geo-activations must include at least one activation type.")
+
+    geo_activation_config: Optional[Dict[str, Any]] = None
+    geo_activation_config_json: Optional[str] = None
+    if args.geo_activation_config:
+        try:
+            parsed = json.loads(str(args.geo_activation_config))
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"Invalid --geo-activation-config JSON: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise SystemExit("--geo-activation-config must decode to a JSON object.")
+        geo_activation_config = parsed
+        geo_activation_config_json = json.dumps(parsed, sort_keys=True)
+
+    if any(str(a).lower() == "mixed" for a in geo_activations):
+        raw = geo_activation_config or {}
+        types = raw.get("activation_types", raw.get("types"))
+        if not isinstance(types, list) or not types:
+            raise SystemExit(
+                "--geo-activations includes 'mixed' but --geo-activation-config is missing "
+                "'activation_types' (non-empty list)."
+            )
+
     if args.quick:
         seeds = seeds[:1]
         args.target_steps = min(args.target_steps, 150)
@@ -648,119 +701,125 @@ def main() -> int:
                 scale_y=args.scale_y,
             )
             input_dim = split.X_train.shape[1]
-            match = match_dense_width_to_geosparse(
-                input_dim=input_dim,
-                output_dim=1,
-                geo_depth=args.geo_depth,
-                geo_k=args.geo_k,
-                geo_shape=None,
-                dense_depth=args.dense_depth,
-                tol=args.param_tol,
-            )
-
-            def geo_factory(epochs: int) -> GeoSparseRegressor:
-                return build_geosparse_estimator(
+            for geo_activation in geo_activations:
+                geo_activation = str(geo_activation).strip()
+                geo_activation_key = geo_activation.lower().replace("-", "_")
+                match = match_dense_width_to_geosparse(
                     input_dim=input_dim,
-                    shape=None,
+                    output_dim=1,
                     geo_depth=args.geo_depth,
                     geo_k=args.geo_k,
-                    activation_type="psann",
-                    amp=bool(args.amp),
-                    amp_dtype=str(args.amp_dtype),
-                    compile=bool(args.compile),
-                    compile_backend=str(args.compile_backend),
-                    compile_mode=str(args.compile_mode),
-                    compile_fullgraph=bool(args.compile_fullgraph),
-                    compile_dynamic=bool(args.compile_dynamic),
-                    device=args.device,
-                    seed=seed,
-                    epochs=epochs,
-                    batch_size=args.batch_size,
-                    lr=args.lr,
+                    geo_shape=None,
+                    geo_activation_type=geo_activation,
+                    geo_activation_config_json=geo_activation_config_json,
+                    dense_depth=args.dense_depth,
+                    tol=args.param_tol,
                 )
 
-            def dense_factory(epochs: int) -> PSANNRegressor:
-                return build_dense_estimator(
-                    dense_depth=match["dense_depth"],
-                    dense_width=match["dense_width"],
-                    amp=bool(args.amp),
-                    amp_dtype=str(args.amp_dtype),
-                    compile=bool(args.compile),
-                    compile_backend=str(args.compile_backend),
-                    compile_mode=str(args.compile_mode),
-                    compile_fullgraph=bool(args.compile_fullgraph),
-                    compile_dynamic=bool(args.compile_dynamic),
-                    device=args.device,
-                    seed=seed,
-                    epochs=epochs,
-                    batch_size=args.batch_size,
-                    lr=args.lr,
-                )
+                def geo_factory(epochs: int) -> GeoSparseRegressor:
+                    return build_geosparse_estimator(
+                        input_dim=input_dim,
+                        shape=None,
+                        geo_depth=args.geo_depth,
+                        geo_k=args.geo_k,
+                        activation_type=geo_activation,
+                        activation_config=geo_activation_config,
+                        amp=bool(args.amp),
+                        amp_dtype=str(args.amp_dtype),
+                        compile=bool(args.compile),
+                        compile_backend=str(args.compile_backend),
+                        compile_mode=str(args.compile_mode),
+                        compile_fullgraph=bool(args.compile_fullgraph),
+                        compile_dynamic=bool(args.compile_dynamic),
+                        device=args.device,
+                        seed=seed,
+                        epochs=epochs,
+                        batch_size=args.batch_size,
+                        lr=args.lr,
+                    )
 
-            warmup_fit(
-                geo_factory,
-                split.X_train,
-                split.y_train,
-                split.X_val,
-                split.y_val,
-                warmup_samples=args.warmup_samples,
-                warmup_epochs=args.warmup_epochs,
-            )
-            warmup_fit(
-                dense_factory,
-                split.X_train,
-                split.y_train,
-                split.X_val,
-                split.y_val,
-                warmup_samples=args.warmup_samples,
-                warmup_epochs=args.warmup_epochs,
-            )
+                def dense_factory(epochs: int) -> PSANNRegressor:
+                    return build_dense_estimator(
+                        dense_depth=match["dense_depth"],
+                        dense_width=match["dense_width"],
+                        amp=bool(args.amp),
+                        amp_dtype=str(args.amp_dtype),
+                        compile=bool(args.compile),
+                        compile_backend=str(args.compile_backend),
+                        compile_mode=str(args.compile_mode),
+                        compile_fullgraph=bool(args.compile_fullgraph),
+                        compile_dynamic=bool(args.compile_dynamic),
+                        device=args.device,
+                        seed=seed,
+                        epochs=epochs,
+                        batch_size=args.batch_size,
+                        lr=args.lr,
+                    )
 
-            for model_name, factory in (
-                ("geosparse_psann", geo_factory),
-                ("dense_relu", dense_factory),
-            ):
-                timing = fit_with_timing(
-                    factory,
+                warmup_fit(
+                    geo_factory,
                     split.X_train,
                     split.y_train,
                     split.X_val,
                     split.y_val,
-                    batch_size=args.batch_size,
-                    target_steps=args.target_steps,
-                    progress_every_steps=args.progress_every,
-                    timing_warmup_epochs=(
-                        int(args.timing_warmup_epochs) if bool(args.compile) else 0
-                    ),
+                    warmup_samples=args.warmup_samples,
+                    warmup_epochs=args.warmup_epochs,
                 )
-                metrics = evaluate_regression(timing["model"], split)
-                results.append(
-                    {
-                        "dataset": dataset_name,
-                        "model": model_name,
-                        "seed": seed,
-                        "task": task,
-                        "params": match["target_params"]
-                        if model_name == "geosparse_psann"
-                        else match["dense_params"],
-                        "geo_depth": int(args.geo_depth),
-                        "geo_k": int(args.geo_k),
-                        "dense_depth": int(match["dense_depth"]),
-                        "dense_width": int(match["dense_width"]),
-                        "target_params": int(match["target_params"]),
-                        "dense_params": int(match["dense_params"]),
-                        "rel_mismatch": match["rel_mismatch"],
-                        **metrics,
-                        "train_time_s": timing["train_time_s"],
-                        "train_time_total_s": timing["train_time_total_s"],
-                        "steps_per_sec": timing["steps_per_sec"],
-                        "samples_per_sec": timing["samples_per_sec"],
-                        "epochs": timing["epochs"],
-                        "warmup_epochs": timing["warmup_epochs"],
-                        "total_steps": timing["total_steps"],
-                        "timed_steps": timing["timed_steps"],
-                    }
+                warmup_fit(
+                    dense_factory,
+                    split.X_train,
+                    split.y_train,
+                    split.X_val,
+                    split.y_val,
+                    warmup_samples=args.warmup_samples,
+                    warmup_epochs=args.warmup_epochs,
                 )
+
+                for model_name, factory in (
+                    (f"geosparse_{geo_activation_key}", geo_factory),
+                    (f"dense_relu_match_{geo_activation_key}", dense_factory),
+                ):
+                    timing = fit_with_timing(
+                        factory,
+                        split.X_train,
+                        split.y_train,
+                        split.X_val,
+                        split.y_val,
+                        batch_size=args.batch_size,
+                        target_steps=args.target_steps,
+                        progress_every_steps=args.progress_every,
+                        timing_warmup_epochs=(
+                            int(args.timing_warmup_epochs) if bool(args.compile) else 0
+                        ),
+                    )
+                    metrics = evaluate_regression(timing["model"], split)
+                    is_geo_model = str(model_name).startswith("geosparse_")
+                    results.append(
+                        {
+                            "dataset": dataset_name,
+                            "model": model_name,
+                            "seed": seed,
+                            "task": task,
+                            "geo_activation": geo_activation,
+                            "params": match["target_params"] if is_geo_model else match["dense_params"],
+                            "geo_depth": int(args.geo_depth),
+                            "geo_k": int(args.geo_k),
+                            "dense_depth": int(match["dense_depth"]),
+                            "dense_width": int(match["dense_width"]),
+                            "target_params": int(match["target_params"]),
+                            "dense_params": int(match["dense_params"]),
+                            "rel_mismatch": match["rel_mismatch"],
+                            **metrics,
+                            "train_time_s": timing["train_time_s"],
+                            "train_time_total_s": timing["train_time_total_s"],
+                            "steps_per_sec": timing["steps_per_sec"],
+                            "samples_per_sec": timing["samples_per_sec"],
+                            "epochs": timing["epochs"],
+                            "warmup_epochs": timing["warmup_epochs"],
+                            "total_steps": timing["total_steps"],
+                            "timed_steps": timing["timed_steps"],
+                        }
+                    )
 
     results_path = out_dir / "results.jsonl"
     with results_path.open("w", encoding="utf-8") as f:

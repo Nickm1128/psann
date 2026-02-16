@@ -121,6 +121,23 @@ def test_residual_conv2d_segmentation_vs_pooled_outputs() -> None:
     assert pooled_out.shape == (3, 7)
 
 
+def test_conv_net_supports_relu_sigmoid_psann_activation() -> None:
+    x = torch.randn(2, 3, 9, 9)
+    net = PSANNConv2dNet(
+        in_channels=3,
+        out_dim=4,
+        hidden_layers=2,
+        conv_channels=12,
+        hidden_channels=None,
+        kernel_size=3,
+        activation_type="relu_sigmoid_psann",
+        act_kw={"slope_init": 1.0, "clip_max": 1.0},
+        segmentation_head=False,
+    )
+    out = net(x)
+    assert out.shape == (2, 4)
+
+
 @pytest.mark.parametrize(
     ("net_cls", "kwargs"),
     [

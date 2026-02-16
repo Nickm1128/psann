@@ -16,7 +16,7 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `hidden_width: int | None` - deprecated alias for `hidden_units`; conflicts emit a warning and the canonical `hidden_units` value wins (automatically normalised by `set_params`).
 - `w0: float = 30.0` - SIREN-style initialisation scale.
 - `activation: ActivationConfig | None` - forwarded to `SineParam`.
-- `activation_type: str = "psann" | "relu" | "tanh"` - nonlinearity per block.
+- `activation_type: str = "psann" | "relu" | "tanh" | "relu_sigmoid_psann"` - nonlinearity per block.
 - `attention: dict | AttentionConfig | None` - optional token attention module (e.g. `{"kind": "mha", "num_heads": 4}`) that activates when inputs are sequences shaped `(batch, timesteps, features)` or preserved spatial tensors. Flattened inputs currently require `lsm=None`, while preserve-shape paths (including `per_element=True`) treat each spatial location as a token. Defaults to `"none"` which preserves historical behaviour.
 
 **Training**

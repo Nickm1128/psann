@@ -6,10 +6,19 @@ import torch
 import torch.nn as nn
 
 from ._aliases import resolve_int_alias
-from .activations import PhaseSineParam, SineParam
+from .activations import PhaseSineParam, ReLUSigmoidPSANN, SineParam
 from .layers.spectral import SpectralGate1D
 from .state import StateConfig, StateController, ensure_state_config
 from .utils import init_siren_linear_
+
+
+def _normalize_base_activation_type(activation_type: str) -> str:
+    key = str(activation_type).strip().lower()
+    if key in {"sine", "respsann"}:
+        return "psann"
+    if key in {"rspsann", "rsp", "clipped_psann"}:
+        return "relu_sigmoid_psann"
+    return key
 
 
 class RMSNorm(nn.Module):
@@ -57,7 +66,7 @@ class ResidualPSANNBlock(nn.Module):
     ) -> None:
         super().__init__()
         self.dim = int(dim)
-        self.activation_type = activation_type.lower()
+        self.activation_type = _normalize_base_activation_type(activation_type)
         act_kw = act_kw or {}
         if norm == "layer":
             self.norm = nn.LayerNorm(self.dim)
@@ -71,6 +80,9 @@ class ResidualPSANNBlock(nn.Module):
         if self.activation_type == "psann":
             self.act1 = SineParam(self.dim, **act_kw)
             self.act2 = SineParam(self.dim, **act_kw)
+        elif self.activation_type == "relu_sigmoid_psann":
+            self.act1 = ReLUSigmoidPSANN(self.dim, **act_kw)
+            self.act2 = ReLUSigmoidPSANN(self.dim, **act_kw)
         elif self.activation_type == "relu":
             self.act1 = nn.ReLU()
             self.act2 = nn.ReLU()
@@ -78,7 +90,9 @@ class ResidualPSANNBlock(nn.Module):
             self.act1 = nn.Tanh()
             self.act2 = nn.Tanh()
         else:
-            raise ValueError("activation_type must be one of: 'psann', 'relu', 'tanh'")
+            raise ValueError(
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+            )
 
         init_siren_linear_(self.fc1, is_first=False, w0=w0_hidden)
         init_siren_linear_(self.fc2, is_first=False, w0=w0_hidden)
@@ -184,15 +198,19 @@ class PSANNBlock(nn.Module):
         super().__init__()
         act_kw = act_kw or {}
         self.linear = nn.Linear(in_features, out_features)
-        self.activation_type = activation_type.lower()
+        self.activation_type = _normalize_base_activation_type(activation_type)
         if self.activation_type == "psann":
             self.act = SineParam(out_features, **act_kw)
+        elif self.activation_type == "relu_sigmoid_psann":
+            self.act = ReLUSigmoidPSANN(out_features, **act_kw)
         elif self.activation_type == "relu":
             self.act = nn.ReLU()
         elif self.activation_type == "tanh":
             self.act = nn.Tanh()
         else:
-            raise ValueError("activation_type must be one of: 'psann', 'relu', 'tanh'")
+            raise ValueError(
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+            )
         cfg = ensure_state_config(state_cfg)
         self.state_ctrl = StateController(out_features, **cfg.to_kwargs()) if cfg else None
         self.enable_state_updates = True
@@ -308,7 +326,7 @@ class SGRPSANNBlock(nn.Module):
         act_kw.pop("phase_init", None)
         act_kw.pop("phase_trainable", None)
         self.linear = nn.Linear(in_features, out_features)
-        activation_type = activation_type.lower()
+        activation_type = _normalize_base_activation_type(activation_type)
         if activation_type != "psann":
             raise ValueError("SGRPSANNBlock requires activation_type='psann'.")
         self.act = PhaseSineParam(
@@ -369,7 +387,7 @@ class SGRPSANNSequenceNet(nn.Module):
         if token_dim <= 0:
             raise ValueError("token_dim must be positive")
         act_kw = act_kw or {}
-        activation_type = activation_type.lower()
+        activation_type = _normalize_base_activation_type(activation_type)
         if activation_type != "psann":
             raise ValueError("SGRPSANNSequenceNet requires activation_type='psann'.")
         pool = str(pool).lower()

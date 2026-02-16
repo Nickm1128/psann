@@ -401,6 +401,18 @@ MODELS: Dict[str, ModelSpec] = {
         estimator=ResPSANNRegressor,
         params={"hidden_layers": 4, "hidden_units": 64, "norm": "rms", "drop_path_max": 0.0},
     ),
+    "res_relu_sigmoid_psann": ModelSpec(
+        name="res_relu_sigmoid_psann",
+        estimator=ResPSANNRegressor,
+        params={
+            "hidden_layers": 4,
+            "hidden_units": 64,
+            "norm": "rms",
+            "drop_path_max": 0.0,
+            "activation_type": "relu_sigmoid_psann",
+            "activation": {"slope_init": 1.0, "clip_max": 1.0},
+        },
+    ),
     "res_drop_path": ModelSpec(
         name="res_drop_path",
         estimator=ResPSANNRegressor,
@@ -845,7 +857,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--models",
         type=str,
-        default="res_base,res_drop_path,res_no_norm,wrn_base,wrn_no_phase,wrn_no_film,wrn_spec_gate_rfft,wrn_spec_gate_feats,sgr_base,sgr_no_gate,sgr_fourier_feats,sgr_no_phase",
+        default="res_base,res_relu_sigmoid_psann,res_drop_path,res_no_norm,wrn_base,wrn_no_phase,wrn_no_film,wrn_spec_gate_rfft,wrn_spec_gate_feats,sgr_base,sgr_no_gate,sgr_fourier_feats,sgr_no_phase",
         help="Comma-separated model keys to run.",
     )
     parser.add_argument(

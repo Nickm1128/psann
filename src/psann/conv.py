@@ -7,8 +7,17 @@ import torch
 import torch.nn as nn
 
 from ._aliases import resolve_int_alias
-from .activations import SineParam
+from .activations import ReLUSigmoidPSANN, SineParam
 from .utils import init_siren_linear_
+
+
+def _normalize_conv_activation_type(activation_type: str) -> str:
+    key = str(activation_type).strip().lower()
+    if key in {"sine", "respsann"}:
+        return "psann"
+    if key in {"rspsann", "rsp", "clipped_psann"}:
+        return "relu_sigmoid_psann"
+    return key
 
 
 class _PSANNConvBlockNd(nn.Module):
@@ -23,16 +32,21 @@ class _PSANNConvBlockNd(nn.Module):
         super().__init__()
         self.conv = conv
         act_kw = dict(act_kw or {})
-        activation_type = activation_type.lower()
+        activation_type = _normalize_conv_activation_type(activation_type)
         if activation_type == "psann":
             act_kw.setdefault("feature_dim", 1)  # channel dimension
             self.act = SineParam(out_channels, **act_kw)
+        elif activation_type == "relu_sigmoid_psann":
+            act_kw.setdefault("feature_dim", 1)  # channel dimension
+            self.act = ReLUSigmoidPSANN(out_channels, **act_kw)
         elif activation_type == "relu":
             self.act = nn.ReLU()
         elif activation_type == "tanh":
             self.act = nn.Tanh()
         else:
-            raise ValueError("activation_type must be one of: 'psann', 'relu', 'tanh'")
+            raise ValueError(
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         z = self.conv(x)
@@ -331,9 +345,9 @@ class ResidualPSANNConvBlock2d(nn.Module):
     ) -> None:
         super().__init__()
         self.channels = int(channels)
-        activation_type = activation_type.lower()
+        activation_type = _normalize_conv_activation_type(activation_type)
         act_kw = dict(act_kw or {})
-        if activation_type == "psann":
+        if activation_type in {"psann", "relu_sigmoid_psann"}:
             act_kw.setdefault("feature_dim", 1)
         padding = kernel_size // 2 if kernel_size > 1 else 0
         self.norm = (
@@ -350,6 +364,9 @@ class ResidualPSANNConvBlock2d(nn.Module):
         if activation_type == "psann":
             self.act1 = SineParam(self.channels, **act_kw)
             self.act2 = SineParam(self.channels, **act_kw)
+        elif activation_type == "relu_sigmoid_psann":
+            self.act1 = ReLUSigmoidPSANN(self.channels, **act_kw)
+            self.act2 = ReLUSigmoidPSANN(self.channels, **act_kw)
         elif activation_type == "relu":
             self.act1 = nn.ReLU()
             self.act2 = nn.ReLU()
@@ -357,7 +374,9 @@ class ResidualPSANNConvBlock2d(nn.Module):
             self.act1 = nn.Tanh()
             self.act2 = nn.Tanh()
         else:
-            raise ValueError("activation_type must be one of: 'psann', 'relu', 'tanh'")
+            raise ValueError(
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+            )
         _init_siren_conv_(self.conv1, is_first=False, w0=w0_hidden)
         _init_siren_conv_(self.conv2, is_first=False, w0=w0_hidden)
         self.drop_path = _DropPath(drop_path)
@@ -417,7 +436,8 @@ class ResidualPSANNConv2dNet(nn.Module):
         self.out_dim = int(out_dim)
         self.segmentation_head = bool(segmentation_head)
         act_kw = dict(act_kw or {})
-        if activation_type.lower() == "psann":
+        normalized_activation_type = _normalize_conv_activation_type(activation_type)
+        if normalized_activation_type in {"psann", "relu_sigmoid_psann"}:
             act_kw.setdefault("feature_dim", 1)
         self.in_proj = nn.Conv2d(int(in_channels), channels, kernel_size=1)
         _init_siren_conv_(self.in_proj, is_first=True, w0=w0_first)
@@ -433,7 +453,7 @@ class ResidualPSANNConv2dNet(nn.Module):
                     channels,
                     kernel_size=ks,
                     act_kw=act_kw,
-                    activation_type=activation_type,
+                    activation_type=normalized_activation_type,
                     w0_hidden=w0_hidden,
                     norm=norm,
                     drop_path=dp,

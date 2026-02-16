@@ -709,7 +709,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--pattern", type=str, default="local", choices=["local", "random", "hash"])
     p.add_argument("--radius", type=int, default=1, help="Neighborhood radius for connectivity.")
     p.add_argument("--wrap-mode", type=str, default="clamp", choices=["clamp", "wrap"])
-    p.add_argument("--sparse-activation", type=str, default="psann")
+    p.add_argument(
+        "--sparse-activation",
+        type=str,
+        default="psann",
+        help=(
+            "GeoSparse activation type (e.g. psann, relu, tanh, mixed, "
+            "relu_sigmoid_psann)."
+        ),
+    )
     p.add_argument(
         "--activation-config",
         type=str,
@@ -780,9 +788,11 @@ def parse_args() -> argparse.Namespace:
 
 def _activation_param_multiplier(activation_type: str) -> int:
     key = str(activation_type).lower()
-    if key == "psann":
+    if key in {"psann", "sine", "respsann"}:
         return 3
     if key == "phase_psann":
+        return 4
+    if key in {"relu_sigmoid_psann", "rspsann", "rsp", "clipped_psann"}:
         return 4
     return 0
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from psann.activations import MixedActivation, SineParam
+from psann.activations import MixedActivation, ReLUSigmoidPSANN, SineParam
 
 
 def test_mixed_activation_defaults_to_equal_ratios() -> None:
@@ -53,4 +53,20 @@ def test_mixed_activation_trains_sine_params_when_present() -> None:
     assert sine._A.grad is not None
     assert sine._f.grad is not None
     assert sine._d.grad is not None
+
+
+def test_mixed_activation_supports_relu_sigmoid_psann() -> None:
+    act = MixedActivation(
+        12,
+        activation_types=["relu_sigmoid_psann", "relu"],
+        activation_ratios=[0.5, 0.5],
+    )
+    assert "relu_sigmoid_psann" in act.acts
+    assert isinstance(act.acts["relu_sigmoid_psann"], ReLUSigmoidPSANN)
+
+    x = torch.randn(3, 12, requires_grad=True)
+    y = act(x).sum()
+    y.backward()
+    mixed = act.acts["relu_sigmoid_psann"]
+    assert mixed._slope.grad is not None
 

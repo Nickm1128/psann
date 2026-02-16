@@ -6,7 +6,7 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 import torch
 from torch import nn
 
-from .activations import MixedActivation, PhaseSineParam, SineParam
+from .activations import MixedActivation, PhaseSineParam, ReLUSigmoidPSANN, SineParam
 from .layers.geo_sparse import GeoSparseLinear, build_geo_connectivity
 from .layers.sine_residual import RMSNorm
 from .nn import DropPath
@@ -149,7 +149,13 @@ def _build_activation(
     out_features: int,
     activation_config: Optional[ActivationConfig | Mapping[str, Any]],
 ) -> nn.Module:
-    act = activation_type.lower()
+    act = str(activation_type).strip().lower()
+    if act in {"sine", "respsann"}:
+        act = "psann"
+    elif act in {"phasepsann"}:
+        act = "phase_psann"
+    elif act in {"rspsann", "rsp", "clipped_psann"}:
+        act = "relu_sigmoid_psann"
     cfg, phase_cfg = _normalize_activation_config(out_features, activation_config)
     if act == "mixed":
         raw = _as_mapping(activation_config)
@@ -185,9 +191,14 @@ def _build_activation(
                 **cfg_n,
             )
 
+        def _build_relu_sigmoid_psann(n: int) -> nn.Module:
+            cfg_n = _normalize_relu_sigmoid_psann_config(n, activation_config)
+            return ReLUSigmoidPSANN(n, **cfg_n)
+
         builders = {
             "psann": _build_psann,
             "phase_psann": _build_phase_psann,
+            "relu_sigmoid_psann": _build_relu_sigmoid_psann,
         }
         return MixedActivation(
             out_features,
@@ -212,8 +223,12 @@ def _build_activation(
         return nn.ReLU()
     if act == "tanh":
         return nn.Tanh()
+    if act == "relu_sigmoid_psann":
+        rsp_cfg = _normalize_relu_sigmoid_psann_config(out_features, activation_config)
+        return ReLUSigmoidPSANN(out_features, **rsp_cfg)
     raise ValueError(
-        "activation_type must be one of: 'psann', 'phase_psann', 'mixed', 'relu', 'tanh'"
+        "activation_type must be one of: 'psann', 'phase_psann', 'mixed', "
+        "'relu', 'tanh', 'relu_sigmoid_psann'"
     )
 
 
@@ -286,6 +301,31 @@ def _normalize_activation_config(
         "phase_trainable": bool(raw.get("phase_trainable", True)),
     }
     return cfg, phase_cfg
+
+
+def _normalize_relu_sigmoid_psann_config(
+    out_features: int,
+    activation_config: Optional[ActivationConfig | Mapping[str, Any]],
+) -> dict:
+    raw = _as_mapping(activation_config)
+    cfg, _ = _normalize_activation_config(out_features, activation_config)
+
+    slope_init = raw.get("slope_init", raw.get("relu_slope_init", 1.0))
+    slope_init = _maybe_sample_init(
+        out_features, slope_init, raw, "slope_init_std", "slope_range"
+    )
+    if slope_init is None:
+        slope_init = 1.0
+    cfg["slope_init"] = slope_init
+    if "slope_trainable" in raw:
+        cfg["slope_trainable"] = bool(raw["slope_trainable"])
+    elif "slope_learnable" in raw:
+        cfg["slope_trainable"] = bool(raw["slope_learnable"])
+    if "clip_max" in raw:
+        cfg["clip_max"] = float(raw["clip_max"])
+    elif "clip_at" in raw:
+        cfg["clip_max"] = float(raw["clip_at"])
+    return cfg
 
 
 def _as_mapping(cfg: Optional[ActivationConfig | Mapping[str, Any]]) -> dict:

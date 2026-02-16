@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from psann.activations import PhaseSineParam, SineParam
+from psann.activations import PhaseSineParam, ReLUSigmoidPSANN, SineParam
 from psann.layers.geo_sparse import (
     GeoSparseLinear,
     build_geo_connectivity,
@@ -169,6 +169,30 @@ def test_geo_sparse_mixed_activation_builds_and_trains_sine_subset() -> None:
     y.backward()
     sine = block.act.acts["psann"]
     assert sine._A.grad is not None
+
+
+def test_geo_sparse_relu_sigmoid_psann_activation_config() -> None:
+    features = 6
+    indices = torch.arange(features).repeat(features, 1)
+    block = GeoSparseResidualBlock(
+        features,
+        indices,
+        activation_type="relu_sigmoid_psann",
+        activation_config={
+            "slope_init": 0.7,
+            "slope_trainable": True,
+            "clip_max": 1.0,
+            "amp_init": 0.5,
+            "freq_init": 1.2,
+            "damp_init": 0.2,
+        },
+        norm="none",
+    )
+    assert isinstance(block.act, ReLUSigmoidPSANN)
+    x = torch.randn(3, features, requires_grad=True)
+    y = block(x).sum()
+    y.backward()
+    assert block.act._slope.grad is not None
 
 
 def test_param_helpers_and_matcher() -> None:

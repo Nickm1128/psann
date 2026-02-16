@@ -25,6 +25,9 @@ class ActivationConfig(TypedDict, total=False):
     learnable: Iterable[str] | str
     decay_mode: str
     bounds: dict[str, Tuple[Optional[float], Optional[float]]]
+    slope_init: float
+    slope_trainable: bool
+    clip_max: float
 
 
 LossCallable = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]

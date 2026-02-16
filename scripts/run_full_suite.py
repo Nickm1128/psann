@@ -271,7 +271,11 @@ def parse_args() -> argparse.Namespace:
     )
     ap.add_argument("--geo-sweep-depths", type=str, default="4,8")
     ap.add_argument("--geo-sweep-ks", type=str, default="4,8,16")
-    ap.add_argument("--geo-sweep-activations", type=str, default="relu,psann,mixed")
+    ap.add_argument(
+        "--geo-sweep-activations",
+        type=str,
+        default="relu,psann,relu_sigmoid_psann,mixed",
+    )
     ap.add_argument("--geo-sweep-seeds", type=str, default="0,1,2")
     ap.add_argument("--geo-sweep-epochs", type=int, default=10)
     ap.add_argument("--geo-sweep-batch-size", type=int, default=128)

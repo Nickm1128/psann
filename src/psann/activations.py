@@ -15,6 +15,29 @@ def _softplus_inverse(x: torch.Tensor, beta: float = 1.0) -> torch.Tensor:
     return torch.log(torch.expm1(beta * x).clamp_min(eps)) / beta
 
 
+def _as_positive_init_vector(
+    value: float | torch.Tensor, out_features: int, *, name: str
+) -> torch.Tensor:
+    if isinstance(value, torch.Tensor):
+        t = value.detach().to(device="cpu", dtype=torch.float32).flatten()
+    else:
+        t = torch.as_tensor(value, dtype=torch.float32).flatten()
+
+    if t.numel() == 0:
+        raise ValueError(f"{name}_init must be a scalar or a tensor with {out_features} elements")
+    if t.numel() == 1:
+        t = torch.full((out_features,), float(t.item()), dtype=torch.float32)
+    elif t.numel() != out_features:
+        raise ValueError(
+            f"{name}_init must be a scalar or have shape ({out_features},); got {tuple(t.shape)}"
+        )
+    else:
+        t = t.reshape(out_features)
+
+    eps = torch.finfo(t.dtype).eps
+    return t.clamp_min(eps)
+
+
 class SineParam(nn.Module):
     """Sine activation with learnable amplitude A, frequency f, and decay d.
 
@@ -53,30 +76,10 @@ class SineParam(nn.Module):
         self.bounds = bounds or {}
         self.feature_dim = int(feature_dim)
 
-        def _as_init_vector(value: float | torch.Tensor, *, name: str) -> torch.Tensor:
-            if isinstance(value, torch.Tensor):
-                t = value.detach().to(device="cpu", dtype=torch.float32).flatten()
-            else:
-                t = torch.as_tensor(value, dtype=torch.float32).flatten()
-
-            if t.numel() == 0:
-                raise ValueError(f"{name}_init must be a scalar or a tensor with {self.out_features} elements")
-            if t.numel() == 1:
-                t = torch.full((self.out_features,), float(t.item()), dtype=torch.float32)
-            elif t.numel() != self.out_features:
-                raise ValueError(
-                    f"{name}_init must be a scalar or have shape ({self.out_features},); got {tuple(t.shape)}"
-                )
-            else:
-                t = t.reshape(self.out_features)
-
-            eps = torch.finfo(t.dtype).eps
-            return t.clamp_min(eps)
-
         # Store raw parameters as vectors (out_features,); broadcast in forward
-        A0 = _as_init_vector(amplitude_init, name="amplitude")
-        f0 = _as_init_vector(frequency_init, name="frequency")
-        d0 = _as_init_vector(decay_init, name="decay")
+        A0 = _as_positive_init_vector(amplitude_init, self.out_features, name="amplitude")
+        f0 = _as_positive_init_vector(frequency_init, self.out_features, name="frequency")
+        d0 = _as_positive_init_vector(decay_init, self.out_features, name="decay")
 
         # Use softplus inverse for a stable starting point
         self._A = nn.Parameter(_softplus_inverse(A0))
@@ -185,11 +188,75 @@ class PhaseSineParam(SineParam):
         return A * torch.exp(-d * g) * torch.sin(f * z + phi)
 
 
+class ReLUSigmoidPSANN(nn.Module):
+    """Hybrid activation that mixes ReLU, sigmoid, and PSANN.
+
+    For x < 0, output is exactly 0.
+    For x >= 0, apply a trainable-slope ReLU, modulate with sigmoid + PSANN,
+    then clip to [0, clip_max].
+    """
+
+    def __init__(
+        self,
+        out_features: int,
+        *,
+        slope_init: float | torch.Tensor = 1.0,
+        slope_trainable: bool = True,
+        clip_max: float = 1.0,
+        amplitude_init: float | torch.Tensor = 1.0,
+        frequency_init: float | torch.Tensor = 1.0,
+        decay_init: float | torch.Tensor = 0.1,
+        learnable: Iterable[str] | str = ("amplitude", "frequency", "decay"),
+        decay_mode: str = "abs",
+        bounds: Optional[Dict[str, Tuple[Optional[float], Optional[float]]]] = None,
+        feature_dim: int = -1,
+    ) -> None:
+        super().__init__()
+        if out_features <= 0:
+            raise ValueError("out_features must be positive")
+        if float(clip_max) <= 0.0:
+            raise ValueError("clip_max must be > 0")
+        self.out_features = int(out_features)
+        self.feature_dim = int(feature_dim)
+        self.clip_max = float(clip_max)
+
+        slope0 = _as_positive_init_vector(slope_init, self.out_features, name="slope")
+        self._slope = nn.Parameter(_softplus_inverse(slope0))
+        self._slope.requires_grad = bool(slope_trainable)
+
+        self.psann = SineParam(
+            self.out_features,
+            amplitude_init=amplitude_init,
+            frequency_init=frequency_init,
+            decay_init=decay_init,
+            learnable=learnable,
+            decay_mode=decay_mode,
+            bounds=bounds,
+            feature_dim=self.feature_dim,
+        )
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        slope = F.softplus(self._slope) + 1e-6
+        fd = self.feature_dim if self.feature_dim >= 0 else (z.ndim + self.feature_dim)
+        shape = [1] * z.ndim
+        shape[fd] = self.out_features
+        slope = slope.view(*shape)
+
+        z_pos = F.relu(z)
+        relu_term = slope * z_pos
+        psann_term = self.psann(z_pos)
+        mixed = relu_term * torch.sigmoid(relu_term + psann_term)
+        return mixed.clamp(min=0.0, max=self.clip_max)
+
+
 def _normalize_activation_name(name: str) -> str:
     key = str(name).strip().lower()
     aliases = {
         "sine": "psann",
         "respsann": "psann",
+        "rspsann": "relu_sigmoid_psann",
+        "rsp": "relu_sigmoid_psann",
+        "clipped_psann": "relu_sigmoid_psann",
     }
     return aliases.get(key, key)
 
@@ -308,6 +375,7 @@ class MixedActivation(nn.Module):
             "gelu": lambda n: nn.GELU(),
             "psann": lambda n: SineParam(n),
             "phase_psann": lambda n: PhaseSineParam(n),
+            "relu_sigmoid_psann": lambda n: ReLUSigmoidPSANN(n),
         }
         merged_builders = dict(default_builders)
         if builders:

@@ -136,7 +136,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--shapes", type=str, default="4x4,8x8", help="Comma list of HxW shapes.")
     p.add_argument("--depths", type=str, default="4,8", help="Comma list of depths.")
     p.add_argument("--ks", type=str, default="4,8,16", help="Comma list of k values.")
-    p.add_argument("--activations", type=str, default="relu,psann", help="Comma list of activations.")
+    p.add_argument(
+        "--activations",
+        type=str,
+        default="relu,psann,relu_sigmoid_psann",
+        help="Comma list of activations.",
+    )
     p.add_argument("--seeds", type=str, default="0,1", help="Comma list of seeds.")
     p.add_argument(
         "--task",

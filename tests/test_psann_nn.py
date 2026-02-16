@@ -5,6 +5,7 @@ from torch import nn
 
 import pytest
 
+from psann.activations import ReLUSigmoidPSANN
 from psann.nn import PSANNNet, PSANNBlock, ResidualPSANNBlock
 
 
@@ -89,3 +90,21 @@ def test_psann_net_state_commit_reset_and_disable_updates(rho: float, beta: floa
     net.set_state_updates(True)
     net(x)
     assert getattr(ctrl, "_pending_state", None) is not None
+
+
+def test_psann_net_supports_relu_sigmoid_psann_activation() -> None:
+    net = PSANNNet(
+        input_dim=3,
+        output_dim=2,
+        hidden_layers=1,
+        hidden_units=8,
+        hidden_width=None,
+        activation_type="relu_sigmoid_psann",
+        act_kw={"slope_init": 0.9, "clip_max": 1.0},
+    )
+    block = net.body[0]
+    assert isinstance(block, PSANNBlock)
+    assert isinstance(block.act, ReLUSigmoidPSANN)
+    x = torch.randn(5, 3)
+    out = net(x)
+    assert out.shape == (5, 2)
