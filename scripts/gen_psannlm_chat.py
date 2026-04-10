@@ -18,9 +18,8 @@ import argparse
 from typing import List
 
 import torch
-from transformers import AutoTokenizer
-
 from psannlm.lm import psannLM
+from transformers import AutoTokenizer
 
 
 def _log(msg: str) -> None:

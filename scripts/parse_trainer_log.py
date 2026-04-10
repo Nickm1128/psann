@@ -14,7 +14,6 @@ import re
 from pathlib import Path
 from typing import List
 
-
 LINE_RE = re.compile(
     r"epoch=(?P<epoch>\d+)\s+step=(?P<step>\d+)\s+loss=(?P<loss>[\d\.eE+-]+)\s+ppl=(?P<ppl>[\d\.eE+-]+)\s+lr=(?P<lr>[\d\.eE+-]+)\s+grad_norm=(?P<gn>[\d\.eE+-]+)\s+toks/step~(?P<toks>\d+)"
 )

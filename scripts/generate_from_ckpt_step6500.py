@@ -12,8 +12,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Iterable, List, Tuple
 
 import torch
@@ -23,8 +23,8 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from psannlm.lm import psannLM  # type: ignore  # noqa: E402
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig  # type: ignore  # noqa: E402
-from psannlm.lm.models.sine import SineConfig  # type: ignore  # noqa: E402
 from psannlm.lm.models.registry import get_base  # type: ignore  # noqa: E402
+from psannlm.lm.models.sine import SineConfig  # type: ignore  # noqa: E402
 
 
 def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:

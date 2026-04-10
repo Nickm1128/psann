@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-
 DEFAULT_CORPUS = Path("examples/lm/sample_texts.txt")
 
 
@@ -38,8 +37,9 @@ def measure_sentencepiece(
     vocab_size: int,
     character_coverage: float,
 ) -> Dict[str, float]:
-    import sentencepiece as spm  # type: ignore
     from tempfile import NamedTemporaryFile
+
+    import sentencepiece as spm  # type: ignore
 
     with NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
         for line in texts:

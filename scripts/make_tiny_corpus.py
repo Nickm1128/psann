@@ -14,7 +14,6 @@ import argparse
 import random
 from pathlib import Path
 
-
 SEED_PARAS = [
     "Once upon a time there was a tiny model that learned to predict the next token.",
     "The quick brown fox jumps over the lazy dog in the moonlight.",

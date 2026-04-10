@@ -4,18 +4,34 @@ Thanks for helping with the PSANN cleanup. This document captures the house rule
 
 ## Environment
 
-1. Create a virtual environment and install the project in editable mode (or run `make dev` from repo root):
+1. Preferred bootstrap from repo root:
+   ```bash
+   make dev
+   ```
+   `make dev` now uses the virtualenv's Python on both Windows and Unix-like systems, installs `psann` with `[dev]`, installs the local `psannlm` package, and enables pre-commit hooks.
+2. Manual bootstrap if `make` is unavailable:
+   Windows PowerShell:
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   python -m pip install --upgrade pip
+   python -m pip install -e .[dev]
+   python -m pip install -e ./psannlm
+   python -m pre_commit install
+   ```
+   macOS/Linux:
    ```bash
    python -m venv .venv
-   .\.venv\Scripts\Activate.ps1   # Windows PowerShell
-   # source .venv/bin/activate    # macOS/Linux
- pip install --upgrade pip
- pip install -e .[dev]
- ```
-2. The `[dev]` extra installs `pytest`, `ruff`, and `black`. Match the versions in `pyproject.toml`.
-3. Optional: enable pre-commit hooks for formatting and linting:
+   source .venv/bin/activate
+   python -m pip install --upgrade pip
+   python -m pip install -e .[dev]
+   python -m pip install -e ./psannlm
+   python -m pre_commit install
+   ```
+3. The `[dev]` extra installs `pytest`, `ruff`, and `black`. Match the versions in `pyproject.toml`.
+4. Optional: enable pre-commit hooks for formatting and linting if you skipped `make dev`:
    ```bash
-   pre-commit install
+   python -m pre_commit install
    ```
 
 ## Coding standards
@@ -33,6 +49,7 @@ make dev        # bootstrap venv + install deps + pre-commit
 make lint       # ruff + black + mypy
 make test-fast  # pytest (exclude slow + GPU)
 make build      # build both wheels
+python tools/repo_hygiene_audit.py --json  # flag tracked outputs + oversized Python files
 ```
 
 ## Testing
@@ -45,6 +62,8 @@ make build      # build both wheels
 
 - Keep `README.md`, `docs/examples/README.md`, and `docs/migration.md` aligned with the code. Mention the reward registry and `transition_penalty` terminology when documenting HISSO flows.
 - New docs live under `docs/`. Cross-link notable additions from the README and `pyproject` metadata where practical.
+- Route roadmap notes through `docs/backlog/` or `docs/archive/` instead of dropping new TODO files at repo root.
+- Use `docs/benchmarks/promotion_guide.md` when turning local run outputs into checked-in benchmark summaries, and keep alias terminology aligned with `docs/deprecation_policy.md`.
 - After each work session, update the relevant section in `docs/project_cleanup_todo.md` with a short status note and any blockers.
 - For new model bases, benchmarks, or datasets, follow `docs/how_to_add_model_benchmark_dataset.md`.
 

@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -250,8 +249,8 @@ def _make_sentencepiece_tokenizer(cfg: TokenizerConfig):
                 sp.load(self.cfg.model_path)
                 self.sp = sp
                 return
-            from tempfile import NamedTemporaryFile
             import os
+            from tempfile import NamedTemporaryFile
 
             with NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
                 for t in texts:
@@ -320,7 +319,7 @@ def _make_sentencepiece_tokenizer(cfg: TokenizerConfig):
 def _make_hf_tokenizers(cfg: TokenizerConfig):
     try:
         from tokenizers import Tokenizer as HFTokenizer  # type: ignore
-        from tokenizers import models, trainers, pre_tokenizers, normalizers
+        from tokenizers import models, normalizers, pre_tokenizers, trainers
     except Exception as e:
         raise ImportError(
             "Tokenizer backend 'tokenizers' requires the 'tokenizers' package.\n"
@@ -453,8 +452,8 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                 special_tokens=["[PAD]", "[BOS]", "[EOS]", "[UNK]"],
             )
             # Train from in-memory iterator by writing to temp file for simplicity
-            from tempfile import NamedTemporaryFile
             import os
+            from tempfile import NamedTemporaryFile
 
             with NamedTemporaryFile("w", delete=False, encoding="utf-8") as fh:
                 for t in texts:

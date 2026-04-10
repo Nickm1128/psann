@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
 import torch
-
 from psannlm.lm import psannLM, psannLMDataPrep
 
 

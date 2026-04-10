@@ -42,7 +42,7 @@ These are under active iteration; APIs may change and performance characteristic
   - Benchmark scripts and sweep harnesses under `scripts/` and `reports/`
 - **Language modeling**
   - Core LM library code lives in the separate `psannlm` distribution
-  - Training/CLI utilities live in `psannlm.lm.train.cli` (see below)
+  - `psannlm.train` remains the public LM training entrypoint and now delegates to `psannlm/_train/`
 
 If you depend on any experimental pieces, pin a version and expect breaking changes across minor releases.
 
@@ -69,14 +69,21 @@ We want the default install to be lighter and more newcomer-friendly.
 ## Repository Layout (Where Things Live)
 
 - `src/psann/` — the `psann` Python package (library code)
-  - `sklearn.py` — sklearn-style estimator implementations (core entry point for most users)
-  - `estimators/_fit_utils.py` — shared fit/input-scaling/validation plumbing
+  - `sklearn.py` — thin sklearn-style estimator facade (core entry point for most users)
+  - `_sklearn/` — internal estimator implementation modules split by concern
+  - `estimators/_fit_utils.py` — shared fit/input-scaling/validation plumbing used by the estimator package
   - `nn_geo_sparse.py` — GeoSparse backbone (experimental)
   - `lm/` — stub module that forwards users to `psannlm`
-- `psannlm/` — separate Python package and distribution providing LM APIs + training/CLI utilities
-- `tests/` — unit and integration tests for supported functionality
-- `docs/` — documentation (see `docs/README.md` for the index)
+- `psannlm/` – separate Python package and distribution providing LM APIs + training/CLI utilities
+  - `train.py` - thin compatibility facade for the LM training entrypoint
+  - `_train/` - internal LM CLI helpers split into data, tokenizer, export, and CLI wiring modules
+  - `eval_adapter.py` - active lm-eval adapter; the root `psann_adapter.py` file is now only a compatibility shim
+- `tests/` – unit and integration tests for supported functionality
+- `docs/` – documentation (see `docs/README.md` for the index)
+  - `backlog/` - active roadmap notes and research TODOs
+  - `archive/` - historical planning notes retained for traceability
 - `scripts/` — operational scripts (training, evaluation, sweeps); not shipped in the wheel
+  - large benchmark CLIs keep their historical filenames and delegate to nearby internal `scripts/_<tool>/` packages
 - `examples/` — runnable examples and configuration snippets
 - `reports/`, `runs/`, `eval_data/` — generated outputs (should not be committed; ignored by git)
 

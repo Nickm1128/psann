@@ -1,15 +1,18 @@
-# Backlog Inventory (Root + docs/backlog)
+# Backlog Inventory
 
 Canonical issue tracker: https://github.com/psann-project/psann/issues
 
-## Root-level TODO documents
+## Active planning docs
 
 - `docs/project_cleanup_todo.md` (active checklist; keep here)
-- `REPO_CLEANUP_TODO.md` (historical cleanup notes; keep as archive)
-- `psann_lm_todo.md` (LM roadmap; promote actionable items to GitHub issues)
-- `PSANN_LM_Module_TODO.txt` (LM module plan; keep as archive unless resurfacing items)
-- `psann_lm_3b_todo.md` (3B run plan; convert to issues if resuming)
-- `psann_sparse3d_todo.md` (Sparse-3D roadmap; convert to issues when active)
+- `docs/backlog/psann_lm_todo.md` (LM roadmap; promote actionable items to GitHub issues)
+- `docs/backlog/psann_lm_3b_todo.md` (3B run plan; convert to issues if resuming)
+- `docs/backlog/psann_sparse3d_todo.md` (Sparse-3D roadmap; convert to issues when active)
+
+## Historical notes
+
+- `docs/archive/REPO_CLEANUP_TODO.md` (historical cleanup notes; superseded by `docs/project_cleanup_todo.md`)
+- `docs/archive/PSANN_LM_Module_TODO.txt` (LM module plan; keep as archive unless resurfacing items)
 
 ## docs/backlog
 

@@ -19,11 +19,11 @@ import torch
 from torch import nn
 
 from .config import TrainConfig, normalize_positional_encoding
-from .models.registry import get_base
-from .data.tokenizer import Tokenizer, TokenizerConfig
 from .data.dataset import LMDataset
-from .train.trainer import Trainer
+from .data.tokenizer import Tokenizer, TokenizerConfig
+from .models.registry import get_base
 from .models.sine import SineConfig
+from .train.trainer import Trainer
 
 
 @dataclass

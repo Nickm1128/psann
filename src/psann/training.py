@@ -60,7 +60,12 @@ def run_training_loop(
         Callable[[int, float, Optional[float], bool, Optional[int]], None]
     ] = None,
 ) -> Tuple[list[dict], Optional[dict]]:
-    """Run the shared PSANN training loop."""
+    """Run the shared PSANN training loop.
+
+    Returns a tuple of ``(history, best_state)`` where ``history`` is a
+    per-epoch metrics list and ``best_state`` is the best CPU-cloned
+    ``state_dict`` captured for early stopping, when available.
+    """
 
     train_model = model
     state_model = model
@@ -193,9 +198,7 @@ def run_training_loop(
                 torch.cuda.synchronize()
             step_start = time.perf_counter()
             with amp_ctx:
-                pred = (
-                    train_model(xb, context_b) if context_b is not None else train_model(xb)
-                )
+                pred = train_model(xb, context_b) if context_b is not None else train_model(xb)
                 loss = loss_fn(pred, yb)
             loss_value = float(loss.detach().item())
             if not math.isfinite(loss_value):

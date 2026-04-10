@@ -10,7 +10,7 @@ next-token prediction.
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, Iterator, List, Optional, Callable
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import torch
 from datasets import load_dataset

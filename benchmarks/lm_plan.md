@@ -1,7 +1,7 @@
 PSANN-LM Benchmark Plan
 =======================
 
-This document captures the remaining benchmark tasks referenced in `psann_lm_todo.md`.
+This document captures the remaining benchmark tasks referenced in `docs/backlog/psann_lm_todo.md`.
 Each section lists the target inputs, commands, and expected artifacts so we can execute
 them quickly once GPUs are available.
 

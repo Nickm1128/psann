@@ -1,7 +1,7 @@
 """Run the full PSANN experiment suite and optionally commit results.
 
 Example:
-  python scripts/run_full_suite.py --device cuda --git-commit
+  python scripts/run_full_suite.py --device cuda
 """
 
 from __future__ import annotations
@@ -15,8 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
+GENERATED_OUTPUT_DIRS = {"reports", "runs", "outputs", "logs"}
 
 DEFAULT_MIXED_ACTIVATION_CONFIG: Dict[str, Any] = {
     "activation_types": ["psann", "relu"],
@@ -105,6 +105,14 @@ def _git_commit(repo_root: Path, paths: Iterable[Path], message: str, dry_run: b
     subprocess.check_call(["git", "commit", "-m", message], cwd=str(repo_root))
 
 
+def _is_generated_output_path(repo_root: Path, path: Path) -> bool:
+    try:
+        rel = path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return False
+    return bool(rel.parts) and rel.parts[0] in GENERATED_OUTPUT_DIRS
+
+
 def _dataset_paths(repo_root: Path) -> Dict[str, Path]:
     return {
         "jena": repo_root / "datasets" / "Jena Climate 2009-2016" / "jena_climate_2009_2016.csv",
@@ -112,7 +120,10 @@ def _dataset_paths(repo_root: Path) -> Dict[str, Path]:
         / "datasets"
         / "Beijing Air Quality"
         / "PRSA_Data_Guanyuan_20130301-20170228.csv",
-        "eaf": repo_root / "datasets" / "Industrial Data from the Electric Arc Furnace" / "eaf_temp.csv",
+        "eaf": repo_root
+        / "datasets"
+        / "Industrial Data from the Electric Arc Furnace"
+        / "eaf_temp.csv",
     }
 
 
@@ -192,14 +203,14 @@ def parse_args() -> argparse.Namespace:
         "--git-commit",
         dest="git_commit",
         action="store_true",
-        default=True,
-        help="Commit suite results to git (default).",
+        default=False,
+        help="Opt in to git-committing results stored outside generated-output directories.",
     )
     ap.add_argument(
         "--no-git-commit",
         dest="git_commit",
         action="store_false",
-        help="Do not commit suite results to git.",
+        help="Do not commit suite results to git (default).",
     )
     ap.add_argument(
         "--git-message",
@@ -232,8 +243,12 @@ def parse_args() -> argparse.Namespace:
         dest="light_probe_match_params",
         action="store_false",
     )
-    ap.add_argument("--light-probe-skip-deps", dest="light_probe_skip_deps", action="store_true", default=True)
-    ap.add_argument("--light-probe-no-skip-deps", dest="light_probe_skip_deps", action="store_false")
+    ap.add_argument(
+        "--light-probe-skip-deps", dest="light_probe_skip_deps", action="store_true", default=True
+    )
+    ap.add_argument(
+        "--light-probe-no-skip-deps", dest="light_probe_skip_deps", action="store_false"
+    )
     ap.add_argument(
         "--ablations-datasets",
         type=str,
@@ -294,7 +309,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_root = Path(args.out_root) if args.out_root else REPO_ROOT / "reports" / "full_suite" / stamp
+    out_root = (
+        Path(args.out_root) if args.out_root else REPO_ROOT / "reports" / "full_suite" / stamp
+    )
     out_root.mkdir(parents=True, exist_ok=True)
     log_path = out_root / "suite_output.txt"
 
@@ -498,6 +515,12 @@ def main() -> None:
     _write_json(out_root / "suite_manifest.json", suite_manifest)
 
     if args.git_commit:
+        if _is_generated_output_path(REPO_ROOT, out_root):
+            raise SystemExit(
+                "--git-commit cannot be used with generated-output directories under "
+                "reports/, runs/, outputs/, or logs/. Promote compact summaries to docs/benchmarks/ "
+                "or choose a versioned output path outside those trees."
+            )
         message = args.git_message or f"Add full suite results {stamp}"
         _git_commit(REPO_ROOT, [out_root], message, dry_run=args.dry_run)
 

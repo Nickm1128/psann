@@ -1,8 +1,8 @@
 """PSANN Language Modeling (LM) module package.
 
 Exposes the public API entry points `psannLM` and `psannLMDataPrep`.
-This is an initial scaffold; training, data, and generation internals
-will be added incrementally per the plan in `psann_lm_todo.md`.
+Training, data, and generation internals live under this package now; any
+remaining roadmap work is tracked in `docs/backlog/psann_lm_todo.md`.
 """
 
 from .api import psannLM, psannLMDataPrep

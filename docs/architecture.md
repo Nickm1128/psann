@@ -6,7 +6,8 @@ This document sketches the PSANN module layout and how data flows through the co
 
 ```
 psann/
-  sklearn.py                -> sklearn-style estimators (public surface)
+  sklearn.py                -> sklearn-style estimator facade (public surface)
+  _sklearn/                 -> base/scaling/builders/variant implementation modules
   estimators/_fit_utils.py  -> shared fit prep: scaling, shaping, hooks
   activations.py            -> PSANN/ResPSANN/SGR activations + configs
   layers/                   -> building blocks (sine residual, geo_sparse, etc.)
@@ -34,6 +35,8 @@ psannlm/                     -> separate distribution (LM training/CLI utilities
    - shared optimizer/scheduler logic
    - early stopping + validation hooks
 5. **Prediction** reuses prepared metadata for consistent output shapes.
+
+`psann.sklearn` stays as the stable import and checkpoint path, while the implementation lives in `psann._sklearn.*`.
 
 ## HISSO flow (episodic)
 

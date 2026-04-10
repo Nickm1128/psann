@@ -232,7 +232,7 @@ class PSANNNet(nn.Module):
         *,
         hidden_layers: int = 2,
         hidden_units: Optional[int] = None,
-        hidden_width: Optional[int] = 64,
+        hidden_width: Optional[int] = None,
         act_kw: Optional[Dict] = None,
         state_cfg: Optional[Dict] = None,
         activation_type: str = "psann",
@@ -367,7 +367,7 @@ class SGRPSANNSequenceNet(nn.Module):
         *,
         hidden_layers: int = 2,
         hidden_units: Optional[int] = None,
-        hidden_width: Optional[int] = 64,
+        hidden_width: Optional[int] = None,
         act_kw: Optional[Dict] = None,
         activation_type: str = "psann",
         w0: float = 30.0,
@@ -445,9 +445,7 @@ class SGRPSANNSequenceNet(nn.Module):
         if x.ndim == 2:
             expected = self.seq_len * self.token_dim
             if x.shape[1] != expected:
-                raise ValueError(
-                    f"Expected input with {expected} features, received {x.shape[1]}."
-                )
+                raise ValueError(f"Expected input with {expected} features, received {x.shape[1]}.")
             x = x.reshape(x.shape[0], self.seq_len, self.token_dim)
         elif x.ndim == 3:
             if x.shape[1] != self.seq_len or x.shape[2] != self.token_dim:

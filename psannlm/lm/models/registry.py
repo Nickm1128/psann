@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from typing import Callable, Dict
 
-
 _REGISTRY: Dict[str, Callable[..., object]] = {}
 
 

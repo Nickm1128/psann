@@ -17,22 +17,23 @@ Data handling:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Optional, Dict
 import os
 import time
-from functools import partial
 from collections import deque
+from contextlib import nullcontext
+from dataclasses import dataclass
+from functools import partial
+from typing import Any, Dict, Optional
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, IterableDataset
 from torch.optim.lr_scheduler import LambdaLR
-from contextlib import nullcontext
+from torch.utils.data import DataLoader, IterableDataset
+
+from psann.utils.hf_cache import cleanup_hf_cache
 
 from ..config import TrainConfig
 from ..data.dataset import collate_batch
-from ...utils.hf_cache import cleanup_hf_cache
 
 
 @dataclass
@@ -68,7 +69,10 @@ class Trainer:
         state_dict: Dict[str, Any]
         try:
             from torch.distributed.fsdp import FullyShardedDataParallel as FSDP  # type: ignore
-            from torch.distributed.fsdp.api import StateDictType, FullStateDictConfig  # type: ignore
+            from torch.distributed.fsdp.api import (  # type: ignore
+                FullStateDictConfig,
+                StateDictType,
+            )
 
             if isinstance(model, FSDP):  # type: ignore[arg-type]
                 cfg = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
@@ -191,6 +195,7 @@ class Trainer:
         teacher_model: Optional[nn.Module] = None,
     ) -> None:
         import math as _math
+
         from torch.nn import functional as F
 
         model.train()
@@ -232,9 +237,13 @@ class Trainer:
                 try:
                     from torch.distributed.fsdp import (
                         FullyShardedDataParallel as FSDP,
-                        ShardingStrategy,
                     )  # type: ignore
-                    from torch.distributed.fsdp.wrap import size_based_auto_wrap_policy  # type: ignore
+                    from torch.distributed.fsdp import (
+                        ShardingStrategy,
+                    )
+                    from torch.distributed.fsdp.wrap import (
+                        size_based_auto_wrap_policy,  # type: ignore
+                    )
 
                     auto_wrap = None
                     if str(getattr(self.cfg, "fsdp_auto_wrap_policy", "size")).lower() == "size":
@@ -448,7 +457,9 @@ class Trainer:
                     print("[trainer] torch.compile requested but DDP/FSDP is enabled; skipping.")
             elif not hasattr(torch, "compile"):
                 if is_main:
-                    print("[trainer] torch.compile requested but torch.compile is unavailable; skipping.")
+                    print(
+                        "[trainer] torch.compile requested but torch.compile is unavailable; skipping."
+                    )
             else:
                 mode = str(getattr(self.cfg, "torch_compile_mode", "default") or "default").strip()
                 fullgraph = bool(getattr(self.cfg, "torch_compile_fullgraph", False))
@@ -467,7 +478,9 @@ class Trainer:
                     compiled_enabled = True
                 except Exception as exc:
                     if is_main:
-                        print(f"[trainer] torch.compile failed ({exc}); continuing without compile.")
+                        print(
+                            f"[trainer] torch.compile failed ({exc}); continuing without compile."
+                        )
                     compiled_enabled = False
 
         # Optional: free unused cached memory after init/compile so other processes
@@ -574,9 +587,7 @@ class Trainer:
                             with autocast_ctx:
                                 logits = wrapped(input_ids)  # type: ignore[operator]
                                 B, T, V = logits.shape
-                                hard_loss = criterion(
-                                    logits.view(B * T, V), labels.view(B * T)
-                                )
+                                hard_loss = criterion(logits.view(B * T, V), labels.view(B * T))
                                 kd_loss = None
                                 total_loss = hard_loss
                                 if distill_enabled and teacher is not None:
@@ -593,18 +604,13 @@ class Trainer:
                                         raise ValueError(
                                             f"distill_temperature must be > 0; got {temp}"
                                         )
-                                    student_log_probs = F.log_softmax(
-                                        logits / temp, dim=-1
-                                    )
+                                    student_log_probs = F.log_softmax(logits / temp, dim=-1)
                                     teacher_probs = F.softmax(teacher_logits / temp, dim=-1)
-                                    kd_loss = (
-                                        F.kl_div(
-                                            student_log_probs.view(B * T, V),
-                                            teacher_probs.view(B * T, V),
-                                            reduction="batchmean",
-                                        )
-                                        * (temp * temp)
-                                    )
+                                    kd_loss = F.kl_div(
+                                        student_log_probs.view(B * T, V),
+                                        teacher_probs.view(B * T, V),
+                                        reduction="batchmean",
+                                    ) * (temp * temp)
                                     alpha = float(distill_alpha)
                                     total_loss = (1.0 - alpha) * hard_loss + alpha * kd_loss
                                 loss = total_loss / float(accum)
@@ -614,9 +620,9 @@ class Trainer:
                                 loss.backward()
                         # Track per-micro loss for rolling averages (unscale back to per-step units).
                         try:
-                            micro_total_loss_sum += float(
-                                loss.detach().float().item()
-                            ) * float(accum)
+                            micro_total_loss_sum += float(loss.detach().float().item()) * float(
+                                accum
+                            )
                             micro_hard_loss_sum += float(hard_loss.detach().float().item())
                             if kd_loss is not None:
                                 micro_kd_loss_sum += float(kd_loss.detach().float().item())
@@ -650,7 +656,9 @@ class Trainer:
                         # If torch.compile was enabled, fall back to eager and retry once.
                         if compiled_enabled and attempt == 0:
                             if is_main:
-                                print("[trainer] Disabling torch.compile and retrying in eager mode.")
+                                print(
+                                    "[trainer] Disabling torch.compile and retrying in eager mode."
+                                )
                             try:
                                 import torch._dynamo as dynamo  # type: ignore
 
@@ -687,7 +695,11 @@ class Trainer:
                         step_ppl = float("nan")
                     ppl_window.append(step_ppl)
                     try:
-                        ppl_avg = float(sum(ppl_window) / float(len(ppl_window))) if ppl_window else float("nan")
+                        ppl_avg = (
+                            float(sum(ppl_window) / float(len(ppl_window)))
+                            if ppl_window
+                            else float("nan")
+                        )
                     except Exception:
                         ppl_avg = float("nan")
                     micro_total_loss_sum = 0.0
@@ -705,9 +717,7 @@ class Trainer:
                             f"grad_norm={grad_norm:.3f} toks/step~{toks} ppl_avg{log_interval}={ppl_avg:.3f}"
                         )
                         if distill_enabled:
-                            msg += (
-                                f" loss_total={step_total_loss:.4f} kd_loss={step_kd_loss:.4f}"
-                            )
+                            msg += f" loss_total={step_total_loss:.4f} kd_loss={step_kd_loss:.4f}"
                         print(msg)
                         if bool(getattr(self.cfg, "log_gpu_mem", False)) and device.type == "cuda":
                             try:

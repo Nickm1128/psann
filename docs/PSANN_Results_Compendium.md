@@ -112,7 +112,7 @@ Short caption: Runpod L4 WaveResNet-small CUDA runs; see notebooks/HISSO_Logging
 | 153117 | Runpod L4 | 19.41 | 107.3 | 17 | 0.621 / 0.755 / 0.670 | −0.114 (±0.0100) | 2.69 | float16 |
   - Notes: results reflect a longer episode budget than the Colab smoke; AMP remained stable. Instrument memory via `torch.cuda.max_memory_allocated()` if running concurrent jobs on the pod.
 - Next CUDA steps:
-  - Run HISSO regression suite under CUDA once the runpod slot is available (pytest tests/test_hisso_primary.py::test_hisso_fit_sets_trainer_state -k cuda plus nightly selection).
+  - Run HISSO regression suite under CUDA once the runpod slot is available (pytest tests/test_hisso_options.py::test_hisso_fit_sets_trainer_state -k cuda plus nightly selection).
   - Tune WaveResNet episodes/penalty if the negative reward mean persists on richer datasets; capture findings in this compendium and the README GPU appendix.
 **Prior Outputs (Local)**
 - Predictions (NPZ arrays) and metrics bundle: `outputs/colab_results (1)/`

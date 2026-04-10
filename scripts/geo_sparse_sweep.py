@@ -12,7 +12,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-
 try:
     from scripts._cli_utils import parse_comma_list, slugify
 except ImportError:  # pragma: no cover - supports `python scripts/foo.py`

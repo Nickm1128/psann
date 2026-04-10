@@ -35,6 +35,10 @@ jobs:
       - name: Black format check
         run: python -m black --check src tests scripts examples psannlm
 
+      - name: Repo hygiene audit
+        if: matrix.python-version == '3.11'
+        run: python tools/repo_hygiene_audit.py --json
+
       - name: Mypy type check
         if: matrix.python-version == '3.11'
         run: python -m mypy src psannlm

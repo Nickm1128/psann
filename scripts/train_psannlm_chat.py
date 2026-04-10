@@ -20,16 +20,13 @@ from pathlib import Path
 from typing import Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 import torch
+from datasets import load_dataset
+from psannlm.lm import psannLM
+from psannlm.lm.models.registry import get_base
+from psannlm.lm.models.sine import SineConfig
 from torch import nn
 from torch.optim import AdamW
-
-from datasets import load_dataset
 from transformers import AutoTokenizer
-
-from psannlm.lm import psannLM
-from psannlm.lm.models.sine import SineConfig
-from psannlm.lm.models.registry import get_base
-
 
 # --------------------------------------------------------------------------- #
 # Utility helpers

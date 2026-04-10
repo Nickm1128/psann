@@ -15,24 +15,21 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
-from pathlib import PurePosixPath
 import warnings
+from pathlib import Path, PurePosixPath
 
 from lm_eval import evaluator
 from lm_eval.api import registry
 
-# Ensure repository root is on sys.path so we can import psann_adapter
-import sys
-from pathlib import Path as _Path
+try:
+    from scripts._cli_utils import ensure_src_dir
+except ImportError:  # pragma: no cover - direct script execution from ./scripts
+    from _cli_utils import ensure_src_dir  # type: ignore
 
-_here = _Path(__file__).resolve()
-_root = _here.parent.parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
+ensure_src_dir(Path(__file__).resolve().parents[1])
 
 # Import adapter and register under a name
-from psann_adapter import PSANNLM
+from psannlm.eval_adapter import PSANNLM
 
 
 def main() -> int:

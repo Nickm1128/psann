@@ -22,10 +22,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
-import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -489,8 +489,9 @@ def gpu_05_ddp() -> Dict[str, Any]:
         )
 
     # Multi-process DDP run (2 ranks) to compute average loss
-    import torch.multiprocessing as mp
     from random import randint as _randint
+
+    import torch.multiprocessing as mp
 
     port = 29577 + (_randint(0, 1000))  # reduce chance of collision
     ctx = mp.get_context("spawn")
@@ -564,8 +565,9 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
             )
 
         # Try FSDP multi-process run
-        import torch.multiprocessing as mp
         from random import randint as _randint
+
+        import torch.multiprocessing as mp
 
         port = 29677 + (_randint(0, 1000))
         ctx = mp.get_context("spawn")

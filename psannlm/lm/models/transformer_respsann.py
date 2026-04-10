@@ -9,18 +9,19 @@ Implements a standard transformer stack with:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 
 import torch
-from torch import nn
 import torch.nn.functional as F
-import math
+from torch import nn
 
-from ...layers.sine_residual import RMSNorm
-from ...layers.spectral import SpectralGate1D
-from .sine import SineConfig, build_sine
+from psann.layers.sine_residual import RMSNorm
+from psann.layers.spectral import SpectralGate1D
+
 from ..config import normalize_positional_encoding
+from .sine import SineConfig, build_sine
 
 
 def _sinusoidal_positions(seq_len: int, dim: int, device: torch.device) -> torch.Tensor:

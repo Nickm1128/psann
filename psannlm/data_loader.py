@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Iterator, Any, Optional
+from typing import Any, Callable, Dict, Iterator, Optional
 
 import torch
-from torch.utils.data import IterableDataset, DataLoader, get_worker_info
+from torch.utils.data import DataLoader, IterableDataset, get_worker_info
 
 
 class TokenStreamDataset(IterableDataset):

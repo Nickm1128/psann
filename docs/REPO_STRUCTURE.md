@@ -9,7 +9,7 @@ This document defines **what belongs where** in the PSANN repository and where s
 | `src/psann/` | Core library code shipped by `pip install psann` | Keep this lean and stable; avoid importing heavyweight optional deps at import time. |
 | `psannlm/` | Separate LM tooling distribution | Contains LM training/CLI code and heavier dependencies. |
 | `tests/` | Unit + integration tests | Keep “fast” tests default; GPU/slow tests opt-in. |
-| `docs/` | Maintained documentation | Link new docs from `docs/README.md`. |
+| `docs/` | Maintained documentation | Link new docs from `docs/README.md`; keep active plans in `docs/backlog/` and historical notes in `docs/archive/`. |
 | `scripts/` | Operational CLIs and benchmark runners | Should have `--help`, log config + output directory, and write outputs outside tracked source directories. |
 | `examples/` | Runnable examples and config snippets | Prefer small, focused YAML configs and short “how to run” notes. |
 | `configs/` | Shared configuration files used by scripts | Prefer stable relative paths; keep configs small and documented. |
@@ -20,12 +20,16 @@ This document defines **what belongs where** in the PSANN repository and where s
 
 ## Benchmarks: What Goes Where
 
+Within `src/psann/`, keep `sklearn.py` as the stable public estimator surface and place estimator implementation details under `src/psann/_sklearn/`.
+Within `psannlm/` and `scripts/`, keep public CLI files as thin facades when a runner grows large and move the implementation details into nearby internal packages such as `psannlm/_train/` or `scripts/_<tool>/`.
+
 - **Benchmark scripts / runners**: `scripts/` (e.g., `scripts/benchmark_*.py`, `scripts/*_sweep.py`).
 - **Benchmark configs**: `examples/` (or `configs/` if the config is used by multiple subsystems).
 - **Benchmark inputs that must be versioned** (small): `benchmarks/` + a short README describing provenance.
 - **Benchmark outputs**: `reports/` (ignored by git; see below).
 
-If a benchmark needs to ship “golden” reference numbers for regression testing, store a small JSON/CSV under `docs/benchmarks/` and keep it tightly scoped.
+If a benchmark needs to ship “golden” reference numbers for regression testing, store a small JSON/CSV under `docs/benchmarks/` and keep it tightly scoped. Follow `docs/benchmarks/promotion_guide.md` when promoting local run outputs.
+Do not commit raw `reports/full_suite/` trees; summarize the reusable numbers in `docs/benchmarks/` instead.
 
 ## Generated Outputs (Do Not Commit)
 

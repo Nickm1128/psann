@@ -8,19 +8,19 @@ pathways interleaved with attention.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Tuple, List
+from typing import List, Optional, Tuple
 
 import torch
 from torch import nn
 
-from .transformer_respsann import (
-    RMSNorm,
-    SineConfig,
-    _sinusoidal_positions,
-    SelfAttention,
-)
 from ..config import normalize_positional_encoding
 from .sine import build_sine
+from .transformer_respsann import (
+    RMSNorm,
+    SelfAttention,
+    SineConfig,
+    _sinusoidal_positions,
+)
 
 
 @dataclass

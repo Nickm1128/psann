@@ -8,7 +8,10 @@ from pathlib import Path
 def test_microbench_cli_smoke(tmp_path: Path):
     out = tmp_path / "microbench.json"
     env = os.environ.copy()
-    env["PYTHONPATH"] = f"{Path.cwd() / 'src'}:{env.get('PYTHONPATH', '')}"
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{Path.cwd() / 'src'}{os.pathsep}{existing}" if existing else f"{Path.cwd() / 'src'}"
+    )
     cmd = [
         sys.executable,
         "scripts/microbench_psann.py",

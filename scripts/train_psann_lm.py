@@ -10,6 +10,5 @@ This simply forwards to :mod:`psannlm.train`.
 
 from psannlm.train import main
 
-
 if __name__ == "__main__":
     raise SystemExit(main())

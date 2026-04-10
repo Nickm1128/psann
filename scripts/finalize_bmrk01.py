@@ -109,6 +109,7 @@ def _evaluate_validation(cfg: Dict[str, Any], bench_dir: Path, dp) -> Dict[str, 
         return {"val_loss": float("nan"), "val_ppl": float("nan")}
 
     import math
+
     from torch.nn import functional as F
     from torch.utils.data import DataLoader
 

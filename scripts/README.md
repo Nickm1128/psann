@@ -3,14 +3,24 @@
 The utilities under `scripts/` assume the project is installed as a package, so
 you no longer need to manually edit `sys.path` when running them.
 
+The larger benchmark entrypoints keep their historical filenames but now
+delegate to internal helper packages such as `scripts/_bench_lm_bases/`,
+`scripts/_benchmark_geo_sparse_vs_dense/`, and `scripts/_run_light_probes/`.
+That keeps the user-facing commands stable while making the implementation
+easier to navigate.
+
 ## Quick Start
 
 1. Create or activate a virtual environment.
 2. Install the project in editable mode:
    ```bash
-   pip install -e .
+   python -m pip install -e .
    ```
-3. Optional: install profiling dependencies as needed (for example,
+3. If you plan to run PSANN-LM helpers from this checkout, also install the local `psannlm` package:
+   ```bash
+   python -m pip install -e ./psannlm
+   ```
+4. Optional: install profiling dependencies as needed (for example,
    `pip install torch torchvision` for GPU runs).
 
 Once the package is available, run scripts directly:
@@ -69,9 +79,11 @@ When adding or updating scripts under `scripts/`:
 ### Benchmarks, corpora, and log parsing
 
 - `run_full_suite.py` - one-command runner for light probes, synthetic ablations, and GeoSparse
-  benchmarks. Writes to `reports/full_suite/<timestamp>/` and can git-commit results:
+  benchmarks. Writes to `reports/full_suite/<timestamp>/`; keep those raw artifacts local and
+  promote only compact summaries to `docs/benchmarks/` when you need versioned results. Follow
+  `docs/benchmarks/promotion_guide.md` when checking in a summary:
   ```bash
-  python scripts/run_full_suite.py --device cuda --git-commit
+  python scripts/run_full_suite.py --device cuda
   ```
 - `postprocess_full_suite.py` - generates compact CSV tables and plots for a full-suite run:
   ```bash
@@ -127,7 +139,7 @@ When adding or updating scripts under `scripts/`:
   - `python scripts/train_psann_lm.py --hf-dataset allenai/c4 --hf-name en --hf-split train --hf-text-key text --hf-keep-ascii-only --hf-lang en --base waveresnet --d-model 3072 --n-layers 30 --n-heads 24 --tokenizer-backend tokenizers --train-tokenizer --tokenizer-save-dir runs/tokenizer_3b --batch-tokens 65536 --grad-accum-steps 8 --amp bf16 --grad-checkpoint --fsdp full_shard --checkpoint-dir runs/lm/3b_en --export-dir artifacts/psannlm_3b_bundle`
 
 - SFT (instruction tuning, prompt masked; example uses OpenAssistant/oasst1):
-  - `PYTHONPATH=src python3 -m psannlm.sft --init-ckpt runs/lm/300m_en/ckpt_step078000.pt --tokenizer-dir runs/tokenizer_300m_shuffle_v4 --sft-source oasst1 --checkpoint-dir runs/lm/300m_en_sft_oasst1 --seq-len 2048 --batch-tokens 65536 --grad-accum-steps 2 --lr 5e-5 --warmup-steps 200 --max-steps 2000 --add-bos --add-eos --ascii-only --lang en --lang-threshold 0.85`
+  - `python -m psannlm.sft --init-ckpt runs/lm/300m_en/ckpt_step078000.pt --tokenizer-dir runs/tokenizer_300m_shuffle_v4 --sft-source oasst1 --checkpoint-dir runs/lm/300m_en_sft_oasst1 --seq-len 2048 --batch-tokens 65536 --grad-accum-steps 2 --lr 5e-5 --warmup-steps 200 --max-steps 2000 --add-bos --add-eos --ascii-only --lang en --lang-threshold 0.85`
 
 - Evaluate with lm-eval (chat template on MC):
   - `python scripts/run_lm_eval_psann.py --hf-repo <user>/<repo> --hf-filename psannlm_chat_final.pt --tokenizer-backend tokenizers --hf-tokenizer-repo <user>/<repo> --hf-tokenizer-filename tokenizer_final/tokenizer.json --tasks hellaswag,piqa,winogrande --device cuda --num-fewshot 5 --apply-chat-template --fewshot-as-multiturn --output eval_out/mc_chat.json`

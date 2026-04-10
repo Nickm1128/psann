@@ -4,8 +4,25 @@ All examples live in the top-level `examples/` directory and can be executed wit
 
 ```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1   # Windows PowerShell
-pip install -e .[viz]
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .[viz]
+```
+
+macOS/Linux:
+
+```bash
+source .venv/bin/activate
+python -m pip install -e .[viz]
+```
+
+Then run:
+
+```bash
 python examples/21_psann_config_benchmark.py
 ```
 
@@ -43,7 +60,7 @@ Each HISSO script uses the neutral terminology (`transition_penalty`) and the sh
 - **scripts/compare_hisso_benchmarks.py** — CLI helper that diff-checks new HISSO runs against the stored baselines.
 - **docs/benchmarks/hisso_variants.md** — human-readable summary of the CPU portfolio sweep captured in CI.
 
-Run the benchmark scripts from the project root; outputs land under `docs/benchmarks/` and are checked in to catch regressions.
+Run the benchmark scripts from the project root. Raw benchmark outputs should stay under local `reports/` directories; promote only compact summaries into `docs/benchmarks/` using `docs/benchmarks/promotion_guide.md`.
 
 ## Diagnostics
 

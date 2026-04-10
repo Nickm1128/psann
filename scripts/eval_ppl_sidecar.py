@@ -3,7 +3,7 @@
 Sidecar perplexity eval for PSANN-LM checkpoints.
 
 Example:
-  PYTHONPATH=src python scripts/eval_ppl_sidecar.py \
+  python scripts/eval_ppl_sidecar.py \
     --ckpt runs/lm/300m_en/ckpt_step004000.pt \
     --tokenizer-dir runs/tokenizer_300m_shuffle_v4 \
     --dataset allenai/c4 --split validation --text-key text \
@@ -21,10 +21,10 @@ import torch
 import torch.nn.functional as F
 from datasets import load_dataset  # type: ignore
 
-# Local imports (repo root on PYTHONPATH)
+# Package imports (install `psannlm` from this checkout for local use)
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psannlm.lm.models.sine import SineConfig
 from psannlm.lm.models.registry import get_base
+from psannlm.lm.models.sine import SineConfig
 
 
 def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:
@@ -184,7 +184,7 @@ def main() -> None:
         print("[eval] No tokens processed; check dataset/text-key/filters.")
         return
     ppl = math.exp(total_loss / total_tokens)
-    print(f"[eval] tokens={total_tokens} loss={total_loss/total_tokens:.4f} ppl={ppl:.3f}")
+    print(f"[eval] tokens={total_tokens} loss={total_loss / total_tokens:.4f} ppl={ppl:.3f}")
 
 
 if __name__ == "__main__":

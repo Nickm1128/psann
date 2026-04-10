@@ -7,7 +7,7 @@ trained), and saves standard trainer checkpoints compatible with the existing
 `psannlm.train` + `scripts/eval_ppl_sidecar.py` tooling.
 
 Example (OpenAssistant/oasst1):
-  PYTHONPATH=src python3 -m psannlm.sft \
+  python -m psannlm.sft \
     --init-ckpt runs/lm/300m_en/ckpt_step078000.pt \
     --tokenizer-dir runs/tokenizer_300m_shuffle_v4 \
     --sft-source oasst1 \
@@ -16,7 +16,7 @@ Example (OpenAssistant/oasst1):
     --lr 5e-5 --warmup-steps 200 --max-steps 2000
 
 Example (local JSONL with {"prompt": "...", "response": "..."}):
-  PYTHONPATH=src python3 -m psannlm.sft \
+  python -m psannlm.sft \
     --init-ckpt runs/lm/300m_en/ckpt_step078000.pt \
     --tokenizer-dir runs/tokenizer_300m_shuffle_v4 \
     --sft-source pairs --dataset json --data-files sft_data.jsonl \
@@ -32,7 +32,7 @@ import argparse
 import os
 import random
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import torch
 
@@ -238,7 +238,12 @@ def _shard_pairs(
     for i, pr in enumerate(pairs):
         if world_size > 1 and (i % world_size) != rank:
             continue
-        if num_workers and num_workers > 1 and worker_id is not None and (i % num_workers) != worker_id:
+        if (
+            num_workers
+            and num_workers > 1
+            and worker_id is not None
+            and (i % num_workers) != worker_id
+        ):
             continue
         out.append(pr)
     return out
@@ -331,7 +336,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Checkpoints/tokenizer
     g = p.add_mutually_exclusive_group(required=True)
-    g.add_argument("--init-ckpt", type=str, help="Pretrained trainer checkpoint to initialize from.")
+    g.add_argument(
+        "--init-ckpt", type=str, help="Pretrained trainer checkpoint to initialize from."
+    )
     g.add_argument(
         "--resume-ckpt",
         type=str,
@@ -356,7 +363,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Local data files (comma-separated) for a JSON/Text dataset (pairs mode).",
     )
-    p.add_argument("--prompt-key", type=str, default="prompt", help="Column for the prompt (pairs).")
+    p.add_argument(
+        "--prompt-key", type=str, default="prompt", help="Column for the prompt (pairs)."
+    )
     p.add_argument(
         "--response-key", type=str, default="response", help="Column for the response (pairs)."
     )
@@ -396,7 +405,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lr", type=float, default=5e-5)
     p.add_argument("--warmup-steps", type=int, default=200)
     p.add_argument("--weight-decay", type=float, default=0.0)
-    p.add_argument("--optimizer", type=str, default="adamw", choices=["adamw", "adamw8bit", "adafactor"])
+    p.add_argument(
+        "--optimizer", type=str, default="adamw", choices=["adamw", "adamw8bit", "adafactor"]
+    )
     p.add_argument("--betas", type=str, default="0.9,0.95")
     p.add_argument("--eps", type=float, default=1e-8)
     p.add_argument("--amp", type=str, default="bf16", choices=["bf16", "fp16", "fp32", "none"])
@@ -440,7 +451,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--log-interval-steps", type=int, default=25)
     p.add_argument("--save-interval-steps", type=int, default=500)
     p.add_argument("--max-steps", type=int, default=0)
-    p.add_argument("--tokens-target", type=int, default=0, help="Optional token budget to derive max-steps.")
+    p.add_argument(
+        "--tokens-target", type=int, default=0, help="Optional token budget to derive max-steps."
+    )
     p.add_argument("--pack-buffer-tokens", type=int, default=2_000_000)
     p.add_argument("--num-workers", type=int, default=0)
 
@@ -553,7 +566,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 for pr in local_pairs:
                     yield pr
 
-        pair_iter_fn: Callable[[], Iterator[Tuple[str, str]]] = lambda: _pair_iter(None)
     else:
         # pairs mode: use HF datasets (streaming) or local JSONL
         def _pair_iter(worker_info: Optional[Any] = None) -> Iterator[Tuple[str, str]]:
@@ -581,13 +593,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                 if world_size > 1 and (i % world_size) != rank:
                     i += 1
                     continue
-                if num_workers and num_workers > 1 and worker_id is not None and (i % num_workers) != worker_id:
+                if (
+                    num_workers
+                    and num_workers > 1
+                    and worker_id is not None
+                    and (i % num_workers) != worker_id
+                ):
                     i += 1
                     continue
                 i += 1
                 yield pr
-
-        pair_iter_fn = lambda: _pair_iter(None)
 
     def _iterator(worker_info: Optional[Any] = None):
         def _pairs_for_worker():
@@ -603,7 +618,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             pack_buffer_tokens=int(args.pack_buffer_tokens),
         )
 
-    stream_loader = build_stream_loader(_iterator, batch_size=micro_batch, num_workers=int(args.num_workers))
+    stream_loader = build_stream_loader(
+        _iterator, batch_size=micro_batch, num_workers=int(args.num_workers)
+    )
     dataset = stream_loader.dataset  # type: ignore[assignment]
 
     # Training config

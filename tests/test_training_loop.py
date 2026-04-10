@@ -31,7 +31,7 @@ def test_run_training_loop_returns_best_state_for_early_stopping():
         lr_min=None,
     )
 
-    train_loss, best_state = run_training_loop(
+    history, best_state = run_training_loop(
         model,
         optimizer=torch.optim.SGD(model.parameters(), lr=0.1),
         loss_fn=torch.nn.MSELoss(),
@@ -42,7 +42,9 @@ def test_run_training_loop_returns_best_state_for_early_stopping():
         val_targets=targets.clone(),
     )
 
-    assert isinstance(train_loss, float)
+    assert isinstance(history, list)
+    assert len(history) == cfg.epochs
+    assert all(isinstance(entry, dict) for entry in history)
     assert best_state is not None
     for key, value in best_state.items():
         assert isinstance(value, torch.Tensor)
@@ -172,7 +174,7 @@ def test_training_loop_early_stopping_restores_best_state_and_calls_hooks():
         nonlocal grad_calls
         grad_calls += 1
 
-    train_loss, best_state = run_training_loop(
+    history, best_state = run_training_loop(
         model,
         optimizer=optimizer,
         loss_fn=scheduled_loss,
@@ -201,7 +203,7 @@ def test_training_loop_early_stopping_restores_best_state_and_calls_hooks():
     # Commit hook bumps weights each epoch; reload should bring them back to the saved best.
     assert model.commit_calls == 3
     assert scheduled_loss.calls == 3
-    assert train_loss == pytest.approx(0.6, rel=1e-6)
+    assert history[-1]["train_loss"] == pytest.approx(0.6, rel=1e-6)
 
     # Epoch callback flags should show improvements for first two epochs, then patience exhausted.
     assert improved_flags == [True, True, False]
@@ -234,7 +236,7 @@ def test_training_loop_early_stopping_runs_on_cuda():
     scheduled_loss = _ScheduledLoss([0.5, 0.4, 0.6, 0.7])
     optimizer = torch.optim.SGD(model.parameters(), lr=0.05)
 
-    train_loss, best_state = run_training_loop(
+    history, best_state = run_training_loop(
         model,
         optimizer=optimizer,
         loss_fn=scheduled_loss,
@@ -245,7 +247,7 @@ def test_training_loop_early_stopping_runs_on_cuda():
 
     # Early stopping should cut training after the third epoch.
     assert scheduled_loss.calls == 3
-    assert train_loss == pytest.approx(0.6, rel=1e-6)
+    assert history[-1]["train_loss"] == pytest.approx(0.6, rel=1e-6)
 
     assert best_state is not None
     for key, value in best_state.items():

@@ -7,9 +7,9 @@ sequence packing mode across documents.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Optional, Dict, Any, Sequence, Callable
 import os
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Sequence
 
 import torch
 from torch.utils.data import Dataset, IterableDataset

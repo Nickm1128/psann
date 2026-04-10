@@ -10,14 +10,16 @@ Use this guide to locate the right document and to see which notes are still act
 | --- | --- | --- |
 | `PROJECT_MAP.md` | Active | High-level overview: what’s supported vs experimental, install model, repo layout. |
 | `REPO_STRUCTURE.md` | Active | Where things live, what’s generated, and repo conventions for scripts/outputs. |
-| `API.md` | Active | Public estimator surface reference, kept in sync with `src/psann/sklearn.py`. |
+| `API.md` | Active | Public estimator surface reference, kept in sync with the facade in `src/psann/sklearn.py` and its backing modules under `src/psann/_sklearn/`. |
 | `public_api.md` | Active | Supported top-level exports and experimental surfaces. |
 | `migration.md` | Active | Upgrade guidance and behavioural changes between releases. |
 | `CONTRIBUTING.md` | Active | Contribution workflow, coding standards, and review expectations. |
+| `deprecation_policy.md` | Active | Canonical parameter names, deprecated aliases, and the removal policy. |
 | `examples/README.md` | Active | CPU runtimes and usage notes for scripts in `examples/`. |
 | `benchmarks/hisso_variants.md` | Active | Benchmark description; accompanying JSON captures reproducible config. |
 | `benchmarks/README.md` | Active | Data provenance, size, and regeneration instructions for HISSO benchmarks. |
 | `benchmarks/lm_base_sweeps.md` | Active | Summary of recent PSANN-LM base sweeps + recommendations for the next full-scale run. |
+| `benchmarks/promotion_guide.md` | Active | How to promote local `reports/` outputs into compact checked-in benchmark summaries. |
 | `geo_sparse_benchmarks_summary.md` | Active | Short index of GeoSparse sweeps with repro pointers. |
 | `geo_sparse_benchmarks_report.md` | Archive | Long-form GeoSparse benchmark handoff with raw appendix. |
 | `PSANN_Results_Compendium.md` | Active | Curated experiment results and interpretation tips. |
@@ -25,10 +27,18 @@ Use this guide to locate the right document and to see which notes are still act
 | `wave_resnet.md` | Active | Background and design rationale for the WaveResNet backbone. |
 | `architecture.md` | Active | High-level module map and data flow across the estimator stack. |
 | `performance_tips.md` | Active | Practical CPU/GPU, dtype, and memory tips for faster runs. |
+| `repo_hygiene_audit.md` | Active | Guardrails for tracked outputs, long scripts, and the local hygiene audit tool. |
+| `repo_hygiene_waves.md` | Active | Sequential waves for the remaining hygiene work. |
+| `repo_hygiene_followups.md` | Backlog | Prioritized follow-up checklist for remaining refactors and cleanup work. |
 | `project_cleanup_todo.md` | Backlog | Comprehensive checklist for making the repo newcomer-friendly and slimming packaging. |
 | `extras_removal_inventory.md` | Backlog | Source-of-truth inventory for removing the legacy extras stack (linked to `backlog/extras-removal.md`). |
 | `backlog/todo_inventory.md` | Backlog | Inventory of TODO documents and issue-triage guidance. |
+| `backlog/psann_lm_todo.md` | Backlog | PSANN-LM roadmap and remaining benchmark-oriented backlog items. |
+| `backlog/psann_lm_3b_todo.md` | Backlog | 3B-scale PSANN-LM training and evaluation plan. |
+| `backlog/psann_sparse3d_todo.md` | Backlog | Sparse-3D research backlog and reactivation notes. |
 | `backlog/docs-site-generator.md` | Backlog | Notes on evaluating MkDocs/Sphinx once the HISSO refactor settles. |
+| `archive/REPO_CLEANUP_TODO.md` | Archive | Superseded root cleanup checklist retained for historical context. |
+| `archive/PSANN_LM_Module_TODO.txt` | Archive | Historical LM module plan retained for traceability. |
 | `lsm_robustness_todo.md` | Archive | Historical HISSO/extras backlog; superseded by the extras removal plan. |
 | `phase1_audit.md` | Archive | Snapshot of the naming audit prior to the cleanup work. Preserve for traceability. |
 | `ResearchFindings_and_NextSteps.md` | Archive | Historical research notes; see Results Compendium for current takeaways. |
@@ -37,6 +47,7 @@ Use this guide to locate the right document and to see which notes are still act
 ## Maintenance Notes
 
 - The extras deprecation effort is tracked in `backlog/extras-removal.md`; update both files together when status changes.
+- Root-level planning notes were consolidated into `docs/backlog/` and `docs/archive/`; add new roadmap notes there instead of creating fresh root TODO files.
 - If a document moves to Archive status, add a banner at the top explaining why and where to find current guidance.
 - When adding new documentation, link it here and mark the status so downstream readers know whether it is normative guidance or planning material.
 

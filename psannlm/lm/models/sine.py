@@ -6,11 +6,11 @@ factory for use inside MLPs/transformer blocks.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Optional, Tuple, Dict
 import random as _random
+from dataclasses import dataclass
+from typing import Dict, Iterable, Optional, Tuple
 
-from ...activations import SineParam
+from psann.activations import SineParam
 
 
 @dataclass

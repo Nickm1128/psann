@@ -11,21 +11,22 @@ chunked implementation to keep peak memory bounded.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
 import math
 import re
+from dataclasses import dataclass, fields
 from typing import List, Optional, Sequence, Tuple
 
 import torch
 from torch import nn
 
-from ...activations import MixedActivation
-from ...layers.geo_sparse import build_geo_connectivity, expand_in_indices_to_edges
-from ...layers.sine_residual import RMSNorm
-from ...nn import DropPath
+from psann.activations import MixedActivation
+from psann.layers.geo_sparse import build_geo_connectivity, expand_in_indices_to_edges
+from psann.layers.sine_residual import RMSNorm
+from psann.nn import DropPath
+
+from ..config import normalize_positional_encoding
 from .sine import SineConfig, build_sine
 from .transformer_respsann import SelfAttention, _sinusoidal_positions
-from ..config import normalize_positional_encoding
 
 
 def _auto_shape(n: int) -> Tuple[int, int]:
@@ -88,9 +89,7 @@ class ChunkedGeoSparseLinear(nn.Module):
         self.compute_mode = mode
         self.chunk_size = max(0, int(chunk_size))
 
-        self.register_buffer(
-            "in_index_per_out", in_index_per_out.to(dtype=torch.long).contiguous()
-        )
+        self.register_buffer("in_index_per_out", in_index_per_out.to(dtype=torch.long).contiguous())
         self.weight = nn.Parameter(torch.empty(self.out_features, self.k))
         self.bias = nn.Parameter(torch.empty(self.out_features)) if bias else None
         self.reset_parameters()
@@ -132,9 +131,7 @@ class ChunkedGeoSparseLinear(nn.Module):
             gathered = x2d[:, self.in_index_per_out]  # (N, out, k)
             return (gathered * self.weight.unsqueeze(0)).sum(dim=-1)
 
-        out = torch.empty(
-            x2d.shape[0], self.out_features, device=x2d.device, dtype=x2d.dtype
-        )
+        out = torch.empty(x2d.shape[0], self.out_features, device=x2d.device, dtype=x2d.dtype)
         for start in range(0, self.out_features, self.chunk_size):
             end = min(self.out_features, start + self.chunk_size)
             idx = self.in_index_per_out[start:end]
@@ -298,7 +295,9 @@ class GeoSparseMLP(nn.Module):
                 activation = MixedActivation(
                     int(d_mlp),
                     activation_types=list(activation_types or []),
-                    activation_ratios=list(activation_ratios) if activation_ratios is not None else None,
+                    activation_ratios=(
+                        list(activation_ratios) if activation_ratios is not None else None
+                    ),
                     ratio_sum_tol=float(activation_ratio_sum_tol),
                     seed=block_seed,
                     layout=str(activation_layout),

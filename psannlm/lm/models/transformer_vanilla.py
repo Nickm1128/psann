@@ -13,8 +13,8 @@ from typing import List, Optional, Tuple
 import torch
 from torch import nn
 
-from .transformer_respsann import SelfAttention, _sinusoidal_positions
 from ..config import normalize_positional_encoding
+from .transformer_respsann import SelfAttention, _sinusoidal_positions
 
 
 @dataclass

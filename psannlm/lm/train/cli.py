@@ -6,8 +6,8 @@ Loads a YAML config and runs training with periodic checkpointing.
 from __future__ import annotations
 
 import argparse
-from typing import List
 import os
+from typing import List
 
 import yaml
 

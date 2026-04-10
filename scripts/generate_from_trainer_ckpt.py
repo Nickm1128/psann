@@ -23,8 +23,8 @@ from __future__ import annotations
 
 import argparse
 import re
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
 
 import torch
@@ -32,8 +32,8 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from psannlm.lm.infer.generate import sample_next_token  # noqa: E402
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig  # noqa: E402
+from psannlm.lm.infer.generate import sample_next_token  # noqa: E402
 from psannlm.lm.models.registry import get_base  # noqa: E402
 from psannlm.lm.models.sine import SineConfig  # noqa: E402
 

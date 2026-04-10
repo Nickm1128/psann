@@ -57,7 +57,7 @@
 - [x] Tests
   - [x] Add a unit test that fails on current code: reward fn expects `transition_penalty` and asserts it is received.
   - [x] Add a unit test for legacy `trans_cost`.
-  - Validation command: `python -m pytest tests/test_hisso_primary.py -k "transition_penalty_forwarded or trans_cost_alias_forwarded or infer_series_matches_predict" -q` (`3 passed`).
+  - Validation command: `python -m pytest tests/test_hisso_options.py -k "transition_penalty_forwarded or trans_cost_alias_forwarded or infer_series_matches_predict" -q` (`3 passed`).
 - [x] Docs
   - [x] Update `docs/API.md` (HISSO section) to state penalty is forwarded automatically when supported.
 
@@ -75,7 +75,7 @@
 - [x] Tests
   - [x] Add a small stateful model test where state changes only if `commit_state_updates()` is called (detect regression).
   - [x] Ensure supervised training vs HISSO training donâ€™t diverge unexpectedly in state handling.
-  - Validation command: `python -m pytest tests/test_hisso_primary.py -k "stateful_hooks_respect_state_reset or stateful_hooks_match_supervised_loop_pattern or transition_penalty_forwarded or trans_cost_alias_forwarded" -q` (`8 passed`).
+  - Validation command: `python -m pytest tests/test_hisso_stateful.py tests/test_hisso_options.py -k "stateful_hooks_respect_state_reset or stateful_hooks_match_supervised_loop_pattern or transition_penalty_forwarded or trans_cost_alias_forwarded" -q` (`8 passed`).
 
 ---
 
@@ -108,7 +108,7 @@
   - [x] Verify deterministic run (seeded) produces stable reward trend for small configs.
   - [x] Add a â€œcompat modeâ€ test: `B=1` path matches old per-episode stepping behavior closely (within tolerance).
   - Validation commands:
-  - `python -m pytest tests/test_hisso_primary.py -q` (`25 passed`)
+  - `python -m pytest tests/test_hisso_options.py tests/test_hisso_stateful.py tests/test_hisso_variants.py tests/test_hisso_training.py -q` (`25 passed` on the split suite at the time of the change)
   - `python -m pytest tests/test_regressor_inference.py -k hisso -q` (`1 passed`)
 
 ---
@@ -130,7 +130,7 @@
 - [x] Docs
   - [x] Update `docs/API.md` and `README.md` with the new knobs and recommended presets (CPU vs CUDA).
 - Validation commands:
-  - `python -m pytest tests/test_hisso_primary.py -q` (`26 passed`)
+  - `python -m pytest tests/test_hisso_options.py tests/test_hisso_stateful.py tests/test_hisso_variants.py tests/test_hisso_training.py -q` (`26 passed` on the split suite at the time of the change)
   - `python -m pytest tests/test_regressor_inference.py -k hisso -q` (`1 passed`)
   - `python -m pytest tests/test_hisso_logging_cli.py -q` (`2 passed`)
 
@@ -143,7 +143,7 @@
 - [x] Tests
   - [x] Add a test that forces the fallback path and asserts warning content/stacklevel points to user code.
 - Validation commands:
-  - `python -m pytest tests/test_hisso_primary.py -q` (`27 passed`)
+  - `python -m pytest tests/test_hisso_options.py tests/test_hisso_stateful.py tests/test_hisso_variants.py tests/test_hisso_training.py -q` (`27 passed` on the split suite at the time of the change)
   - `python -m pytest tests/test_regressor_inference.py -k hisso -q` (`1 passed`)
   - `python -m pytest tests/test_hisso_logging_cli.py -q` (`2 passed`)
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 
-
 from psannlm.lm.models.registry import get_base
 from psannlm.lm.models.sine import SineConfig
 

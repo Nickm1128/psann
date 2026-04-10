@@ -13,6 +13,7 @@ Quick links:
 - Repo structure & output conventions: `docs/REPO_STRUCTURE.md`
 - API reference: `docs/API.md`
 - Supported public API: `docs/public_api.md`
+- Deprecation and alias policy: `docs/deprecation_policy.md`
 - Scenario walkthroughs: `docs/examples/README.md`
 - Architecture overview: `docs/architecture.md`
 - Performance tips: `docs/performance_tips.md`
@@ -55,10 +56,22 @@ python examples/28_geosparse_regression.py
 
 ```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1   # Windows PowerShell
-# source .venv/bin/activate     # macOS/Linux
-pip install --upgrade pip
-pip install -e .                # editable install from source
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e .
+```
+
+macOS/Linux:
+
+```bash
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
 ```
 
 Optional extras in `pyproject.toml`:
@@ -66,7 +79,7 @@ Optional extras in `pyproject.toml`:
 - `psann[viz]`: plotting helpers used in benchmarks and notebooks.
 - `psann[dev]`: pytest, ruff, black, coverage, build, pre-commit tooling, and mypy.
 
-Language modeling tooling lives in the separate `psannlm` package (`pip install psannlm`).
+Language modeling tooling lives in the separate `psannlm` package (`pip install psannlm` or `python -m pip install -e ./psannlm` from this checkout).
 
 Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibility extra:
 
@@ -88,7 +101,7 @@ The `compat` extra pins NumPy, SciPy, scikit-learn, and PyTorch to the newest wi
 Install the development extras in editable mode so the test suite imports the packaged code without manual `sys.path` tweaks:
 
 ```bash
-pip install -e .[dev]
+python -m pip install -e .[dev]
 python -m pytest
 ```
 
@@ -166,7 +179,7 @@ print("R^2:", model.score(X, y))
 
 Behind the scenes the estimator normalises arguments via `normalise_fit_args` and prepares data/scalers through `psann.estimators._fit_utils.prepare_inputs_and_scaler`, so dense, residual, and convolutional variants share the same fit surface.
 
-**Parameter aliases.** The constructor still accepts legacy names such as `hidden_width` and `hidden_channels`, but they are treated as deprecated aliases. Whether you pass them to `__init__` or later through `set_params`, the estimator maps them back to the canonical `hidden_units` / `conv_channels` entries and warns when both names disagree.
+**Parameter aliases.** The constructor still accepts legacy names such as `hidden_width` and `hidden_channels`, but they are treated as deprecated aliases. Whether you pass them to `__init__` or later through `set_params`, the estimator maps them back to the canonical `hidden_units` / `conv_channels` entries and warns when both names disagree. See `docs/deprecation_policy.md` for the full alias inventory and removal policy.
 
 **Device & dtype.** The estimators operate internally in float32. Supplying `np.float32` arrays (as shown above) avoids extra copies. For GPU training, pass `device="cuda"` (or a specific `torch.device`) when constructing the estimator *before* calling `fit`; the helper will keep HISSO loops and inference on the pinned device.
 
@@ -523,7 +536,7 @@ When `stateful=True`, the training dataloader preserves sequence order. PSANN di
   - Colab (2025-11-01): dense (seed 7) duration 2.68 s, throughput 203 eps/s, train/val/test loss 0.245/0.304/0.231, reward_mean -0.111; WaveResNet (seed 11) duration 3.34 s, throughput 161 eps/s, train/val/test loss 1.435/1.402/1.569, reward_mean -0.182 (std 0.068).
   - Runpod L4 (2025-11-02; AMP float16): WaveResNet small `configs/hisso/wave_resnet_small.yaml` → `runs/hisso/wave_resnet_cuda_runpod_20251102_153117/` — 19.41 s over 1920 episodes (~107.3 eps/s), best_epoch 17, train/val/test 0.621/0.755/0.670, reward_mean -0.114 (std 0.010), turnover 2.69.
   - Note: Colab did not expose CUDA memory metrics; instrument `torch.cuda.max_memory_allocated()` on runpod if co-locating jobs.
-- Upcoming work highlighted in `REPO_CLEANUP_TODO.md` includes broader reward coverage, lint/type sweeps, and release tooling improvements.
+- Ongoing cleanup work now lives in `docs/project_cleanup_todo.md` and `docs/repo_hygiene_followups.md`; the historical root checklist moved to `docs/archive/REPO_CLEANUP_TODO.md`.
 
 ### Reproducibility
 

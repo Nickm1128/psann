@@ -41,6 +41,7 @@ Conventions:
   - [x] Ensure `runs/`, `reports/`, `eval_data/`, caches, and model checkpoints are ignored
   - [x] Add a “do not commit” note in docs for outputs directories
   - [x] Add a small “outputs/README.md” describing expected generated directories
+  - Status note (2026-04-10): removed tracked full-suite output trees and root test logs, tightened `.gitignore`, and added `tools/repo_hygiene_audit.py` plus a regression test so generated artifacts stay out of git.
 
 - [x] Clean up / standardize shell scripts and entrypoints
   - [x] Ensure every script has an explicit usage header and examples
@@ -89,6 +90,10 @@ Definition of done:
 ---
 
 ## 3) Code Readability, Maintainability, and Consistency
+
+- Status note (2026-04-10): Wave 2 split estimator fit helpers, HISSO internals, and LSM internals into smaller modules, kept `psann.hisso` and `psann.lsm` as compatibility facades, split the HISSO primary test file by behavior area, and added estimator characterization coverage ahead of the planned `src/psann/sklearn.py` split.
+- Status note (2026-04-10): Wave 3 split estimator internals into `src/psann/_sklearn/` modules for base behavior, scaling, inference, sequence handling, serialization, and backbone-specific variants while preserving `psann.sklearn` as the public import and checkpoint path.
+- Status note (2026-04-10): Wave 4 split the oversized LM and benchmark entrypoints into internal helper packages (`psannlm/_train/`, `scripts/_bench_lm_bases/`, `scripts/_benchmark_geo_sparse_vs_dense/`, `scripts/_benchmark_regressor_ablations/`, `scripts/_run_light_probes/`, `scripts/_run_geosparse_vs_relu_benchmarks/`, and `_bench_psann_lm/`), kept the historical CLI paths as compatibility facades, and reduced the hygiene-audit hotspot queue to `psannlm/lm/train/trainer.py`.
 
 - [x] “Public API” audit
   - [x] List the supported API surface (what’s exported from `psann`)
@@ -226,6 +231,8 @@ Definition of done:
 
 ## 7) Developer Experience (Make Contributing Easy)
 
+- Status note (2026-04-10): Wave 5 made `make dev` cross-platform, documented equivalent PowerShell and macOS/Linux setup steps in `docs/CONTRIBUTING.md`, and normalized shell examples so contributors no longer need ad hoc `PYTHONPATH=src` guidance for standard package workflows.
+
 - [x] Add/verify “one command” local setup
   - [x] `make dev` / `just dev` style bootstrap (venv, install, pre-commit)
   - [x] Document common workflows: run tests, run formatter, build wheel
@@ -237,6 +244,8 @@ Definition of done:
 ---
 
 ## 8) Project Management and Backlog Hygiene
+
+- Status note (2026-04-10): Wave 5 moved the stray root TODO documents into `docs/backlog/` and `docs/archive/`, documented the active lm-eval adapter location, and added benchmark-promotion plus alias/deprecation policy docs so the remaining backlog lives under `docs/` instead of repo root.
 
 - [x] Consolidate scattered TODOs
   - [x] Inventory root TODO docs and `docs/backlog/` (`docs/backlog/todo_inventory.md`)
