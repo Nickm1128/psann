@@ -2,6 +2,9 @@ from __future__ import annotations
 
 """Lean training helpers for the sklearn-style estimators."""
 
+import hashlib
+import logging
+import random
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
@@ -17,8 +20,22 @@ from ..hisso import (
     run_hisso_training,
 )
 from ..nn import WithPreprocessor
-from ..training import TrainingLoopConfig, run_training_loop
+from ..training import (
+    TrainingLoopConfig,
+    TrainingLoopResumeState,
+    run_training_loop,
+)
+from ..training_checkpoint import (
+    TrainingCheckpointError,
+    TrainingCheckpointManager,
+    capture_rng_state,
+    load_training_checkpoint,
+    restore_rng_state,
+    restore_scaler_state,
+)
+from ..training_events import TrainingEvent
 from ._fit_args import normalise_fit_args
+from ._fit_contracts import validate_prediction_target_shape
 from ._fit_inputs import prepare_inputs_and_scaler
 from ._fit_types import (
     FitVariantHooks,
@@ -184,11 +201,7 @@ def run_supervised_training(
     estimator._ensure_model_device(device)
     model = estimator.model_
 
-    optimizer = _build_optimizer(estimator, model)
-    estimator._optimizer_ = optimizer
-    estimator._lr_scheduler_ = None
-
-    loss_fn = estimator._make_loss()
+    validate_prediction_target_shape(model, prepared, device=device)
 
     train_targets = prepared.train_targets
     if train_targets is None:
@@ -215,11 +228,26 @@ def run_supervised_training(
     else:
         dataset = TensorDataset(inputs_t, targets_t)
     shuffle = not (estimator.stateful and estimator.state_reset in ("epoch", "none"))
+    data_loader_generator = torch.Generator()
+    data_loader_generator.manual_seed(
+        int(estimator.random_state)
+        if estimator.random_state is not None
+        else int(torch.initial_seed())
+    )
+
+    def _seed_worker(worker_id: int) -> None:
+        del worker_id
+        worker_seed = int(torch.initial_seed() % (2**32 - 1))
+        np.random.seed(worker_seed)
+        random.seed(worker_seed)
+
     dataloader = DataLoader(
         dataset,
         batch_size=int(estimator.batch_size),
         shuffle=shuffle,
         num_workers=int(estimator.num_workers),
+        generator=data_loader_generator,
+        worker_init_fn=_seed_worker if int(estimator.num_workers) > 0 else None,
     )
 
     val_inputs_t, val_targets_t, val_context_t = _prepare_validation_tensors(
@@ -234,6 +262,20 @@ def run_supervised_training(
         if val_inputs_t is not None
         else None
     )
+    for name, tensor in {
+        "validation inputs": val_inputs,
+        "validation targets": val_targets_t,
+        "validation context": val_context_t,
+        "noise standard deviation": noise_std_t,
+    }.items():
+        if tensor is not None and not torch.isfinite(tensor).all():
+            raise ValueError(f"{name} contains NaN or infinity after preprocessing.")
+
+    optimizer = _build_optimizer(estimator, model)
+    estimator._optimizer_ = optimizer
+    scheduler = _build_scheduler(estimator, optimizer, fit_args)
+    estimator._lr_scheduler_ = scheduler
+    loss_fn = estimator._make_loss()
 
     def _resolve_amp_dtype(value: Any) -> Optional[torch.dtype]:
         if value is None:
@@ -274,6 +316,11 @@ def run_supervised_training(
         compile_mode=str(getattr(estimator, "compile_mode", "default")),
         compile_fullgraph=bool(getattr(estimator, "compile_fullgraph", False)),
         compile_dynamic=bool(getattr(estimator, "compile_dynamic", False)),
+        nonfinite_policy=fit_args.nonfinite_policy,
+        fallback_policy=fit_args.fallback_policy,
+        callback_error_policy=fit_args.callback_error_policy,
+        deterministic=fit_args.deterministic,
+        seed=estimator.random_state,
     )
 
     gradient_hook = getattr(estimator, "gradient_hook", None)
@@ -283,6 +330,115 @@ def run_supervised_training(
     epoch_callback = getattr(estimator, "epoch_callback", None)
     if not callable(epoch_callback):
         epoch_callback = None
+
+    estimator.training_events_ = []
+
+    def _collect_event(event: TrainingEvent) -> None:
+        estimator.training_events_.append(event.as_dict())
+        if event.name == "train_start":
+            estimator.training_metadata_ = dict(event.data)
+
+    callbacks = (_collect_event, *fit_args.callbacks)
+    logger = fit_args.logger
+    if logger is None and fit_args.verbose:
+        logger = logging.getLogger("psann.training")
+
+    data_signature = _build_data_signature(prepared)
+    resume_state = TrainingLoopResumeState()
+    if fit_args.resume_from is not None:
+        checkpoint = load_training_checkpoint(
+            fit_args.resume_from,
+            map_location=device,
+        )
+        _restore_training_checkpoint(
+            estimator,
+            checkpoint,
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            scheduler_name=fit_args.scheduler,
+            data_signature=data_signature,
+            data_loader_generator=data_loader_generator,
+            deterministic=fit_args.deterministic,
+        )
+        resume_state = TrainingLoopResumeState(
+            start_epoch=int(checkpoint.get("epoch", 0)),
+            global_step=int(checkpoint.get("global_step", 0)),
+            best_metric=float(checkpoint.get("best_metric", float("inf"))),
+            best_epoch=(
+                int(checkpoint["best_epoch"]) if checkpoint.get("best_epoch") is not None else None
+            ),
+            patience_left=(
+                int(checkpoint["patience_left"])
+                if checkpoint.get("patience_left") is not None
+                else None
+            ),
+            best_state=checkpoint.get("best_state"),
+            history=[dict(entry) for entry in checkpoint.get("history", [])],
+            amp_scaler_state=checkpoint.get("amp_scaler_state"),
+        )
+
+    checkpoint_manager = (
+        TrainingCheckpointManager(
+            fit_args.checkpoint_dir,
+            periodic_every=fit_args.checkpoint_every,
+            keep_periodic=fit_args.checkpoint_keep,
+        )
+        if fit_args.checkpoint_dir is not None
+        else None
+    )
+
+    def _checkpoint_callback(
+        loop_snapshot: Any,
+        improved: bool,
+    ) -> list[tuple[str, str]]:
+        if checkpoint_manager is None:
+            return []
+        state = {
+            "estimator_class": estimator.__class__.__name__,
+            "model_signature": getattr(estimator, "_model_signature_", None),
+            "data_signature": data_signature,
+            "optimizer_name": str(estimator.optimizer).lower(),
+            "scheduler_name": fit_args.scheduler,
+            "deterministic": bool(fit_args.deterministic),
+            "model_state": {
+                key: value.detach().cpu().clone() for key, value in model.state_dict().items()
+            },
+            "optimizer_state": optimizer.state_dict(),
+            "scheduler_state": scheduler.state_dict() if scheduler is not None else None,
+            "scaler_kind": getattr(estimator, "_scaler_kind_", None),
+            "scaler_state": getattr(estimator, "_scaler_state_", None),
+            "scaler_spec": getattr(estimator, "_scaler_spec_", None),
+            "target_scaler_kind": getattr(estimator, "_target_scaler_kind_", None),
+            "target_scaler_state": getattr(estimator, "_target_scaler_state_", None),
+            "target_scaler_spec": getattr(estimator, "_target_scaler_spec_", None),
+            "rng_state": capture_rng_state(
+                data_loader_generator=data_loader_generator,
+            ),
+            **dict(loop_snapshot),
+        }
+        paths = checkpoint_manager.save(
+            state,
+            epoch=int(loop_snapshot["epoch"]),
+            improved=improved,
+        )
+        return [(kind, str(path)) for kind, path in paths]
+
+    def _capture_amp_scaler(scaler: Optional[object]) -> None:
+        estimator._amp_scaler_ = scaler
+
+    metadata = {
+        "train_input_shape": tuple(prepared.train_inputs.shape),
+        "train_target_shape": tuple(targets_np.shape),
+        "validation_input_shape": (tuple(val_inputs.shape) if val_inputs is not None else None),
+        "validation_target_shape": (
+            tuple(val_targets_t.shape) if val_targets_t is not None else None
+        ),
+        "scheduler": fit_args.scheduler,
+        "fallback_policy": fit_args.fallback_policy,
+        "nonfinite_policy": fit_args.nonfinite_policy,
+        "preflight_fallbacks": list(getattr(estimator, "_fit_fallbacks_", [])),
+    }
 
     history, best_state = run_training_loop(
         model,
@@ -297,6 +453,15 @@ def run_supervised_training(
         val_context=val_context_t,
         gradient_hook=gradient_hook,
         epoch_callback=epoch_callback,
+        metrics=fit_args.metrics,
+        scheduler=scheduler,
+        callbacks=callbacks,
+        logger=logger,
+        resume_state=resume_state,
+        checkpoint_callback=(_checkpoint_callback if checkpoint_manager is not None else None),
+        runtime_state_callback=_capture_amp_scaler,
+        metadata=metadata,
+        initial_fallbacks=getattr(estimator, "_fit_fallbacks_", []),
     )
 
     estimator.history_ = history
@@ -310,6 +475,129 @@ def run_supervised_training(
         "val_targets": val_targets_t,
         "val_context": val_context_t,
     }
+
+
+def _build_scheduler(
+    estimator: "PSANNRegressor",
+    optimizer: torch.optim.Optimizer,
+    fit_args: NormalisedFitArgs,
+) -> Optional[Any]:
+    params = dict(fit_args.scheduler_params)
+    if fit_args.scheduler == "none":
+        return None
+    if fit_args.scheduler == "step":
+        return torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=int(params.get("step_size", 1)),
+            gamma=float(params.get("gamma", 0.1)),
+        )
+    if fit_args.scheduler == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=int(params.get("t_max", estimator.epochs)),
+            eta_min=float(params.get("eta_min", 0.0)),
+        )
+    raise ValueError(f"Unsupported scheduler {fit_args.scheduler!r}.")
+
+
+def _array_digest(array: Optional[np.ndarray]) -> Optional[str]:
+    if array is None:
+        return None
+    contiguous = np.ascontiguousarray(array)
+    digest = hashlib.sha256()
+    digest.update(str(contiguous.dtype).encode("ascii"))
+    digest.update(repr(tuple(contiguous.shape)).encode("ascii"))
+    digest.update(contiguous.tobytes())
+    return digest.hexdigest()
+
+
+def _build_data_signature(prepared: PreparedInputState) -> dict[str, Any]:
+    return {
+        "inputs_shape": tuple(prepared.train_inputs.shape),
+        "targets_shape": (
+            tuple(prepared.train_targets.shape) if prepared.train_targets is not None else None
+        ),
+        "context_shape": (
+            tuple(prepared.train_context.shape) if prepared.train_context is not None else None
+        ),
+        "inputs_sha256": _array_digest(prepared.train_inputs),
+        "targets_sha256": _array_digest(prepared.train_targets),
+        "context_sha256": _array_digest(prepared.train_context),
+    }
+
+
+def _restore_training_checkpoint(
+    estimator: "PSANNRegressor",
+    checkpoint: Dict[str, Any],
+    *,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: Optional[Any],
+    scheduler_name: str,
+    data_signature: Dict[str, Any],
+    data_loader_generator: torch.Generator,
+    deterministic: bool,
+) -> None:
+    expected_class = estimator.__class__.__name__
+    if checkpoint.get("estimator_class") != expected_class:
+        raise TrainingCheckpointError(
+            "Training checkpoint estimator mismatch: expected "
+            f"{expected_class!r}, received {checkpoint.get('estimator_class')!r}."
+        )
+    if checkpoint.get("model_signature") != getattr(estimator, "_model_signature_", None):
+        raise TrainingCheckpointError(
+            "Training checkpoint model signature does not match the current estimator "
+            "architecture or input/target shape."
+        )
+    if checkpoint.get("data_signature") != data_signature:
+        raise TrainingCheckpointError(
+            "Training checkpoint data signature does not match the supplied training "
+            "inputs, targets, and context."
+        )
+    if checkpoint.get("optimizer_name") != str(estimator.optimizer).lower():
+        raise TrainingCheckpointError(
+            "Training checkpoint optimizer does not match the current estimator."
+        )
+    if checkpoint.get("scheduler_name") != scheduler_name:
+        raise TrainingCheckpointError(
+            "Training checkpoint scheduler does not match the current fit configuration."
+        )
+    if bool(checkpoint.get("deterministic", False)) != bool(deterministic):
+        raise TrainingCheckpointError(
+            "Training checkpoint deterministic mode does not match the current fit."
+        )
+
+    model_state = checkpoint.get("model_state")
+    optimizer_state = checkpoint.get("optimizer_state")
+    if not isinstance(model_state, dict) or not isinstance(optimizer_state, dict):
+        raise TrainingCheckpointError("Training checkpoint is missing model or optimizer state.")
+    model.load_state_dict(model_state)
+    optimizer.load_state_dict(optimizer_state)
+    scheduler_state = checkpoint.get("scheduler_state")
+    if scheduler is None and scheduler_state is not None:
+        raise TrainingCheckpointError(
+            "Training checkpoint contains scheduler state but scheduler='none'."
+        )
+    if scheduler is not None:
+        if scheduler_state is None:
+            raise TrainingCheckpointError(
+                "Training checkpoint is missing the configured scheduler state."
+            )
+        scheduler.load_state_dict(scheduler_state)
+
+    estimator._scaler_kind_ = checkpoint.get("scaler_kind")
+    estimator._scaler_state_ = restore_scaler_state(checkpoint.get("scaler_state"))
+    estimator._scaler_spec_ = restore_scaler_state(checkpoint.get("scaler_spec"))
+    estimator._target_scaler_kind_ = checkpoint.get("target_scaler_kind")
+    estimator._target_scaler_state_ = restore_scaler_state(checkpoint.get("target_scaler_state"))
+    estimator._target_scaler_spec_ = restore_scaler_state(checkpoint.get("target_scaler_spec"))
+    rng_state = checkpoint.get("rng_state")
+    if not isinstance(rng_state, dict):
+        raise TrainingCheckpointError("Training checkpoint is missing RNG state.")
+    restore_rng_state(
+        rng_state,
+        data_loader_generator=data_loader_generator,
+    )
 
 
 def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.optim.Optimizer:
@@ -328,7 +616,9 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
             return torch.optim.AdamW(params, weight_decay=float(estimator.weight_decay))
         if opt_name == "sgd":
             return torch.optim.SGD(params, momentum=0.9)
-        return torch.optim.Adam(params, weight_decay=float(estimator.weight_decay))
+        if opt_name == "adam":
+            return torch.optim.Adam(params, weight_decay=float(estimator.weight_decay))
+        raise ValueError(f"Unknown optimizer {estimator.optimizer!r}. Supported: adam, adamw, sgd.")
     return estimator._make_optimizer(model)
 
 

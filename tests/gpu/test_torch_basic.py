@@ -1,9 +1,8 @@
-import math
 import json
+import math
 from pathlib import Path
 
 import pytest
-
 
 pytestmark = pytest.mark.gpu
 
@@ -12,9 +11,9 @@ pytestmark = pytest.mark.gpu
 def test_cuda_available(torch_available, cuda_available, output_dir: Path):
     if not torch_available:
         pytest.skip("torch not installed")
-    import torch
-
     import json
+
+    import torch
 
     summary = {
         "torch_version": torch.__version__,
@@ -111,3 +110,57 @@ def test_amp_bf16_if_supported(cuda_available, output_dir: Path):
         z = x @ y
     assert z.is_cuda and z.shape == (256, 256)
     (output_dir / "test_amp_bf16_if_supported.shape").write_text(json.dumps(list(z.shape)))
+
+
+@pytest.mark.gpu
+def test_native_artifact_maps_from_cpu_to_cuda(cuda_available, output_dir: Path):
+    if not cuda_available:
+        pytest.skip("CUDA not available")
+    import numpy as np
+    import torch
+
+    import psann
+
+    inputs = np.random.default_rng(73).normal(size=(8, 3)).astype(np.float32)
+    targets = inputs[:, 0] - inputs[:, 1]
+    spec = psann.ModelSpec(
+        input_schema=psann.DataSchema(input_shape=(3,)),
+        parameters={"hidden_layers": 1, "hidden_units": 4, "random_state": 73},
+    )
+    model = psann.create_model(spec)
+    run = psann.train(
+        model,
+        (inputs, targets),
+        config=psann.TrainingConfig(
+            epochs=1,
+            batch_size=4,
+            device="cpu",
+            deterministic=True,
+        ),
+    )
+    artifact = run.export(output_dir / "cpu_to_cuda.psann")
+    loaded = psann.load_model(artifact, device="cuda")
+
+    assert next(loaded.model_.parameters()).device.type == "cuda"
+    np.testing.assert_allclose(
+        loaded.predict(inputs),
+        model.predict(inputs),
+        rtol=1e-5,
+        atol=1e-6,
+    )
+
+    runtime = psann.load_runtime(
+        artifact,
+        config=psann.InferenceConfig(batch_size=3, device="cuda"),
+    )
+    result = runtime.predict(inputs)
+    assert next(runtime.model.model_.parameters()).device.type == "cuda"
+    assert result.metadata["device"] == "cuda"
+    assert result.metadata["chunks"] == 3
+    np.testing.assert_allclose(
+        result.predictions,
+        model.predict(inputs),
+        rtol=1e-5,
+        atol=1e-6,
+    )
+    assert torch.cuda.is_available()

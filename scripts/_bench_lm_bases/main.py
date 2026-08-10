@@ -1,6 +1,7 @@
 # ruff: noqa: F403,F405
 from __future__ import annotations
 
+from .cli import parse_args
 from .config import (
     _coerce_betas,
     _coerce_ddp,
@@ -18,54 +19,7 @@ from .tokenizer import _build_stream_dataset, _ensure_tokenizer
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Benchmark PSANN-LM bases quickly on WikiText-103")
-    ap.add_argument("--config", type=str, default=None, help="Optional YAML config path")
-    ap.add_argument("--out", type=str, default=None, help="Override output directory")
-    ap.add_argument("--run-name", type=str, default=None, help="Override run name suffix")
-    ap.add_argument("--bases", type=str, default=None, help="Comma-separated base list")
-    ap.add_argument("--seeds", type=str, default=None, help="Comma-separated seed list")
-    ap.add_argument("--max-steps", type=int, default=None, help="Override training steps")
-    ap.add_argument(
-        "--tokens-target",
-        type=int,
-        default=None,
-        help="Approximate token budget per run (overrides max-steps)",
-    )
-    ap.add_argument(
-        "--with-lm-eval",
-        action="store_true",
-        help="Run lm-eval (opt-in; expects lm_eval installed)",
-    )
-    ap.add_argument("--lm-eval-tasks", type=str, default=None)
-    ap.add_argument("--lm-eval-limit", type=int, default=None)
-    ap.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the planned sweep matrix and exit without running training.",
-    )
-    ap.add_argument(
-        "--skip-existing",
-        action="store_true",
-        help="Skip runs that already have a metrics.json with status=ok.",
-    )
-    ap.add_argument(
-        "--save-run-logs",
-        action="store_true",
-        help="Tee stdout/stderr to run_dir/stdout.log for each run.",
-    )
-    ap.add_argument(
-        "--torch-compile",
-        action="store_true",
-        help="Enable torch.compile for training runs (single GPU only; skipped under DDP/FSDP).",
-    )
-    ap.add_argument(
-        "--torch-compile-mode",
-        type=str,
-        default=None,
-        choices=["default", "reduce-overhead", "max-autotune"],
-        help="Optional torch.compile mode override.",
-    )
-    args = ap.parse_args()
+    args = parse_args()
 
     cfg = _default_config()
     if args.config:

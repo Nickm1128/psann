@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 from ._aliases import resolve_int_alias
-from .activations import ReLUSigmoidPSANN, SineParam
+from .activations import ReLUSigmoidPSANN, SigmoidParam, SineParam
 from .utils import init_siren_linear_
 
 
@@ -17,6 +17,8 @@ def _normalize_conv_activation_type(activation_type: str) -> str:
         return "psann"
     if key in {"rspsann", "rsp", "clipped_psann"}:
         return "relu_sigmoid_psann"
+    if key in {"parameterized_sigmoid"}:
+        return "sigmoid"
     return key
 
 
@@ -39,13 +41,21 @@ class _PSANNConvBlockNd(nn.Module):
         elif activation_type == "relu_sigmoid_psann":
             act_kw.setdefault("feature_dim", 1)  # channel dimension
             self.act = ReLUSigmoidPSANN(out_channels, **act_kw)
+        elif activation_type == "sigmoid":
+            act_kw.setdefault("feature_dim", 1)  # channel dimension
+            self.act = SigmoidParam(out_channels, **act_kw)
         elif activation_type == "relu":
             self.act = nn.ReLU()
         elif activation_type == "tanh":
             self.act = nn.Tanh()
+        elif activation_type == "gelu":
+            self.act = nn.GELU()
+        elif activation_type == "silu":
+            self.act = nn.SiLU()
         else:
             raise ValueError(
-                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'gelu', "
+                "'silu', 'relu_sigmoid_psann', 'sigmoid'"
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -347,7 +357,7 @@ class ResidualPSANNConvBlock2d(nn.Module):
         self.channels = int(channels)
         activation_type = _normalize_conv_activation_type(activation_type)
         act_kw = dict(act_kw or {})
-        if activation_type in {"psann", "relu_sigmoid_psann"}:
+        if activation_type in {"psann", "relu_sigmoid_psann", "sigmoid"}:
             act_kw.setdefault("feature_dim", 1)
         padding = kernel_size // 2 if kernel_size > 1 else 0
         self.norm = (
@@ -367,15 +377,25 @@ class ResidualPSANNConvBlock2d(nn.Module):
         elif activation_type == "relu_sigmoid_psann":
             self.act1 = ReLUSigmoidPSANN(self.channels, **act_kw)
             self.act2 = ReLUSigmoidPSANN(self.channels, **act_kw)
+        elif activation_type == "sigmoid":
+            self.act1 = SigmoidParam(self.channels, **act_kw)
+            self.act2 = SigmoidParam(self.channels, **act_kw)
         elif activation_type == "relu":
             self.act1 = nn.ReLU()
             self.act2 = nn.ReLU()
         elif activation_type == "tanh":
             self.act1 = nn.Tanh()
             self.act2 = nn.Tanh()
+        elif activation_type == "gelu":
+            self.act1 = nn.GELU()
+            self.act2 = nn.GELU()
+        elif activation_type == "silu":
+            self.act1 = nn.SiLU()
+            self.act2 = nn.SiLU()
         else:
             raise ValueError(
-                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'gelu', "
+                "'silu', 'relu_sigmoid_psann', 'sigmoid'"
             )
         _init_siren_conv_(self.conv1, is_first=False, w0=w0_hidden)
         _init_siren_conv_(self.conv2, is_first=False, w0=w0_hidden)
@@ -437,7 +457,7 @@ class ResidualPSANNConv2dNet(nn.Module):
         self.segmentation_head = bool(segmentation_head)
         act_kw = dict(act_kw or {})
         normalized_activation_type = _normalize_conv_activation_type(activation_type)
-        if normalized_activation_type in {"psann", "relu_sigmoid_psann"}:
+        if normalized_activation_type in {"psann", "relu_sigmoid_psann", "sigmoid"}:
             act_kw.setdefault("feature_dim", 1)
         self.in_proj = nn.Conv2d(int(in_channels), channels, kernel_size=1)
         _init_siren_conv_(self.in_proj, is_first=True, w0=w0_first)

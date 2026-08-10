@@ -91,6 +91,36 @@ Definition of done:
 
 ## 3) Code Readability, Maintainability, and Consistency
 
+- Status note (2026-07-27): Workplace Phase 7 added scheduled CUDA lifecycle/dtype
+  certification, experimental MPS observation, bounded memory-mapped streams,
+  privacy-safe fingerprints, explicit retention/redaction and secret rejection,
+  vendor-neutral operational hooks, performance baselines, vulnerability scans, and
+  source/image SBOM evidence.
+- Status note (2026-07-27): Workplace Phase 6 added optional SHAP explanations over
+  the deployed raw-input contract, explicit background governance, named task outputs,
+  spatial/sequence groups, capability-gated frozen gradient adapters, registered
+  layer aliases, deterministic validation, and aggregate drift reporting.
+- Status note (2026-07-27): Workplace Phase 5 added bounded schema-aware inference,
+  concurrency-safe stateless requests, isolated stateful sessions, certified dynamic
+  Torch/ONNX exports, explicit device-pool/registry adapters, and an optional
+  reference service plus locked non-root container.
+- Status note (2026-07-27): Workplace Phase 4 added atomic, checksummed, versioned
+  `.psann` artifacts with restricted tensor loading, registered core-model
+  reconstruction, inspection and migrations, runtime/plugin validation, and an
+  explicitly trusted legacy conversion path.
+- Status note (2026-07-27): Workplace Phase 3 added the serializable model/task/data
+  boundary, registry-backed factories, task-aware classification, named-feature
+  schema enforcement, and common dense/residual/convolutional backbone matrices
+  without adding a second registered-backbone training loop.
+- Status note (2026-07-27): Workplace Phase 2 added fail-fast supervised training
+  contracts, explicit non-finite/fallback/callback policies, structured events and
+  metrics, and atomic restricted-load `.psann-train` checkpoints with exact CPU resume
+  coverage.
+- Status note (2026-07-27): Workplace Phase 1 made Black the sole formatter, moved
+  Ruff/import ordering and a strict platform-contract mypy scope behind one shared
+  quality runner, split LM trainer runtime helpers and LM benchmark CLI parsing below
+  the strict 800-line threshold, stripped tracked notebook state, and made notebook,
+  top-level-file, and long-file hygiene blocking.
 - Status note (2026-04-10): Wave 2 split estimator fit helpers, HISSO internals, and LSM internals into smaller modules, kept `psann.hisso` and `psann.lsm` as compatibility facades, split the HISSO primary test file by behavior area, and added estimator characterization coverage ahead of the planned `src/psann/sklearn.py` split.
 - Status note (2026-04-10): Wave 3 split estimator internals into `src/psann/_sklearn/` modules for base behavior, scaling, inference, sequence handling, serialization, and backbone-specific variants while preserving `psann.sklearn` as the public import and checkpoint path.
 - Status note (2026-04-10): Wave 4 split the oversized LM and benchmark entrypoints into internal helper packages (`psannlm/_train/`, `scripts/_bench_lm_bases/`, `scripts/_benchmark_geo_sparse_vs_dense/`, `scripts/_benchmark_regressor_ablations/`, `scripts/_run_light_probes/`, `scripts/_run_geosparse_vs_relu_benchmarks/`, and `_bench_psann_lm/`), kept the historical CLI paths as compatibility facades, and reduced the hygiene-audit hotspot queue to `psannlm/lm/train/trainer.py`.
@@ -149,7 +179,10 @@ Definition of done:
 - [x] Release hygiene
   - [x] Ensure `pyproject.toml` metadata is accurate (URLs, description, keywords)
   - [x] Add a “Minimal install” and “Extras install” section to README
-  - [ ] Confirm sdist/wheel contents in CI (size checks, import checks)
+  - [x] Confirm sdist/wheel contents in CI (size checks, import checks)
+    - Status note (2026-07-27): both distributions are built from source and installed
+      into a temporary environment by `tools/package_smoke.py`; the smoke test verifies
+      core/LM separation and shared installed metadata.
 
 Definition of done:
 - Clean venv can `pip install psann` quickly and import the package.

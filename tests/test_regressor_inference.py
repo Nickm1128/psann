@@ -1,6 +1,7 @@
+from collections.abc import Mapping
+
 import numpy as np
 import pytest
-from collections.abc import Mapping
 
 pytest.importorskip("torch")
 import torch

@@ -7,6 +7,5 @@ The LM utilities were moved to the separate `psannlm` distribution so that
 """
 
 raise ImportError(
-    "psann.lm has moved to the separate 'psannlm' package. "
-    "Install with: pip install psannlm"
+    "psann.lm has moved to the separate 'psannlm' package. " "Install with: pip install psannlm"
 )

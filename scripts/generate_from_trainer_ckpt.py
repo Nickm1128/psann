@@ -25,7 +25,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Tuple
 
 import torch
 
@@ -78,11 +78,21 @@ def _default_prompts() -> List[str]:
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate text from a trainer checkpoint (.pt).")
     p.add_argument("--ckpt", required=True, help="Path to trainer checkpoint (.pt).")
-    p.add_argument("--tokenizer-dir", required=True, help="Tokenizer directory (tokenizer.json + special_tokens_map.json).")
-    p.add_argument("--prompt", action="append", help="Prompt to generate from (can be passed multiple times).")
-    p.add_argument("--prompts-file", type=str, default=None, help="Optional file with one prompt per line.")
+    p.add_argument(
+        "--tokenizer-dir",
+        required=True,
+        help="Tokenizer directory (tokenizer.json + special_tokens_map.json).",
+    )
+    p.add_argument(
+        "--prompt", action="append", help="Prompt to generate from (can be passed multiple times)."
+    )
+    p.add_argument(
+        "--prompts-file", type=str, default=None, help="Optional file with one prompt per line."
+    )
     p.add_argument("--max-new-tokens", type=int, default=256)
-    p.add_argument("--min-new-tokens", type=int, default=0, help="Do not stop on EOS before this many tokens.")
+    p.add_argument(
+        "--min-new-tokens", type=int, default=0, help="Do not stop on EOS before this many tokens."
+    )
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--top-p", type=float, default=0.9)
     p.add_argument("--top-k", type=int, default=None)
@@ -108,8 +118,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--attn-impl", type=str, default="sdpa", choices=["math", "sdpa", "auto"])
 
     # Token handling
-    p.add_argument("--add-bos", action="store_true", help="Prepend BOS to the prompt (recommended for SFT).")
-    p.add_argument("--stop-at-eos", action="store_true", help="Stop when EOS is generated (default).")
+    p.add_argument(
+        "--add-bos", action="store_true", help="Prepend BOS to the prompt (recommended for SFT)."
+    )
+    p.add_argument(
+        "--stop-at-eos", action="store_true", help="Stop when EOS is generated (default)."
+    )
     p.add_argument("--no-stop-at-eos", dest="stop_at_eos", action="store_false")
     p.set_defaults(stop_at_eos=True)
     p.add_argument(
@@ -227,7 +241,11 @@ def main() -> None:
     args = parse_args()
     torch.manual_seed(int(args.seed))
 
-    device = torch.device("cuda" if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())) else "cpu")
+    device = torch.device(
+        "cuda"
+        if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available()))
+        else "cpu"
+    )
 
     ckpt_path = Path(args.ckpt)
     state_dict = _load_state_dict(ckpt_path)
@@ -296,7 +314,9 @@ def main() -> None:
                         int(args.no_repeat_ngram_size),
                     )
                     if banned:
-                        next_logits[0, torch.tensor(banned, device=next_logits.device)] = float("-inf")
+                        next_logits[0, torch.tensor(banned, device=next_logits.device)] = float(
+                            "-inf"
+                        )
                 next_id = sample_next_token(
                     next_logits,
                     temperature=float(args.temperature),

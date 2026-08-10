@@ -21,28 +21,19 @@ import os
 import time
 from collections import deque
 from contextlib import nullcontext
-from dataclasses import dataclass
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 import torch
 from torch import nn
-from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, IterableDataset
-
-from psann.utils.hf_cache import cleanup_hf_cache
 
 from ..config import TrainConfig
 from ..data.dataset import collate_batch
+from .runtime import TrainerRuntimeMixin, TrainState
 
 
-@dataclass
-class TrainState:
-    step: int = 0
-    epoch: int = 0
-
-
-class Trainer:
+class Trainer(TrainerRuntimeMixin):
     """Trainer supporting AMP and optional DDP."""
 
     def __init__(self, cfg: Optional[TrainConfig] = None) -> None:
@@ -51,137 +42,6 @@ class Trainer:
         self.best_val_loss: float = float("inf")
         self._last_cache_cleanup: float = 0.0
         self._last_cache_warn: float = 0.0
-
-    def _save_checkpoint(
-        self,
-        model: nn.Module,
-        optim: torch.optim.Optimizer,
-        tag: str,
-        *,
-        data_state: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        ckpt_dir = self.cfg.checkpoint_dir
-        try:
-            os.makedirs(ckpt_dir, exist_ok=True)
-        except Exception:
-            pass
-        # Handle FSDP full-state extraction if applicable
-        state_dict: Dict[str, Any]
-        try:
-            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP  # type: ignore
-            from torch.distributed.fsdp.api import (  # type: ignore
-                FullStateDictConfig,
-                StateDictType,
-            )
-
-            if isinstance(model, FSDP):  # type: ignore[arg-type]
-                cfg = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
-                with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, cfg):
-                    state_dict = model.state_dict()
-            else:
-                state_dict = model.state_dict()
-        except Exception:
-            # Fallback: best-effort local state
-            state_dict = model.state_dict()
-        payload = {
-            "state": {"step": self.state.step, "epoch": self.state.epoch},
-            "model": state_dict,
-            "optim": optim.state_dict(),
-            "cfg": self.cfg.__dict__,
-        }
-        if data_state:
-            payload["data_state"] = dict(data_state)
-        path = os.path.join(ckpt_dir, f"{tag}.pt")
-        torch.save(payload, path)
-
-    def _compute_batch_size(self, max_length: int) -> int:
-        btoks = int(self.cfg.batch_tokens)
-        return max(1, btoks // max_length)
-
-    def _build_scheduler(self, optim: torch.optim.Optimizer, total_steps: int) -> LambdaLR:
-        warmup = int(max(0, self.cfg.warmup_steps))
-
-        def lr_lambda(step: int) -> float:
-            # step is 0-indexed per PyTorch; use step+1 for human-friendly behavior
-            s = step + 1
-            if warmup > 0 and s <= warmup:
-                return float(s) / float(max(1, warmup))
-            if total_steps <= warmup:
-                return 1.0
-            # Cosine decay from 1.0 to 0.0 after warmup
-            import math as _math
-
-            progress = float(s - warmup) / float(max(1, total_steps - warmup))
-            progress = min(max(progress, 0.0), 1.0)
-            return 0.5 * (1.0 + _math.cos(_math.pi * progress))
-
-        return LambdaLR(optim, lr_lambda)
-
-    def _build_optimizer(self, model: nn.Module) -> torch.optim.Optimizer:
-        opt_name = str(getattr(self.cfg, "optimizer", "adamw")).lower()
-        wd = float(self.cfg.weight_decay)
-        lr = float(self.cfg.lr)
-        betas = tuple(self.cfg.betas) if hasattr(self.cfg, "betas") else (0.9, 0.95)
-        eps = float(getattr(self.cfg, "eps", 1e-8))
-        if opt_name == "adamw8bit":
-            try:
-                import bitsandbytes as bnb  # type: ignore
-
-                return bnb.optim.AdamW8bit(
-                    model.parameters(), lr=lr, betas=betas, eps=eps, weight_decay=wd
-                )
-            except Exception:
-                print("[trainer] bitsandbytes not available; falling back to AdamW.")
-        if opt_name == "adafactor":
-            try:
-                from transformers.optimization import Adafactor  # type: ignore
-
-                return Adafactor(
-                    model.parameters(),
-                    lr=lr,
-                    weight_decay=wd,
-                    relative_step=False,
-                    scale_parameter=False,
-                )
-            except Exception:
-                print("[trainer] transformers.Adagactor not available; falling back to AdamW.")
-        adamw_kwargs = dict(lr=lr, weight_decay=wd, betas=betas, eps=eps)
-        if torch.cuda.is_available():
-            adamw_kwargs["fused"] = True  # type: ignore[assignment]
-        return torch.optim.AdamW(model.parameters(), **adamw_kwargs)
-
-    @staticmethod
-    def _grad_global_norm(model: nn.Module) -> float:
-        total = 0.0
-        for p in model.parameters():
-            if p.grad is None:
-                continue
-            param_norm = float(p.grad.data.norm(2).item())
-            total += param_norm * param_norm
-        return float(total**0.5)
-
-    def _maybe_cleanup_cache(self) -> None:
-        limit_gb = getattr(self.cfg, "hf_cache_limit_gb", None)
-        if limit_gb is None or limit_gb <= 0:
-            return
-        now = time.time()
-        if now - self._last_cache_cleanup < 60.0:
-            return
-        self._last_cache_cleanup = now
-        max_bytes = int(limit_gb * (1024**3))
-        try:
-            freed, total = cleanup_hf_cache(max_bytes)
-        except Exception as exc:
-            if now - self._last_cache_warn > 300.0:
-                print(f"[trainer] HF cache cleanup failed: {exc}")
-                self._last_cache_warn = now
-            return
-        if freed > 0:
-            freed_gb = freed / (1024**3)
-            total_gb = total / (1024**3)
-            print(
-                f"[trainer] HF cache cleanup freed {freed_gb:.2f} GB (cache now ~{total_gb:.2f} GB)"
-            )
 
     def train(
         self,
@@ -801,22 +661,3 @@ class Trainer:
         # Final save (main rank only)
         if is_main:
             self._save_checkpoint(wrapped, optim, tag="final", data_state=data_state)
-
-    def validate(self, model: nn.Module, dataset) -> float:
-        model.eval()
-        device = next(model.parameters()).device
-        dl = DataLoader(dataset, batch_size=max(1, self._compute_batch_size(dataset.cfg.max_length)), shuffle=False, collate_fn=collate_batch)  # type: ignore[attr-defined]
-        criterion = nn.CrossEntropyLoss()
-        total_loss = 0.0
-        total_tokens = 0
-        with torch.no_grad():
-            for batch in dl:
-                input_ids = batch["input_ids"].to(device)
-                labels = batch["labels"].to(device)
-                logits = model(input_ids)
-                B, T, V = logits.shape
-                loss = criterion(logits.view(B * T, V), labels.view(B * T))
-                total_loss += float(loss.item()) * (B * T)
-                total_tokens += int(B * T)
-        model.train()
-        return total_loss / max(1, total_tokens)

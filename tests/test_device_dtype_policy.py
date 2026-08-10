@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+
 from psann import PSANNRegressor
 from psann.estimators._fit_utils import (
     _prepare_noise_tensor,

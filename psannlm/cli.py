@@ -232,7 +232,9 @@ def _eval(
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=use_amp):
                 logits = model(input_ids)
                 bsz, tsz, vocab = logits.shape
-                loss = F.cross_entropy(logits.view(bsz * tsz, vocab), labels.view(bsz * tsz), reduction="sum")
+                loss = F.cross_entropy(
+                    logits.view(bsz * tsz, vocab), labels.view(bsz * tsz), reduction="sum"
+                )
             total_loss += float(loss.item())
             total_tokens += int(labels.numel())
 
@@ -315,7 +317,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     if args.command == "eval":
         device = torch.device(
-            "cuda" if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())) else "cpu"
+            "cuda"
+            if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available()))
+            else "cpu"
         )
         _eval(
             ckpt=Path(args.ckpt),
@@ -338,7 +342,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
     if args.command == "generate":
         device = torch.device(
-            "cuda" if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())) else "cpu"
+            "cuda"
+            if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available()))
+            else "cpu"
         )
         prompts = _read_prompts(args.prompt, args.prompts_file)
         _generate(

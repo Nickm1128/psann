@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 from ._aliases import resolve_int_alias
-from .activations import PhaseSineParam, ReLUSigmoidPSANN, SineParam
+from .activations import PhaseSineParam, ReLUSigmoidPSANN, SigmoidParam, SineParam
 from .layers.spectral import SpectralGate1D
 from .state import StateConfig, StateController, ensure_state_config
 from .utils import init_siren_linear_
@@ -18,6 +18,8 @@ def _normalize_base_activation_type(activation_type: str) -> str:
         return "psann"
     if key in {"rspsann", "rsp", "clipped_psann"}:
         return "relu_sigmoid_psann"
+    if key in {"parameterized_sigmoid"}:
+        return "sigmoid"
     return key
 
 
@@ -83,15 +85,25 @@ class ResidualPSANNBlock(nn.Module):
         elif self.activation_type == "relu_sigmoid_psann":
             self.act1 = ReLUSigmoidPSANN(self.dim, **act_kw)
             self.act2 = ReLUSigmoidPSANN(self.dim, **act_kw)
+        elif self.activation_type == "sigmoid":
+            self.act1 = SigmoidParam(self.dim, **act_kw)
+            self.act2 = SigmoidParam(self.dim, **act_kw)
         elif self.activation_type == "relu":
             self.act1 = nn.ReLU()
             self.act2 = nn.ReLU()
         elif self.activation_type == "tanh":
             self.act1 = nn.Tanh()
             self.act2 = nn.Tanh()
+        elif self.activation_type == "gelu":
+            self.act1 = nn.GELU()
+            self.act2 = nn.GELU()
+        elif self.activation_type == "silu":
+            self.act1 = nn.SiLU()
+            self.act2 = nn.SiLU()
         else:
             raise ValueError(
-                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'gelu', "
+                "'silu', 'relu_sigmoid_psann', 'sigmoid'"
             )
 
         init_siren_linear_(self.fc1, is_first=False, w0=w0_hidden)
@@ -203,13 +215,20 @@ class PSANNBlock(nn.Module):
             self.act = SineParam(out_features, **act_kw)
         elif self.activation_type == "relu_sigmoid_psann":
             self.act = ReLUSigmoidPSANN(out_features, **act_kw)
+        elif self.activation_type == "sigmoid":
+            self.act = SigmoidParam(out_features, **act_kw)
         elif self.activation_type == "relu":
             self.act = nn.ReLU()
         elif self.activation_type == "tanh":
             self.act = nn.Tanh()
+        elif self.activation_type == "gelu":
+            self.act = nn.GELU()
+        elif self.activation_type == "silu":
+            self.act = nn.SiLU()
         else:
             raise ValueError(
-                "activation_type must be one of: 'psann', 'relu', 'tanh', 'relu_sigmoid_psann'"
+                "activation_type must be one of: 'psann', 'relu', 'tanh', 'gelu', "
+                "'silu', 'relu_sigmoid_psann', 'sigmoid'"
             )
         cfg = ensure_state_config(state_cfg)
         self.state_ctrl = StateController(out_features, **cfg.to_kwargs()) if cfg else None

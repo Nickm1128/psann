@@ -6,7 +6,7 @@ This document defines **what belongs where** in the PSANN repository and where s
 
 | Path | What it contains | Notes |
 | --- | --- | --- |
-| `src/psann/` | Core library code shipped by `pip install psann` | Keep this lean and stable; avoid importing heavyweight optional deps at import time. |
+| `src/psann/` | Core library code shipped by `pip install psann` | Keep this lean and stable; optional integrations under `platform/` must stay lazy at base import time. |
 | `psannlm/` | Separate LM tooling distribution | Contains LM training/CLI code and heavier dependencies. |
 | `tests/` | Unit + integration tests | Keep “fast” tests default; GPU/slow tests opt-in. |
 | `docs/` | Maintained documentation | Link new docs from `docs/README.md`; keep active plans in `docs/backlog/` and historical notes in `docs/archive/`. |
@@ -17,11 +17,37 @@ This document defines **what belongs where** in the PSANN repository and where s
 | `datasets/` | Small, versioned fixtures | Mostly ignored by git; see `datasets/README.md`. |
 | `notebooks/` | Exploratory notebooks | Keep outputs stripped; prefer `scripts/` + docs for reproducible runs. |
 | `tools/` | One-off utilities (data prep, conversions, etc.) | Prefer deterministic, well-documented tools. |
+| `deploy/` | Reference serving container definitions | Keep runtime dependencies locked under `constraints/`; mount model artifacts read-only. |
+
+`src/psann/platform/explainability.py` is the optional SHAP orchestration boundary.
+Serializable policies live in `explain_contracts.py`, feature games in
+`explain_groups.py`, and the frozen differentiable raw-input adapter in
+`explain_torch.py`. None of these modules may make SHAP a base-package import.
+
+Phase 7 workplace boundaries live in `platform/accelerators.py` (device/dtype tiers),
+`platform/streaming.py` (bounded restartable batches), `platform/operations.py`
+(fingerprints, redaction, retention, and hooks), and `platform/performance.py`
+(portable benchmark comparisons). `tools/workplace_benchmark.py` writes raw local
+observations under ignored `reports/`; only reviewed aggregate baselines belong in
+`docs/benchmarks/`.
+
+Phase 8 certification lives in `platform/certification.py` so it can execute from an
+installed wheel. `tools/workplace_certification.py` is the source-checkout facade,
+`tools/check_public_api.py` enforces the exhaustive current
+`docs/workplace_public_api.json` plus the public `docs/public_api_0_12_7.json`
+compatibility inventory, and
+`.github/workflows/release-certification.yml` is the clean-checkout CPU/CUDA promotion
+gate. Generated artifacts and privacy-safe reports belong under
+`reports/certification/`.
 
 ## Benchmarks: What Goes Where
 
 Within `src/psann/`, keep `sklearn.py` as the stable public estimator surface and place estimator implementation details under `src/psann/_sklearn/`.
 Within `psannlm/` and `scripts/`, keep public CLI files as thin facades when a runner grows large and move the implementation details into nearby internal packages such as `psannlm/_train/` or `scripts/_<tool>/`.
+
+`psannlm/_version.py` owns the LM distribution version and `psannlm/_compat.py`
+enforces its declared core-package band. Coordinated releases synchronize the core
+and LM version sources, but each installed package reports its own bundled version.
 
 - **Benchmark scripts / runners**: `scripts/` (e.g., `scripts/benchmark_*.py`, `scripts/*_sweep.py`).
 - **Benchmark configs**: `examples/` (or `configs/` if the config is used by multiple subsystems).

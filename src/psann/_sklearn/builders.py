@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
 import math
+import os
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Tuple
 
 import numpy as np
@@ -9,6 +12,13 @@ import torch.nn as nn
 
 from ..attention import build_attention_module
 from ..conv import PSANNConv1dNet, PSANNConv2dNet, PSANNConv3dNet
+from ..estimators._fit_contracts import (
+    build_model_signature,
+    configure_deterministic_mode,
+    validate_fit_configuration,
+    validate_prepared_finite_values,
+    validate_warm_start_signature,
+)
 from ..estimators._fit_utils import (
     FitVariantHooks,
     HISSOTrainingPlan,
@@ -25,8 +35,10 @@ from ..estimators._fit_utils import (
 from ..estimators._fit_utils import _build_optimizer as _build_optimizer_helper
 from ..nn import PSANNNet, WithPreprocessor
 from ..preproc import build_preprocessor
+from ..training_events import TrainingEventCallback
 from ..types import NoiseSpec
 from ..utils import choose_device, seed_all
+from .schema import capture_fit_schema, capture_preprocessing_contract
 from .shared import ValidationDataLike, _AttentionConvModel, _AttentionDenseModel
 
 if TYPE_CHECKING:
@@ -36,6 +48,9 @@ if TYPE_CHECKING:
 
 class _PSANNRegressorBuilderMixin:
     def _device(self) -> torch.device:
+        resolved = getattr(self, "_resolved_training_device_", None)
+        if isinstance(resolved, torch.device):
+            return resolved
         return choose_device(self.device)
 
     def _infer_input_shape(self, X: np.ndarray) -> tuple:
@@ -254,11 +269,14 @@ class _PSANNRegressorBuilderMixin:
 
     def _make_optimizer(self, model: torch.nn.Module, lr: Optional[float] = None):
         lr = float(self.lr if lr is None else lr)
-        if self.optimizer.lower() == "adamw":
+        optimizer = self.optimizer.lower()
+        if optimizer == "adamw":
             return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=self.weight_decay)
-        if self.optimizer.lower() == "sgd":
+        if optimizer == "sgd":
             return torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=self.weight_decay)
+        if optimizer == "adam":
+            return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=self.weight_decay)
+        raise ValueError(f"Unknown optimizer {self.optimizer!r}. Supported: adam, adamw, sgd.")
 
     def _build_optimizer(self, model: torch.nn.Module) -> torch.optim.Optimizer:
         """Compatibility helper for warm-start flows expecting estimator-owned builders."""
@@ -266,11 +284,18 @@ class _PSANNRegressorBuilderMixin:
         return _build_optimizer_helper(self, model)
 
     def _make_loss(self):
+        reduction = str(self.loss_reduction).strip().lower()
+        if reduction == "none":
+            raise ValueError(
+                "loss_reduction='none' is not supported for optimizer-driven training; "
+                "use 'mean' or 'sum' so backward receives a scalar loss."
+            )
+        if reduction not in {"mean", "sum"}:
+            raise ValueError("loss_reduction must be 'mean' or 'sum'.")
         # Built-in strings
         if isinstance(self.loss, str):
             name = self.loss.lower()
             params = self.loss_params or {}
-            reduction = self.loss_reduction
             if name in ("l1", "mae"):
                 return torch.nn.L1Loss(reduction=reduction)
             if name in ("mse", "l2"):
@@ -289,7 +314,6 @@ class _PSANNRegressorBuilderMixin:
         if callable(self.loss):
             user_fn = self.loss
             params = self.loss_params or {}
-            reduction = self.loss_reduction
 
             def _loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
                 out = user_fn(pred, target, **params) if params else user_fn(pred, target)
@@ -301,8 +325,6 @@ class _PSANNRegressorBuilderMixin:
                     return out.mean()
                 if reduction == "sum":
                     return out.sum()
-                if reduction == "none":
-                    return out
                 raise ValueError(f"Unsupported reduction '{reduction}' for custom loss")
 
             return _loss
@@ -509,8 +531,8 @@ class _PSANNRegressorBuilderMixin:
 
     def fit(
         self,
-        X: np.ndarray,
-        y: np.ndarray | None,
+        X: Any,
+        y: Any,
         *,
         context: Optional[np.ndarray] = None,
         validation_data: Optional[ValidationDataLike] = None,
@@ -528,6 +550,19 @@ class _PSANNRegressorBuilderMixin:
         hisso_supervised: Optional[Mapping[str, Any] | bool] = None,
         lr_max: Optional[float] = None,
         lr_min: Optional[float] = None,
+        scheduler: str = "none",
+        scheduler_params: Optional[Mapping[str, Any]] = None,
+        nonfinite_policy: str = "error",
+        fallback_policy: str = "warn",
+        callback_error_policy: str = "raise",
+        deterministic: bool = False,
+        metrics: Optional[Mapping[str, Callable[..., Any]]] = None,
+        callbacks: Optional[Sequence[TrainingEventCallback]] = None,
+        logger: Optional[logging.Logger] = None,
+        resume_from: Optional[str | os.PathLike[str]] = None,
+        checkpoint_dir: Optional[str | os.PathLike[str]] = None,
+        checkpoint_every: int = 0,
+        checkpoint_keep: int = 3,
     ):
         """Fit the estimator.
 
@@ -551,6 +586,8 @@ class _PSANNRegressorBuilderMixin:
         - hisso_primary_transform: optional transform ('identity' | 'softmax' | 'tanh') applied to primary outputs before reward evaluation
         - hisso_transition_penalty: optional float penalty applied between HISSO steps (deprecated alias `hisso_trans_cost` still accepted)
         """
+        X = capture_fit_schema(self, X, y)
+        configure_deterministic_mode(bool(deterministic))
         seed_all(self.random_state)
 
         if hisso and self.per_element:
@@ -584,6 +621,19 @@ class _PSANNRegressorBuilderMixin:
             verbose=verbose,
             lr_max=lr_max,
             lr_min=lr_min,
+            scheduler=scheduler,
+            scheduler_params=scheduler_params,
+            nonfinite_policy=nonfinite_policy,
+            fallback_policy=fallback_policy,
+            callback_error_policy=callback_error_policy,
+            deterministic=deterministic,
+            metrics=metrics,
+            callbacks=callbacks,
+            logger=logger,
+            resume_from=resume_from,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_every=checkpoint_every,
+            checkpoint_keep=checkpoint_keep,
             hisso=hisso,
             hisso_kwargs={
                 "hisso_window": hisso_window,
@@ -600,6 +650,7 @@ class _PSANNRegressorBuilderMixin:
 
         verbose = fit_args.verbose
         hisso = fit_args.hisso
+        validate_fit_configuration(self, fit_args)
 
         X = fit_args.X
         y = fit_args.y
@@ -609,6 +660,7 @@ class _PSANNRegressorBuilderMixin:
             self,
             fit_args,
         )
+        validate_prepared_finite_values(prepared_state)
         primary_dim = int(primary_dim)
         self._primary_dim_ = primary_dim
         self._output_dim_ = int(prepared_state.output_dim)
@@ -653,10 +705,13 @@ class _PSANNRegressorBuilderMixin:
             preserve_shape=bool(self.preserve_shape),
         )
 
+        model_signature = build_model_signature(self, prepared_state)
+        validate_warm_start_signature(self, model_signature)
         rebuild = not (self.warm_start and isinstance(getattr(self, "model_", None), nn.Module))
         if rebuild:
             self.model_ = build_model_from_hooks(hooks, request)
             self._model_device_ = None
+        self._model_signature_ = model_signature
         self._model_rebuilt_ = bool(rebuild)
 
         device = self._device()
@@ -667,6 +722,7 @@ class _PSANNRegressorBuilderMixin:
             result = maybe_run_hisso(hooks, request, fit_args=fit_args)
             if result is None:
                 raise RuntimeError("HISSO requested but no variant hook was provided.")
+            capture_preprocessing_contract(self)
             return self
 
         run_supervised_training(
@@ -675,6 +731,7 @@ class _PSANNRegressorBuilderMixin:
             prepared_state,
             fit_args=fit_args,
         )
+        capture_preprocessing_contract(self)
         return self
 
 

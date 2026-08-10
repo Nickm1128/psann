@@ -1,0 +1,91 @@
+name: Scheduled accelerator validation
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: accelerator-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cuda:
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev,explain,export]
+
+      - name: Require CUDA
+        run: |
+          python -c "import torch; assert torch.cuda.is_available(), 'CUDA runner is unavailable'"
+
+      - name: Capture accelerator capability evidence
+        run: |
+          mkdir -p reports/tests/scheduled
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import psann
+
+          Path("reports/tests/scheduled/capabilities.json").write_text(
+              json.dumps(psann.runtime_accelerator_evidence(), indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Run the GPU-marked suite
+        run: python scripts/run_cuda_tests.py --out reports/tests/scheduled -m gpu
+
+      - name: Upload accelerator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: accelerator-${{ github.run_id }}
+          path: reports/tests/scheduled/
+          retention-days: 30
+
+  mps-observation:
+    runs-on: macos-14
+    continue-on-error: true
+    timeout-minutes: 45
+    env:
+      PSANN_OUTPUT_DIR: reports/tests/mps
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install observation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Observe experimental MPS float32 path
+        run: python -m pytest -q tests/gpu/test_workplace_mps.py
+
+      - name: Upload MPS observation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mps-observation-${{ github.run_id }}
+          path: reports/tests/mps/
+          if-no-files-found: ignore
+          retention-days: 30

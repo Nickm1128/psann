@@ -28,7 +28,8 @@ Thanks for helping with the PSANN cleanup. This document captures the house rule
    python -m pip install -e ./psannlm
    python -m pre_commit install
    ```
-3. The `[dev]` extra installs `pytest`, `ruff`, and `black`. Match the versions in `pyproject.toml`.
+3. Use Python 3.11, 3.12, or 3.13. The `[dev]` extra installs the complete quality,
+   coverage, build, notebook, and pre-commit toolchain.
 4. Optional: enable pre-commit hooks for formatting and linting if you skipped `make dev`:
    ```bash
    python -m pre_commit install
@@ -36,7 +37,15 @@ Thanks for helping with the PSANN cleanup. This document captures the house rule
 
 ## Coding standards
 
-- **Type hints & style** – follow the existing typing patterns. Run `ruff check src tests` and fix any lint failures before sending patches. Black is configured to the default line length.
+- **Type hints & style** - Black is the only formatter. Ruff owns lint and import
+  ordering; do not run Ruff's formatter. Use `python tools/quality.py format` and then
+  `python tools/quality.py lint`.
+- **Typed boundaries** - new workplace modules under `psann.platform` are checked
+  strictly. Legacy internals remain under a documented gradual mypy scope.
+- **Operational safety** - never place credentials or raw workplace data in fixtures,
+  artifact metadata, model cards, logs, benchmark summaries, or committed reports.
+  Add new device/dtype claims only with scheduled evidence and update
+  `docs/workplace_operations.md`.
 - **Shared helpers first** – when adding estimator behaviour, reach for `psann.estimators._fit_utils` (e.g., `normalise_fit_args`, `prepare_inputs_and_scaler`, `build_model_from_hooks`) instead of duplicating logic in `sklearn.py`.
 - **ASCII-only** edits unless a file already uses Unicode symbols.
 
@@ -48,8 +57,10 @@ From repo root:
 make dev        # bootstrap venv + install deps + pre-commit
 make lint       # ruff + black + mypy
 make test-fast  # pytest (exclude slow + GPU)
+make coverage   # one test run, three scoped coverage reports
+make hygiene    # generated output, notebook, root-file, and long-file checks
 make build      # build both wheels
-python tools/repo_hygiene_audit.py --json  # flag tracked outputs + oversized Python files
+make package-smoke  # install built wheels into a temporary environment
 ```
 
 ## Testing
@@ -69,7 +80,7 @@ python tools/repo_hygiene_audit.py --json  # flag tracked outputs + oversized Py
 
 ## Pull request checklist
 
-- [ ] Lint (`ruff`) and tests (`pytest`) pass locally.
+- [ ] `make lint`, `make test-fast`, and `make hygiene` pass locally.
 - [ ] Documentation reflects new behaviour (and points to `docs/migration.md` for edge cases).
 - [ ] `docs/project_cleanup_todo.md` has been updated for the task you touched.
 - [ ] Commits include concise summaries and link to the corresponding cleanup task where possible.

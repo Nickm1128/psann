@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import pytest
 import torch
 from torch import nn
 
-import pytest
-
-from psann.activations import ReLUSigmoidPSANN
-from psann.nn import PSANNNet, PSANNBlock, ResidualPSANNBlock
+from psann.activations import ReLUSigmoidPSANN, SigmoidParam
+from psann.nn import PSANNBlock, PSANNNet, ResidualPSANNBlock
 
 
 def _identity_initialise(linear: nn.Linear) -> None:
@@ -108,3 +107,35 @@ def test_psann_net_supports_relu_sigmoid_psann_activation() -> None:
     x = torch.randn(5, 3)
     out = net(x)
     assert out.shape == (5, 2)
+
+
+def test_psann_net_supports_sigmoid_activation() -> None:
+    net = PSANNNet(
+        input_dim=3,
+        output_dim=2,
+        hidden_layers=1,
+        hidden_units=8,
+        hidden_width=None,
+        activation_type="parameterized_sigmoid",
+        act_kw={"slope_init": 0.9, "slope_bounds": (1e-3, 5.0)},
+    )
+    block = net.body[0]
+    assert isinstance(block, PSANNBlock)
+    assert isinstance(block.act, SigmoidParam)
+    x = torch.randn(5, 3)
+    out = net(x)
+    assert out.shape == (5, 2)
+
+
+def test_residual_block_supports_sigmoid_activation() -> None:
+    block = ResidualPSANNBlock(
+        dim=4,
+        activation_type="sigmoid",
+        norm="none",
+        residual_alpha_init=1.0,
+    )
+    assert isinstance(block.act1, SigmoidParam)
+    assert isinstance(block.act2, SigmoidParam)
+    x = torch.randn(3, 4)
+    out = block(x)
+    assert out.shape == x.shape

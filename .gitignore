@@ -76,6 +76,7 @@ reports/*
 *.pth
 *.ckpt
 *.safetensors
+!tests/fixtures/legacy/*.pt
 
 # Examples artifacts
 examples/logs/

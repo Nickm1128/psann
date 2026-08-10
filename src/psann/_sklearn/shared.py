@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 
 try:  # Optional scikit-learn import for API compatibility
-    from sklearn.base import BaseEstimator, RegressorMixin  # type: ignore
+    from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin  # type: ignore
     from sklearn.metrics import r2_score as _sk_r2_score  # type: ignore
 except Exception:  # Fallbacks if sklearn isn't installed at runtime
 
@@ -29,6 +29,9 @@ except Exception:  # Fallbacks if sklearn isn't installed at runtime
 
     class RegressorMixin:
         pass
+
+    class ClassifierMixin:
+        _estimator_type = "classifier"
 
     def _sk_r2_score(y_true, y_pred):
         y_true = np.asarray(y_true)
@@ -298,6 +301,7 @@ class _WaveResNetConvModel(nn.Module):
 
 __all__ = [
     "BaseEstimator",
+    "ClassifierMixin",
     "RegressorMixin",
     "ValidationDataLike",
     "_AttentionDenseModel",

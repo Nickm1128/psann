@@ -1,0 +1,3 @@
+# Blocking lowest supported SHAP release on Python 3.11.
+# Let SHAP resolve its compatible NumPy/Numba/SciPy floors in this isolated job.
+shap==0.50.0

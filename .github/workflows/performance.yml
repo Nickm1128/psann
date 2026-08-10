@@ -1,0 +1,49 @@
+name: Workplace performance observation
+
+on:
+  schedule:
+    - cron: "41 7 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[explain]
+
+      - name: Run correctness-blocking performance observation
+        run: |
+          python tools/workplace_benchmark.py \
+            --baseline docs/benchmarks/workplace_cpu_baseline.json \
+            --output reports/performance/workplace-cpu.json
+
+      - name: Publish performance summary
+        if: always()
+        run: |
+          if [ -f reports/performance/workplace-cpu.json ]; then
+            cat reports/performance/workplace-cpu.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workplace-performance-${{ github.run_id }}
+          path: reports/performance/
+          retention-days: 90

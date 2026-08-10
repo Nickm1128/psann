@@ -154,4 +154,6 @@ class TrainConfig:
             raise ValueError("eval_max_batches must be >= 0")
         if self.cuda_empty_cache_interval_steps < 0:
             raise ValueError("cuda_empty_cache_interval_steps must be >= 0")
-        self.torch_compile_mode = str(getattr(self, "torch_compile_mode", "default") or "default").strip()
+        self.torch_compile_mode = str(
+            getattr(self, "torch_compile_mode", "default") or "default"
+        ).strip()

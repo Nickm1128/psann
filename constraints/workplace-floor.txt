@@ -1,0 +1,6 @@
+# Blocking 1.1 workplace dependency floor on Python 3.11.
+# SHAP is validated separately because SHAP 0.50+ requires NumPy 2.
+numpy==1.26.4
+torch==2.4.1
+scipy==1.11.4
+scikit-learn==1.4.2

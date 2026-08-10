@@ -20,8 +20,8 @@ This module implements a geometric-connectivity network where each neuron connec
   - Autograd-friendly, no custom backward.
 - `GeoSparseResidualBlock` and `GeoSparseNet` in `src/psann/nn_geo_sparse.py`:
   - Pre-norm residual blocks with `DropPath` and learnable residual scale `alpha`.
-  - Activation options: `psann`, `phase_psann`, `relu`, `tanh`.
-  - Activation config accepts both `ActivationConfig` and LM-style keys like `amp_init`, `freq_init`, `damp_init`, `trainable`, and bounds.
+  - Activation options: `psann`, `phase_psann`, `relu`, `tanh`, `relu_sigmoid_psann`, `sigmoid`, and `mixed`.
+  - Activation config accepts both `ActivationConfig` and LM-style keys like `amp_init`, `freq_init`, `damp_init`, `trainable`, `slope_init`, `slope_bounds`, and bounds.
 
 ## Parameter scaling
 

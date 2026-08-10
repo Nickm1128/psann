@@ -545,7 +545,10 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                 try:
                     id_to_token = tk.id_to_token
                 except AttributeError:  # pragma: no cover - defensive
-                    id_to_token = lambda _: None  # type: ignore
+
+                    def id_to_token(_: int) -> None:  # type: ignore[no-redef]
+                        return None
+
                 for key, tid in self._src_special_ids.items():
                     if tid is None or tid < 0:
                         continue

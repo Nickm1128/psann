@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from psann.activations import PhaseSineParam, ReLUSigmoidPSANN, SineParam
+from psann.activations import PhaseSineParam, ReLUSigmoidPSANN, SigmoidParam, SineParam
 from psann.layers.geo_sparse import (
     GeoSparseLinear,
     build_geo_connectivity,
@@ -76,12 +76,8 @@ def test_geo_sparse_linear_scatter_matches_gather() -> None:
     in_features = 4
     out_features = 4
     indices = torch.arange(in_features).repeat(out_features, 1)
-    gather = GeoSparseLinear(
-        in_features, out_features, indices, bias=True, compute_mode="gather"
-    )
-    scatter = GeoSparseLinear(
-        in_features, out_features, indices, bias=True, compute_mode="scatter"
-    )
+    gather = GeoSparseLinear(in_features, out_features, indices, bias=True, compute_mode="gather")
+    scatter = GeoSparseLinear(in_features, out_features, indices, bias=True, compute_mode="scatter")
     with torch.no_grad():
         scatter.weight.copy_(gather.weight)
         scatter.bias.copy_(gather.bias)
@@ -189,6 +185,27 @@ def test_geo_sparse_relu_sigmoid_psann_activation_config() -> None:
         norm="none",
     )
     assert isinstance(block.act, ReLUSigmoidPSANN)
+    x = torch.randn(3, features, requires_grad=True)
+    y = block(x).sum()
+    y.backward()
+    assert block.act._slope.grad is not None
+
+
+def test_geo_sparse_sigmoid_activation_config() -> None:
+    features = 6
+    indices = torch.arange(features).repeat(features, 1)
+    block = GeoSparseResidualBlock(
+        features,
+        indices,
+        activation_type="parameterized_sigmoid",
+        activation_config={
+            "slope_init": 0.7,
+            "slope_trainable": True,
+            "slope_bounds": (1e-3, 5.0),
+        },
+        norm="none",
+    )
+    assert isinstance(block.act, SigmoidParam)
     x = torch.randn(3, features, requires_grad=True)
     y = block(x).sum()
     y.backward()

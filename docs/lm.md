@@ -14,6 +14,11 @@ From PyPI, install the core library plus the LM add-on:
 pip install psann psannlm
 ```
 
+The `1.1` LM distribution accepts `psann>=1.1.0rc1,<1.2`. A mismatched core is
+rejected at import time with the installed and required versions in the error.
+`psannlm.__version__` reports the LM distribution metadata independently from
+`psann.__version__`.
+
 For development from this repository (including GPU validation scripts), install the core
 package plus the LM package:
 

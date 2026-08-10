@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ._sklearn import (
     GeoSparseRegressor,
+    PSANNClassifier,
     PSANNRegressor,
     ResConvPSANNRegressor,
     ResPSANNRegressor,
@@ -17,6 +18,7 @@ from ._sklearn import (
 
 __all__ = [
     "PSANNRegressor",
+    "PSANNClassifier",
     "ResPSANNRegressor",
     "ResConvPSANNRegressor",
     "SGRPSANNRegressor",
@@ -26,6 +28,7 @@ __all__ = [
 
 for _cls in (
     PSANNRegressor,
+    PSANNClassifier,
     ResPSANNRegressor,
     ResConvPSANNRegressor,
     SGRPSANNRegressor,

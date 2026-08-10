@@ -1,0 +1,206 @@
+name: Workplace release-candidate certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: Exact PEP 440 package version being certified
+        required: true
+        default: "1.1.0rc1"
+        type: string
+      soak_iterations:
+        description: Repeated inference passes per certification scenario
+        required: true
+        default: "20"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workplace-release-candidate-${{ inputs.release_version }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify selected release identity
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          ACTUAL_VERSION=$(python -c 'import re; from pathlib import Path; text = Path("src/psann/_version.py").read_text(encoding="utf-8"); print(re.search(r"^__version__ = \"([^\"]+)\"$", text, re.MULTILINE).group(1))')
+          test "$ACTUAL_VERSION" = "$RELEASE_VERSION"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install complete release-candidate environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev,explain,serve,export,sklearn] pandas "httpx2>=2,<3"
+          python -W error -c "from fastapi import FastAPI; from fastapi.testclient import TestClient; client = TestClient(FastAPI()); client.close()"
+
+      - name: Format, lint, type, API-freeze, and repository gates
+        run: |
+          python tools/quality.py lint
+          python tools/check_public_api.py
+          python tools/repo_hygiene_audit.py --strict-long-files --json
+
+      - name: Complete CPU suite
+        run: python -m pytest -m "not slow and not gpu"
+
+      - name: Scoped coverage
+        run: python tools/run_coverage.py
+
+      - name: Upload source-gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-source-gates-${{ inputs.release_version }}-${{ github.sha }}
+          path: |
+            coverage/*.xml
+            reports/repo_hygiene_audit.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+  built-wheel-cpu:
+    needs: source-gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      PSANN_API_CHECK_INSTALLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build and inspect distributions
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m build psannlm
+          python -m twine check dist/* psannlm/dist/*
+
+      - name: Install the built core wheel
+        run: |
+          CORE_WHEEL=$(find dist -maxdepth 1 -name '*.whl' -print -quit)
+          python -m venv .venv-certification
+          . .venv-certification/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install "${CORE_WHEEL}[explain,serve,sklearn]" pandas pytest "httpx2>=2,<3"
+          python -W error -c "from fastapi import FastAPI; from fastapi.testclient import TestClient; client = TestClient(FastAPI()); client.close()"
+
+      - name: Certify installed wheel and compatibility evidence
+        env:
+          PYTHONWARNINGS: error
+        run: |
+          . .venv-certification/bin/activate
+          python tools/check_public_api.py
+          REPO_ROOT="$PWD"
+          CERT_WORKDIR=$(mktemp -d)
+          (
+            cd "$CERT_WORKDIR"
+            python -m psann.platform.certification \
+              --output "$REPO_ROOT/reports/certification/cpu" \
+              --device cpu \
+              --soak-iterations "${{ inputs.soak_iterations }}"
+          )
+          mkdir -p /tmp/psann-compat-tests
+          cp tests/test_model_artifacts.py /tmp/psann-compat-tests/test_model_artifacts.py
+          cp -r tests/fixtures /tmp/psann-compat-tests/fixtures
+          python -m pytest -q /tmp/psann-compat-tests/test_model_artifacts.py \
+            -k "synthetic_0_9_manifest_schema or synthetic_producer_version_metadata or public_0_12_7_legacy_checkpoint"
+
+      - name: Package smoke
+        run: python tools/package_smoke.py
+
+      - name: Upload distributions and CPU certification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-${{ inputs.release_version }}-${{ github.sha }}
+          path: |
+            dist/*
+            psannlm/dist/*
+            reports/certification/cpu/
+          if-no-files-found: error
+          retention-days: 90
+
+  cuda-soak:
+    needs: built-wheel-cpu
+    runs-on: [self-hosted, linux, x64, gpu]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download candidate wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: release-candidate-${{ inputs.release_version }}-${{ github.sha }}
+          path: candidate
+
+      - name: Install without replacing the runner CUDA build
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pandas shap fastapi uvicorn "httpx2>=2,<3" scikit-learn
+          CORE_WHEEL=$(find candidate -name '*.whl' -path '*dist*' ! -name 'psannlm*' -print -quit)
+          python -m pip install --no-deps "$CORE_WHEEL"
+          python -c "import torch; assert torch.cuda.is_available(), 'CUDA runner is unavailable'"
+          python -W error -c "from fastapi import FastAPI; from fastapi.testclient import TestClient; client = TestClient(FastAPI()); client.close()"
+
+      - name: Run six-scenario CUDA soak from installed wheel
+        env:
+          PYTHONWARNINGS: error
+        run: |
+          REPO_ROOT="$PWD"
+          CERT_WORKDIR=$(mktemp -d)
+          (
+            cd "$CERT_WORKDIR"
+            python -m psann.platform.certification \
+              --output "$REPO_ROOT/reports/certification/cuda" \
+              --device cuda \
+              --soak-iterations "${{ inputs.soak_iterations }}"
+          )
+
+      - name: Upload CUDA certification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-cuda-${{ inputs.release_version }}-${{ github.sha }}
+          path: reports/certification/cuda/
+          if-no-files-found: error
+          retention-days: 90
+
+  supply-chain:
+    uses: ./.github/workflows/security.yml
+    with:
+      release_identity: ${{ inputs.release_version }}
+
+  reference-container:
+    uses: ./.github/workflows/container.yml
+
+  promotion-gate:
+    needs:
+      - source-gates
+      - built-wheel-cpu
+      - cuda-soak
+      - supply-chain
+      - reference-container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm evidence-complete candidate
+        run: |
+          echo "All workplace release-candidate gates passed for ${{ inputs.release_version }} at $GITHUB_SHA."
+          echo "This workflow never creates a tag or publishes a package."
+          echo "A maintainer may tag only this exact commit after reviewing uploaded evidence."

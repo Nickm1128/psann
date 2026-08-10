@@ -6,7 +6,13 @@ from typing import Any, Mapping, Optional, Sequence, Tuple
 import torch
 from torch import nn
 
-from .activations import MixedActivation, PhaseSineParam, ReLUSigmoidPSANN, SineParam
+from .activations import (
+    MixedActivation,
+    PhaseSineParam,
+    ReLUSigmoidPSANN,
+    SigmoidParam,
+    SineParam,
+)
 from .layers.geo_sparse import GeoSparseLinear, build_geo_connectivity
 from .layers.sine_residual import RMSNorm
 from .nn import DropPath
@@ -118,9 +124,7 @@ class GeoSparseNet(nn.Module):
                 block_activation_config = dict(block_activation_config)
                 block_activation_config.setdefault("mix_seed", block_seed)
             drop_path = (
-                float(drop_path_max) * (idx / max(1, self.depth - 1))
-                if self.depth > 1
-                else 0.0
+                float(drop_path_max) * (idx / max(1, self.depth - 1)) if self.depth > 1 else 0.0
             )
             block = GeoSparseResidualBlock(
                 self.features,
@@ -156,6 +160,8 @@ def _build_activation(
         act = "phase_psann"
     elif act in {"rspsann", "rsp", "clipped_psann"}:
         act = "relu_sigmoid_psann"
+    elif act in {"parameterized_sigmoid"}:
+        act = "sigmoid"
     cfg, phase_cfg = _normalize_activation_config(out_features, activation_config)
     if act == "mixed":
         raw = _as_mapping(activation_config)
@@ -195,10 +201,15 @@ def _build_activation(
             cfg_n = _normalize_relu_sigmoid_psann_config(n, activation_config)
             return ReLUSigmoidPSANN(n, **cfg_n)
 
+        def _build_sigmoid(n: int) -> nn.Module:
+            cfg_n = _normalize_sigmoid_config(n, activation_config)
+            return SigmoidParam(n, **cfg_n)
+
         builders = {
             "psann": _build_psann,
             "phase_psann": _build_phase_psann,
             "relu_sigmoid_psann": _build_relu_sigmoid_psann,
+            "sigmoid": _build_sigmoid,
         }
         return MixedActivation(
             out_features,
@@ -226,9 +237,12 @@ def _build_activation(
     if act == "relu_sigmoid_psann":
         rsp_cfg = _normalize_relu_sigmoid_psann_config(out_features, activation_config)
         return ReLUSigmoidPSANN(out_features, **rsp_cfg)
+    if act == "sigmoid":
+        sigmoid_cfg = _normalize_sigmoid_config(out_features, activation_config)
+        return SigmoidParam(out_features, **sigmoid_cfg)
     raise ValueError(
         "activation_type must be one of: 'psann', 'phase_psann', 'mixed', "
-        "'relu', 'tanh', 'relu_sigmoid_psann'"
+        "'relu', 'tanh', 'relu_sigmoid_psann', 'sigmoid'"
     )
 
 
@@ -311,9 +325,7 @@ def _normalize_relu_sigmoid_psann_config(
     cfg, _ = _normalize_activation_config(out_features, activation_config)
 
     slope_init = raw.get("slope_init", raw.get("relu_slope_init", 1.0))
-    slope_init = _maybe_sample_init(
-        out_features, slope_init, raw, "slope_init_std", "slope_range"
-    )
+    slope_init = _maybe_sample_init(out_features, slope_init, raw, "slope_init_std", "slope_range")
     if slope_init is None:
         slope_init = 1.0
     cfg["slope_init"] = slope_init
@@ -325,6 +337,32 @@ def _normalize_relu_sigmoid_psann_config(
         cfg["clip_max"] = float(raw["clip_max"])
     elif "clip_at" in raw:
         cfg["clip_max"] = float(raw["clip_at"])
+    return cfg
+
+
+def _normalize_sigmoid_config(
+    out_features: int,
+    activation_config: Optional[ActivationConfig | Mapping[str, Any]],
+) -> dict:
+    raw = _as_mapping(activation_config)
+    cfg: dict = {}
+    slope_init = raw.get("slope_init", raw.get("sigmoid_slope_init", 1.0))
+    slope_init = _maybe_sample_init(out_features, slope_init, raw, "slope_init_std", "slope_range")
+    if slope_init is None:
+        slope_init = 1.0
+    cfg["slope_init"] = slope_init
+    if "slope_trainable" in raw:
+        cfg["slope_trainable"] = bool(raw["slope_trainable"])
+    elif "slope_learnable" in raw:
+        cfg["slope_trainable"] = bool(raw["slope_learnable"])
+
+    slope_bounds = raw.get("slope_bounds", None)
+    if slope_bounds is None and isinstance(raw.get("bounds"), Mapping):
+        slope_bounds = raw["bounds"].get("slope")
+    if slope_bounds is not None:
+        cfg["slope_bounds"] = slope_bounds
+    if "feature_dim" in raw:
+        cfg["feature_dim"] = raw["feature_dim"]
     return cfg
 
 
