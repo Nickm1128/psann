@@ -40,6 +40,11 @@ fixture and current native schema migrations, executes representative CPU and CU
 soaks, and reuses the supply-chain and reference-container workflows. Download and
 review every uploaded evidence artifact.
 
+Release branches named `codex/release-*` run the same certification automatically on
+pull requests so a new workflow can be proven before it first reaches the default
+branch. After merge, maintainers may also dispatch it manually with explicit version
+and soak inputs. Neither path tags or publishes a package.
+
 Normal pull-request CI additionally builds and installs the candidate wheel on Linux
 and Windows for Python 3.11, 3.12, and 3.13, including sklearn, service, and SHAP
 extras. Separate Python 3.11 jobs consume the maintained core floor, workstation

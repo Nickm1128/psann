@@ -72,16 +72,18 @@ def test_release_evidence_names_include_version_and_commit_identity():
     security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
 
     assert 'default: "1.1.0rc1"' in certification
+    assert "pull_request:" in certification
+    assert "startsWith(github.head_ref, 'codex/release-')" in certification
+    assert "inputs.release_version || '1.1.0rc1'" in certification
+    assert "inputs.soak_iterations || '20'" in certification
+    release_identity = "${{ inputs.release_version || '1.1.0rc1' }}"
     for artifact_prefix in (
         "release-source-gates",
         "release-candidate",
         "release-candidate-cuda",
     ):
-        assert (
-            f"{artifact_prefix}-${{{{ inputs.release_version }}}}-${{{{ github.sha }}}}"
-            in certification
-        )
-    assert "release_identity: ${{ inputs.release_version }}" in certification
+        assert f"{artifact_prefix}-{release_identity}-${{{{ github.sha }}}}" in certification
+    assert f"release_identity: {release_identity}" in certification
     assert certification.count("CERT_WORKDIR=$(mktemp -d)") == 2
     assert certification.count('cd "$CERT_WORKDIR"') == 2
     assert '"$REPO_ROOT/reports/certification/cpu"' in certification

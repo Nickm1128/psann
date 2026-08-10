@@ -1,6 +1,9 @@
 name: Workplace release-candidate certification
 
 on:
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       release_version:
@@ -18,11 +21,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: workplace-release-candidate-${{ inputs.release_version }}-${{ github.ref }}
+  group: workplace-release-candidate-${{ inputs.release_version || '1.1.0rc1' }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   source-gates:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'codex/release-')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -30,7 +34,7 @@ jobs:
 
       - name: Verify selected release identity
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ inputs.release_version || '1.1.0rc1' }}
         run: |
           ACTUAL_VERSION=$(python -c 'import re; from pathlib import Path; text = Path("src/psann/_version.py").read_text(encoding="utf-8"); print(re.search(r"^__version__ = \"([^\"]+)\"$", text, re.MULTILINE).group(1))')
           test "$ACTUAL_VERSION" = "$RELEASE_VERSION"
@@ -64,7 +68,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-source-gates-${{ inputs.release_version }}-${{ github.sha }}
+          name: release-source-gates-${{ inputs.release_version || '1.1.0rc1' }}-${{ github.sha }}
           path: |
             coverage/*.xml
             reports/repo_hygiene_audit.json
@@ -114,7 +118,7 @@ jobs:
             python -m psann.platform.certification \
               --output "$REPO_ROOT/reports/certification/cpu" \
               --device cpu \
-              --soak-iterations "${{ inputs.soak_iterations }}"
+              --soak-iterations "${{ inputs.soak_iterations || '20' }}"
           )
           mkdir -p /tmp/psann-compat-tests
           cp tests/test_model_artifacts.py /tmp/psann-compat-tests/test_model_artifacts.py
@@ -129,7 +133,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-candidate-${{ inputs.release_version }}-${{ github.sha }}
+          name: release-candidate-${{ inputs.release_version || '1.1.0rc1' }}-${{ github.sha }}
           path: |
             dist/*
             psannlm/dist/*
@@ -147,7 +151,7 @@ jobs:
       - name: Download candidate wheels
         uses: actions/download-artifact@v4
         with:
-          name: release-candidate-${{ inputs.release_version }}-${{ github.sha }}
+          name: release-candidate-${{ inputs.release_version || '1.1.0rc1' }}-${{ github.sha }}
           path: candidate
 
       - name: Install without replacing the runner CUDA build
@@ -170,24 +174,26 @@ jobs:
             python -m psann.platform.certification \
               --output "$REPO_ROOT/reports/certification/cuda" \
               --device cuda \
-              --soak-iterations "${{ inputs.soak_iterations }}"
+              --soak-iterations "${{ inputs.soak_iterations || '20' }}"
           )
 
       - name: Upload CUDA certification
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-candidate-cuda-${{ inputs.release_version }}-${{ github.sha }}
+          name: release-candidate-cuda-${{ inputs.release_version || '1.1.0rc1' }}-${{ github.sha }}
           path: reports/certification/cuda/
           if-no-files-found: error
           retention-days: 90
 
   supply-chain:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'codex/release-')
     uses: ./.github/workflows/security.yml
     with:
-      release_identity: ${{ inputs.release_version }}
+      release_identity: ${{ inputs.release_version || '1.1.0rc1' }}
 
   reference-container:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'codex/release-')
     uses: ./.github/workflows/container.yml
 
   promotion-gate:
@@ -201,6 +207,6 @@ jobs:
     steps:
       - name: Confirm evidence-complete candidate
         run: |
-          echo "All workplace release-candidate gates passed for ${{ inputs.release_version }} at $GITHUB_SHA."
+          echo "All workplace release-candidate gates passed for ${{ inputs.release_version || '1.1.0rc1' }} at $GITHUB_SHA."
           echo "This workflow never creates a tag or publishes a package."
           echo "A maintainer may tag only this exact commit after reviewing uploaded evidence."
