@@ -44,5 +44,8 @@ def test_minimal_end_to_end_flow(tmp_path) -> None:
     restored = psannLM.load(str(ckpt_path))
     # Reattach tokenizer for inference convenience
     restored._tokenizer = data.tokenizer  # type: ignore[attr-defined]
+    expected_reload_out = model.generate(
+        "wave networks", max_new_tokens=24, temperature=0.0
+    ).strip()
     reload_out = restored.generate("wave networks", max_new_tokens=24, temperature=0.0).strip()
-    assert reload_out, "restored model should also generate text"
+    assert reload_out == expected_reload_out

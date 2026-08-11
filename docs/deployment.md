@@ -212,6 +212,11 @@ docker run --rm -p 8080:8080 `
   psann-serving:0.14.0
 ```
 
+On Linux, the host artifact must be readable by the container's non-root `psann`
+user while remaining non-writable. Grant the narrowest suitable group or ACL read
+permission for production artifacts; the ephemeral CI smoke artifact uses mode
+`0444` because it contains no production data and is discarded with the runner.
+
 The container workflow builds the image, creates and mounts a native smoke artifact,
 checks health/readiness/metadata/prediction, and publishes
 `ghcr.io/<owner>/<repository>/serve:<tag>` only for version tags.

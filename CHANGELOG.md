@@ -12,6 +12,11 @@ release and support details live in `docs/releasing.md` and
   benchmark workflows under `docs/archive/workflows/`. They no longer run in GitHub
   Actions and are not release evidence; `1.1.0rc1` remains blocked from tagging and
   PyPI publication until replacement promotion evidence exists.
+- Made the no-scikit-learn estimator fallback follow sklearn parameter semantics so
+  legacy ResConv and Wave checkpoints round-trip without leaking unsupported
+  constructor arguments.
+- Made CI dependency installation, formatter selection, and non-root container
+  artifact permissions reproducible across the supported Python matrix.
 
 ## 1.1.0rc1 - 2026-08-10
 

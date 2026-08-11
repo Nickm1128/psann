@@ -146,6 +146,7 @@ def test_container_recipe_uses_non_root_healthcheck_and_mounted_artifact():
     root = Path(__file__).resolve().parents[1]
     dockerfile = (root / "deploy" / "Dockerfile").read_text(encoding="utf-8")
     lock = (root / "constraints" / "deployment-py311.txt").read_text(encoding="utf-8")
+    workflow = (root / ".github" / "workflows" / "container.yml").read_text(encoding="utf-8")
 
     assert "USER psann" in dockerfile
     assert "HEALTHCHECK" in dockerfile
@@ -154,6 +155,8 @@ def test_container_recipe_uses_non_root_healthcheck_and_mounted_artifact():
     assert "fastapi==0.139.2" in lock
     assert "starlette==1.3.1" in lock
     assert "uvicorn==0.40.0" in lock
+    assert "chmod 0444 artifacts/container-smoke.psann" in workflow
+    assert workflow.count("curl --fail --silent http://127.0.0.1:8080/ready") == 2
 
 
 def test_archived_release_certification_retains_test_client_context():

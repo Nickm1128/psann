@@ -65,8 +65,7 @@ def _obtain_wheel(workspace: Path, supplied_wheel: Path | None) -> Path:
 
 
 def _producer_program() -> str:
-    return textwrap.dedent(
-        f"""
+    return textwrap.dedent(f"""
         import importlib.metadata
         import json
         import platform
@@ -131,8 +130,7 @@ def _producer_program() -> str:
                 sort_keys=True,
             )
         )
-        """
-    )
+        """)
 
 
 def build_fixture(output_dir: Path, supplied_wheel: Path | None) -> tuple[Path, Path]:

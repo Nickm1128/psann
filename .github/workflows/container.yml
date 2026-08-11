@@ -55,6 +55,7 @@ jobs:
           )
           run.export("artifacts/container-smoke.psann")
           PY
+          chmod 0444 artifacts/container-smoke.psann
 
       - name: Build image
         run: docker build -f deploy/Dockerfile -t psann-serving:smoke .
@@ -71,6 +72,7 @@ jobs:
             fi
             sleep 1
           done
+          curl --fail --silent http://127.0.0.1:8080/ready
           curl --fail --silent http://127.0.0.1:8080/health
           curl --fail --silent http://127.0.0.1:8080/metadata
           curl --fail --silent \
