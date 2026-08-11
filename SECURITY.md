@@ -87,10 +87,11 @@ Do not place credentials, authorization headers, private keys, raw request rows,
 row-level explanations in manifests, logs, hooks, benchmark summaries, or promoted
 reports. A data fingerprint is an integrity identifier, not anonymization.
 
-Weekly automation audits installed Python dependencies, scans the reference container
-for fixed high/critical vulnerabilities, and generates source and image SBOMs.
-Release owners must review current evidence rather than treating a prior scan as a
-permanent assurance. Retention defaults and the complete secrets boundary are in
+The former weekly dependency audit, reference-container scan, and source/image SBOM
+workflow is [archived](docs/archive/workflows/README.md) and does not currently run.
+Release owners must obtain and review current replacement evidence rather than
+treating the archived definition or a prior scan as assurance. Retention defaults and
+the complete secrets boundary are in
 [`docs/workplace_operations.md`](docs/workplace_operations.md).
 
 ## Response Expectations

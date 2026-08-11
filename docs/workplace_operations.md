@@ -159,7 +159,8 @@ only compact aggregate summaries—never raw model inputs—to version control.
 
 ## Vulnerability and SBOM evidence
 
-The supply-chain workflow performs:
+The former supply-chain workflow is [archived](archive/workflows/README.md) and does
+not currently perform or retain these checks. Its historical contract covered:
 
 - an installed-environment `pip-audit` across core, serving, export, and explanation
   dependencies;
@@ -170,12 +171,11 @@ The supply-chain workflow performs:
   distribution, and container image;
 - 90-day upload of scan/SBOM evidence.
 
-Dependabot observes Python, GitHub Actions, and Docker dependencies weekly. Tag-based
-publication also generates SBOMs for both package distributions and the image. The
-third-party scanner, SBOM, and container build actions are pinned to immutable commits,
-and the Syft version is explicit. When publication is associated with a GitHub Release,
-the SBOM action attaches the reports as release assets. Vulnerability results describe
-known databases at scan time and do not replace threat modeling, artifact signatures,
+Dependabot continues to observe Python, GitHub Actions, and Docker dependencies
+weekly. The active tag-based container publication workflow generates SBOMs for both
+package distributions and the image, but no tag exists for the candidate and those
+future artifacts are not present evidence. Vulnerability results describe known
+databases at scan time and do not replace threat modeling, artifact signatures,
 provenance, or incident response.
 
 ## Promotion checklist

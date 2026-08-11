@@ -2,7 +2,7 @@
 
 Status: Active
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-11
 
 ## Runtime Support
 
@@ -37,6 +37,10 @@ For the `1.1.0rc1` candidate:
 - the frozen `workplace-v1` API is enforced by `docs/workplace_public_api.json`;
 - no stable release is tagged until the release-candidate CPU, CUDA, security,
   container, package, migration, and warning gates pass for one commit.
+
+The workflows that formerly aggregated release certification and supply-chain
+evidence were [archived on 2026-08-11](archive/workflows/README.md). Therefore no
+candidate currently satisfies the final condition above.
 
 PSANN-LM remains Alpha and outside the stable workplace API commitment. Its `1.1`
 distribution line requires `psann>=1.1.0rc1,<1.2`, validates that band at import time,
@@ -88,7 +92,9 @@ Scheduled evidence:
 - experimental MPS float32 observations that do not block releases;
 - CPU performance comparisons where correctness blocks and noisy timing regressions
   alert by default;
-- dependency/container vulnerability scans and source/image SBOM generation.
+- dependency/container vulnerability scans and source/image SBOM generation are
+  required but currently absent; their former workflow is
+  [archived](archive/workflows/README.md).
 
 See [`releasing.md`](releasing.md) for the release checklist,
 [`compatibility_evidence.md`](compatibility_evidence.md) for retained migration

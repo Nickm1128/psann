@@ -65,30 +65,17 @@ def test_workflow_yaml_parses(workflow: Path):
     assert isinstance(parsed, dict), f"{workflow.relative_to(ROOT)} must contain a YAML mapping"
 
 
-def test_release_evidence_names_include_version_and_commit_identity():
-    certification = (ROOT / ".github" / "workflows" / "release-certification.yml").read_text(
-        encoding="utf-8"
-    )
-    security = (ROOT / ".github" / "workflows" / "security.yml").read_text(encoding="utf-8")
+@pytest.mark.parametrize(
+    "workflow_name",
+    ("release-certification.yml", "security.yml", "hisso-benchmark.yml"),
+)
+def test_archived_workflows_are_not_active(workflow_name: str):
+    active = ROOT / ".github" / "workflows" / workflow_name
+    archived = ROOT / "docs" / "archive" / "workflows" / workflow_name
 
-    assert 'default: "1.1.0rc1"' in certification
-    assert "pull_request:" in certification
-    assert "startsWith(github.head_ref, 'codex/release-')" in certification
-    assert "inputs.release_version || '1.1.0rc1'" in certification
-    assert "inputs.soak_iterations || '20'" in certification
-    release_identity = "${{ inputs.release_version || '1.1.0rc1' }}"
-    for artifact_prefix in (
-        "release-source-gates",
-        "release-candidate",
-        "release-candidate-cuda",
-    ):
-        assert f"{artifact_prefix}-{release_identity}-${{{{ github.sha }}}}" in certification
-    assert f"release_identity: {release_identity}" in certification
-    assert certification.count("CERT_WORKDIR=$(mktemp -d)") == 2
-    assert certification.count('cd "$CERT_WORKDIR"') == 2
-    assert '"$REPO_ROOT/reports/certification/cpu"' in certification
-    assert '"$REPO_ROOT/reports/certification/cuda"' in certification
-    assert "inputs.release_identity || 'development'" in security
+    assert not active.exists()
+    assert archived.exists()
+    assert archived.read_text(encoding="utf-8").startswith("# Archived 2026-08-11;")
 
 
 def test_every_support_matrix_row_links_to_executable_or_policy_evidence():

@@ -1,8 +1,8 @@
 # Workplace Neural-Network Platform Roadmap
 
-Status: Active roadmap; Phases 0-7 complete, Phase 8 promotion blocked, Phase 9 in progress
+Status: Active roadmap; Phases 0-7 complete, Phase 8 promotion blocked, Phase 9 in progress; promotion workflows archived
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-11
 
 Scope: Core `psann` estimators and supporting workplace model lifecycle. The separate
 `psannlm` distribution remains out of scope except where shared repository, packaging,
@@ -825,10 +825,12 @@ Phase 9.
 - Core coverage is 75%, above the blocking 70% floor. The pinned deployment dependency
   audit, secret scan, fixed HIGH/CRITICAL image scan, non-root container smoke, Twine
   checks, package smoke, and SPDX SBOM generation pass.
-- The manual `Workplace release-candidate certification` workflow repeats the clean
-  source gates, certifies the built wheel, runs the six-scenario CUDA soak on a
-  self-hosted GPU runner, reuses the supply-chain and container gates, and exposes a
-  final promotion gate. It never tags or publishes automatically.
+- The former manual `Workplace release-candidate certification` workflow repeated
+  the clean source gates, certified the built wheel, ran the six-scenario CUDA soak
+  on a self-hosted GPU runner, reused the supply-chain and container gates, and
+  exposed a final promotion gate. It was [archived on
+  2026-08-11](../archive/workflows/README.md) and is historical design context, not
+  current evidence.
 - The current workstation has a CUDA-enabled Torch build but no available CUDA device.
   Therefore the CUDA checkbox, aggregate no-failing-gates checkbox, and release tag
   remain open; they require workflow evidence from the exact pushed candidate commit.
@@ -839,9 +841,11 @@ Goal: close every actionable finding from the 2026-07-28 pre-PyPI review, align
 documentation with executable evidence, and promote one uniquely identifiable clean
 candidate through the complete release workflow.
 
-Status (2026-08-10): in progress; 36 of 44 tracked items are complete. Publishing,
+Status (2026-08-11): in progress; 36 of 44 tracked items are complete. Publishing,
 tagging, and stable support promotion remain blocked until every P0 and P1 item below
-is complete and linked to evidence from the same pushed commit.
+is complete and linked to evidence from the same pushed commit. The former release
+certification, supply-chain security, and HISSO benchmark workflows are archived, so
+an active promotion path must also be restored or replaced.
 
 ### Phase 9.1 - Release identity (complete)
 
@@ -993,7 +997,8 @@ observational, and `scripts/release.py` has a dedicated blocking 60% floor.
   unintended tracked or untracked files, push the exact candidate, and record its
   full commit SHA. Temporary local snapshot commits are not promotion evidence.
 - [ ] **P0** Create `v1.1.0rc1` only after every blocking workflow is green for that
-  exact pushed commit. Never move or replace the historical `v1.0.0` tag.
+  exact pushed commit. Archived workflows do not qualify. Never move or replace the
+  historical `v1.0.0` tag.
 
 ### Phase 9 exit criteria
 
@@ -1020,6 +1025,10 @@ observational, and `scripts/release.py` has a dedicated blocking 60% floor.
 Complete this section as work closes; do not replace evidence with unchecked prose.
 
 - Exact candidate commit: pending
+- Workflow archive disposition: the release-certification, supply-chain security,
+  and HISSO benchmark definitions were archived on 2026-08-11 after the failing runs
+  linked in the [archive record](../archive/workflows/README.md). They are not active
+  promotion evidence, so replacement exact-commit evidence remains pending.
 - Selected package and tag identity: `1.1.0rc1` / `v1.1.0rc1`; GA is reserved as
   `1.1.0` / `v1.1.0`. Public package and remote-tag availability verified on
   2026-08-10; release-preparation branch is `codex/release-1.1.0rc1`.

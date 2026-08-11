@@ -35,9 +35,11 @@ Phase 8 certification lives in `platform/certification.py` so it can execute fro
 installed wheel. `tools/workplace_certification.py` is the source-checkout facade,
 `tools/check_public_api.py` enforces the exhaustive current
 `docs/workplace_public_api.json` plus the public `docs/public_api_0_12_7.json`
-compatibility inventory, and
-`.github/workflows/release-certification.yml` is the clean-checkout CPU/CUDA promotion
-gate. Generated artifacts and privacy-safe reports belong under
+compatibility inventory. The former release-certification, supply-chain security,
+and HISSO benchmark workflows are retained in the
+[workflow archive](archive/workflows/README.md) and do not run. There is currently no
+active GitHub promotion gate; local certification reports are development evidence,
+not release approval. Generated artifacts and privacy-safe reports belong under
 `reports/certification/`.
 
 ## Benchmarks: What Goes Where

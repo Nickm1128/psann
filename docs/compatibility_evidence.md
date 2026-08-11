@@ -64,8 +64,10 @@ python -m pytest -q tests/test_model_artifacts.py \
 The public fixture test first verifies its retained digest. It proves that generic
 loading rejects the pickle without explicit trust, trusted loading reproduces the
 producer predictions, migration writes a valid native artifact, and the migrated
-artifact preserves those predictions. The release-certification workflow runs the
-same checks against the installed candidate wheel.
+artifact preserves those predictions. Run the same checks against the installed
+candidate wheel during release rehearsal. The former release-certification workflow
+is [archived](archive/workflows/README.md), so this local check is not current
+promotion evidence.
 
 ## Trust boundary
 

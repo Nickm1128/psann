@@ -31,19 +31,18 @@ distributions.
 8. Run the workplace benchmark comparison. Correctness is blocking; any performance
    warning must be investigated, rebaselined intentionally, or recorded as accepted.
 
-For the workplace 1.1 candidate, dispatch **Workplace release-candidate
-certification** for the exact commit. It repeats the clean source gates, builds both
-distributions, runs all six scenarios from the installed core wheel with warnings as
-errors from a temporary working directory outside the checkout (preventing source or
-generated-report shadowing), verifies the retained public `0.12.7` trusted migration
-fixture and current native schema migrations, executes representative CPU and CUDA
-soaks, and reuses the supply-chain and reference-container workflows. Download and
-review every uploaded evidence artifact.
+## Archived promotion automation
 
-Release branches named `codex/release-*` run the same certification automatically on
-pull requests so a new workflow can be proven before it first reaches the default
-branch. After merge, maintainers may also dispatch it manually with explicit version
-and soak inputs. Neither path tags or publishes a package.
+On 2026-08-11, the former release-certification, supply-chain security, and HISSO
+benchmark workflows were moved to the [workflow
+archive](archive/workflows/README.md). They are inactive and cannot provide release
+evidence. The local commands above and `tools/workplace_certification.py` remain
+useful rehearsals, but they do not establish independent evidence for a pushed
+commit.
+
+Do not tag or publish `1.1.0rc1` until repaired or replacement automation is active
+and every required CPU, CUDA, Windows, security, container, SBOM, package, API, and
+migration gate is green for the exact candidate commit.
 
 Normal pull-request CI additionally builds and installs the candidate wheel on Linux
 and Windows for Python 3.11, 3.12, and 3.13, including sklearn, service, and SHAP
@@ -147,8 +146,8 @@ After upload, install both packages from the public index in a new environment, 
 the import smoke test, create the Git tag and GitHub release, and attach the changelog
 plus compatibility evidence.
 
-The certification workflow never tags, uploads to PyPI, or publishes a container. A
-maintainer may create `v1.1.0rc1` only after its promotion job is green and the exact
+The archived certification definition never runs. A maintainer may create
+`v1.1.0rc1` only after an active replacement promotion path is green and the exact
 commit, CPU/CUDA/Windows reports, vulnerability results, container smoke, API-freeze
 result, and migration tests are linked in the release record. The tag must point to
 that reviewed commit and may never be moved. Promote to `1.1.0` / `v1.1.0` only after

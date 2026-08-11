@@ -2,7 +2,7 @@
 
 Status: `1.1.0rc1` release-candidate contract
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-11
 
 Owner: Nickm1128
 
@@ -12,22 +12,25 @@ This matrix records the final intended `workplace-v1` support commitment in the 
 release line and the evidence required to promote `1.1.0rc1`. The selected naming
 contract is [`release_identity.md`](release_identity.md). A release-candidate
 implementation is not a published support claim: promotion requires the
-clean-checkout, built-wheel, CPU,
-CUDA, security, container, and migration jobs in
-`.github/workflows/release-certification.yml` to pass for the exact tagged commit.
+clean-checkout, built-wheel, CPU, CUDA, security, container, and migration evidence
+to pass for the exact tagged commit. The workflows that formerly aggregated release
+certification and supply-chain evidence were [archived on
+2026-08-11](archive/workflows/README.md), so the candidate currently has no active
+promotion path.
 
 ## Final certification tiers
 
 | Tier | Included capabilities | Evidence |
 | --- | --- | --- |
-| Stable after promotion | Regression, binary/multiclass/multilabel classification; eight core registered backbones where the common matrix applies; native `.psann`; bounded stateless inference; explicit sessions for supported stateful models; model-agnostic SHAP with explicit backgrounds | [Six-scenario release certification](../.github/workflows/release-certification.yml) |
+| Stable after promotion | Regression, binary/multiclass/multilabel classification; eight core registered backbones where the common matrix applies; native `.psann`; bounded stateless inference; explicit sessions for supported stateful models; model-agnostic SHAP with explicit backgrounds | [Local six-scenario contract tests](../tests/test_workplace_certification.py) |
 | Capability-gated | Gradient/deep SHAP, `torch.export`, ONNX, CUDA AMP/compile, context/state combinations, and derived exports | [Capability and parity tests](../tests/test_deployment_exports.py) |
 | Experimental | Apple MPS, GeoSparse, PSANN-LM workplace integration, and registered custom `torch.nn.Module` factories | [Experimental-boundary tests](../tests/test_platform_contracts.py) |
 | Out of scope | Distributed workplace training, hosted registry/control plane, arbitrary-module portability, and universal export support | [Accepted task/backbone decision](adr/0002-task-and-backbone-support.md) |
 
 Local Phase 8 CPU evidence covers all six scenarios with warnings promoted to errors.
 CUDA remains a blocking promotion job, not a claim that can be substituted by CPU
-results.
+results. Archived workflows and local runs do not constitute exact-commit promotion
+evidence.
 
 ## Artifact compatibility provenance
 
@@ -179,8 +182,8 @@ explanations. See [`explainability.md`](explainability.md).
 | Retention/redaction | Serializable maximum-retention policy and redacted events | Host storage/logging systems enforce deletion | [Operational contract tests](../tests/test_phase7_operations.py) |
 | External operations | Optional synchronous tracking, registry, and monitor hooks | No vendor SDK in core; strict hook failures by default | [Operational hook tests](../tests/test_phase7_operations.py) |
 | Performance | Versioned throughput/latency/memory/load/explanation observations | Correctness blocks; timing/memory regressions warn by default | [Scheduled performance workflow](../.github/workflows/performance.yml) |
-| Dependency/container security | Weekly audit, high/critical fixed-vulnerability image gate | Current scan evidence required for release | [Supply-chain workflow](../.github/workflows/security.yml) |
-| SBOM | SPDX JSON source and image documents | Workflow evidence for candidates; image SBOM on tag publication | [SBOM workflow](../.github/workflows/security.yml) |
+| Dependency/container security | Automation archived; local tools remain available | No current release guarantee; candidate promotion is blocked | [Archived workflow decision](archive/workflows/README.md) |
+| SBOM | Historical source and image generation definitions retained | No current candidate or tag evidence | [Archived workflow decision](archive/workflows/README.md) |
 
 See [`workplace_operations.md`](workplace_operations.md) for failure policies,
 limitations, secrets handling, and promotion requirements.

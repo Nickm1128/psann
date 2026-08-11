@@ -156,12 +156,13 @@ def test_container_recipe_uses_non_root_healthcheck_and_mounted_artifact():
     assert "uvicorn==0.40.0" in lock
 
 
-def test_release_certification_uses_modern_test_client_in_every_environment():
+def test_archived_release_certification_retains_test_client_context():
     root = Path(__file__).resolve().parents[1]
-    workflow = (root / ".github" / "workflows" / "release-certification.yml").read_text(
+    workflow = (root / "docs" / "archive" / "workflows" / "release-certification.yml").read_text(
         encoding="utf-8"
     )
 
+    assert workflow.startswith("# Archived 2026-08-11;")
     assert workflow.count('"httpx2>=2,<3"') == 3
     assert workflow.count("from fastapi.testclient import TestClient") == 3
     assert workflow.count("python -W error -c") == 3

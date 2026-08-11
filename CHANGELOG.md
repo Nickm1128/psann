@@ -6,7 +6,12 @@ release and support details live in `docs/releasing.md` and
 
 ## Unreleased
 
-No user-facing changes have been recorded after the `1.1.0rc1` candidate snapshot.
+### Changed
+
+- Archived the failing release-certification, supply-chain security, and HISSO
+  benchmark workflows under `docs/archive/workflows/`. They no longer run in GitHub
+  Actions and are not release evidence; `1.1.0rc1` remains blocked from tagging and
+  PyPI publication until replacement promotion evidence exists.
 
 ## 1.1.0rc1 - 2026-08-10
 
@@ -22,8 +27,8 @@ No user-facing changes have been recorded after the `1.1.0rc1` candidate snapsho
   export/explanation guarantees.
 - Added a machine-readable `workplace-v1` API freeze, five task-oriented quick starts,
   a retained public `0.12.7` legacy checkpoint migration fixture, explicit native
-  schema-migration tests, a zero-warning certification policy, and a clean-checkout
-  CPU/CUDA release-candidate workflow.
+  schema-migration tests, a zero-warning certification policy, and local
+  clean-checkout CPU/CUDA certification tooling.
 - Added an exhaustive two-module 1.1 API inventory and a provenance-linked public
   `0.12.7` export/principal-estimator signature inventory, both enforced against
   source and installed wheels.
@@ -83,10 +88,10 @@ No user-facing changes have been recorded after the `1.1.0rc1` candidate snapsho
   retention contracts, and optional experiment-tracker/registry/monitor hooks.
 - Added portable workplace performance baselines where correctness blocks and noisy
   regressions alert by default.
-- Added dependency, repository-secret, and container vulnerability workflows;
-  per-distribution and image SBOM generation; and Dependabot coverage for Python,
-  Actions, and Docker dependencies. Third-party security/container actions use
-  immutable commit pins.
+- Added dependency, repository-secret, and container vulnerability tooling;
+  per-distribution and image SBOM generation in the tag-gated container path; and
+  Dependabot coverage for Python, Actions, and Docker dependencies. The former
+  standalone security workflow is now archived.
 
 ### Changed
 

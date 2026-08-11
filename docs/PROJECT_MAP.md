@@ -46,7 +46,8 @@ These are intended to be stable and documented, and they are covered by the main
     gradient adapters
   - Explicit accelerator/dtype tiers, bounded restartable data streams, privacy-safe
     fingerprints, retention/redaction contracts, optional operational hooks, and
-    performance/security evidence
+    performance tooling; the former release/security automation is archived and is
+    not current promotion evidence
   - Six installed-wheel certification scenarios, exhaustive current/legacy API
     freezes, and task-oriented regression/classification/deployment/resume/SHAP quick
     starts

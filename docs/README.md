@@ -17,7 +17,7 @@ Use this guide to locate the right document and to see which notes are still act
 | `compatibility_evidence.md` | Active | Authentic public `0.12.7` legacy-fixture provenance, native producer-support boundaries, and synthetic schema-test labeling. |
 | `deployment.md` | Active | Batched stateless inference, explicit sessions, capability-gated exports, reference HTTP service, metrics, and container operation. |
 | `explainability.md` | Active | Optional SHAP integration, explicit backgrounds, output/group semantics, gradient capability gates, limits, privacy, and interpretation guidance. |
-| `workplace_operations.md` | Active | Accelerator/dtype tiers, bounded streaming, fingerprints, retention, hooks, performance, vulnerability scanning, and SBOM evidence. |
+| `workplace_operations.md` | Active | Accelerator/dtype tiers, bounded streaming, fingerprints, retention, hooks, performance, and the current vulnerability/SBOM evidence gap. |
 | `quickstarts/README.md` | Active | Task-oriented regression, classification, deployment, resume, and SHAP quick starts using the frozen workplace API. |
 | `release_identity.md` | Active | Selected package, Git tag, container, SBOM, and release-note identity for the 1.1 candidate. |
 | `workplace_public_api.json` | Active | Machine-readable stable workplace API name and constructor-signature freeze for the 1.1 candidate. |
@@ -57,6 +57,7 @@ Use this guide to locate the right document and to see which notes are still act
 | `backlog/psann_sparse3d_todo.md` | Backlog | Sparse-3D research backlog and reactivation notes. |
 | `backlog/docs-site-generator.md` | Backlog | Notes on evaluating MkDocs/Sphinx once the HISSO refactor settles. |
 | `archive/REPO_CLEANUP_TODO.md` | Archive | Superseded root cleanup checklist retained for historical context. |
+| `archive/workflows/README.md` | Archive | Inactive release-certification, supply-chain security, and HISSO benchmark workflow definitions and their disposition. |
 | `archive/PSANN_LM_Module_TODO.txt` | Archive | Historical LM module plan retained for traceability. |
 | `lsm_robustness_todo.md` | Archive | Historical HISSO/extras backlog; superseded by the extras removal plan. |
 | `phase1_audit.md` | Archive | Snapshot of the naming audit prior to the cleanup work. Preserve for traceability. |

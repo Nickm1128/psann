@@ -88,8 +88,10 @@ multiclass top-k results, a machine-readable public API freeze, and a registered
 custom-backbone native artifact path. Phase 7 also added bounded restartable training
 streams, explicit CPU/CUDA/MPS and dtype
 tiers, privacy-safe model/data fingerprints, vendor-neutral operational hooks,
-performance observations, vulnerability scans, and SBOM evidence. See
-`docs/workplace_operations.md` for guarantees and limitations.
+performance observations, vulnerability-scan tooling, and SBOM generation. The
+former release-certification and supply-chain workflows are archived, so the
+candidate is not currently promotable. See `docs/workplace_operations.md` for
+guarantees and limitations.
 
 Optional (experimental GeoSparse):
 

@@ -2,7 +2,7 @@
 
 Status: Selected for the workplace release candidate; not yet published or tagged
 
-Last reviewed: 2026-08-10
+Last reviewed: 2026-08-11
 
 This document is the naming authority for the workplace candidate. Package versions
 use PEP 440 without a `v` prefix. Git, GitHub Release, container, and SBOM identities
@@ -36,8 +36,9 @@ package versions and Git tags are immutable identities once published.
 
 ## Evidence and artifact names
 
-Before a tag exists, candidate workflow artifacts use both the selected package
-version and the full candidate commit SHA:
+The following candidate workflow-artifact names are reserved for any repaired or
+replacement promotion automation. No current evidence artifacts exist because the
+former workflows are [archived](archive/workflows/README.md):
 
 - `release-source-gates-1.1.0rc1-<sha>`;
 - `release-candidate-1.1.0rc1-<sha>`;
@@ -61,7 +62,8 @@ not change solely because the distribution version moves to `1.1.0rc1`.
 ## Promotion rule
 
 The selected tag does not exist yet. A maintainer may create it only after every
-blocking Phase 9 item is committed on the exact candidate SHA, the release-candidate
-workflow is green, and its CPU, CUDA, Windows, security, container, SBOM, package,
-API, and compatibility evidence has been reviewed. PyPI and GHCR publication remain
-explicit maintainer actions.
+blocking Phase 9 item is committed on the exact candidate SHA, active replacement
+promotion automation is green, and its CPU, CUDA, Windows, security, container, SBOM,
+package, API, and compatibility evidence has been reviewed. Archived definitions and
+local runs are not substitutes. PyPI and GHCR publication remain explicit maintainer
+actions.
