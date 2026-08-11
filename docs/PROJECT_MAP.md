@@ -22,13 +22,35 @@ These are intended to be stable and documented, and they are covered by the main
 
 - **Sklearn-style estimators**
   - `PSANNRegressor`
+  - `PSANNClassifier`
   - `ResPSANNRegressor`
   - `ResConvPSANNRegressor`
   - `WaveResNetRegressor`
   - `SGRPSANNRegressor`
 - **Training utilities** shared by those estimators
   - Data preparation (shape handling, scaling) in `psann.estimators._fit_utils`
-  - Supervised training loop utilities and stateful streaming utilities
+  - Fail-fast supervised training, structured events, custom metrics, and stateful
+    streaming utilities
+  - Restricted `.psann-train` checkpoints for deterministic interruption/resume
+- **Workplace lifecycle**
+  - Serializable task, model, data, training, and inference specifications
+  - Registered model creation plus structured `TrainingRun` orchestration
+  - Regression, binary, multiclass, and multilabel task adapters
+  - Strict/reorder/positional named-feature schema policies
+  - Checksummed `.psann` deployment artifacts, metadata-only inspection, restricted
+    loading, version migrations, and explicit trusted legacy conversion
+  - Bounded stateless inference, isolated streaming sessions, capability-gated
+    Torch/ONNX exports, device pools, and the optional reference service
+  - Optional SHAP explanations over the deployed raw-input contract, with explicit
+    backgrounds, named task outputs, domain groups, and capability-gated frozen
+    gradient adapters
+  - Explicit accelerator/dtype tiers, bounded restartable data streams, privacy-safe
+    fingerprints, retention/redaction contracts, optional operational hooks, and
+    performance tooling; the former release/security automation is archived and is
+    not current promotion evidence
+  - Six installed-wheel certification scenarios, exhaustive current/legacy API
+    freezes, and task-oriented regression/classification/deployment/resume/SHAP quick
+    starts
 - **HISSO / episodic training**
   - HISSO training utilities and reward strategies used for episodic optimisation
 
@@ -43,6 +65,10 @@ These are under active iteration; APIs may change and performance characteristic
 - **Language modeling**
   - Core LM library code lives in the separate `psannlm` distribution
   - `psannlm.train` remains the public LM training entrypoint and now delegates to `psannlm/_train/`
+- **Registered custom Torch modules**
+  - Registered reconstructable factories can use the native artifact path
+  - General derived exports and gradient explanations remain unsupported unless a
+    future capability matrix certifies the exact plugin
 
 If you depend on any experimental pieces, pin a version and expect breaking changes across minor releases.
 
@@ -54,7 +80,10 @@ If you depend on any experimental pieces, pin a version and expect breaking chan
 
 - `pip install psann` installs the core package and its runtime dependencies as defined in `pyproject.toml`.
 - LM dependencies are **optional**:
-  - `pip install psannlm` installs the LM tooling (and pulls in `datasets/tokenizers/sentencepiece`)
+  - `pip install psannlm` installs the LM tooling (and pulls in
+    `datasets/tokenizers/sentencepiece`)
+  - the 1.1 LM line requires `psann>=1.1.0rc1,<1.2` and rejects incompatible cores
+    before importing LM implementation modules
 
 ### Intended direction (cleanup goal)
 
@@ -72,6 +101,8 @@ We want the default install to be lighter and more newcomer-friendly.
   - `sklearn.py` — thin sklearn-style estimator facade (core entry point for most users)
   - `_sklearn/` — internal estimator implementation modules split by concern
   - `estimators/_fit_utils.py` — shared fit/input-scaling/validation plumbing used by the estimator package
+  - `platform/` — workplace lifecycle, safe artifact, deployment, export, optional
+    explainability, bounded streaming, and operational contracts
   - `nn_geo_sparse.py` — GeoSparse backbone (experimental)
   - `lm/` — stub module that forwards users to `psannlm`
 - `psannlm/` – separate Python package and distribution providing LM APIs + training/CLI utilities
@@ -96,7 +127,9 @@ We want the default install to be lighter and more newcomer-friendly.
   - Minor: new features and/or new experimental components; may include small deprecations
   - Major: breaking API changes (rename/removal/semantic change of supported surfaces)
 - **Deprecations:** supported APIs should be deprecated before removal when feasible.
-- **Compatibility:** CPU-first correctness is required; GPU support is best-effort and depends on the user’s PyTorch/CUDA install.
+- **Compatibility:** the workplace development line targets Python 3.11-3.13.
+  CPU-first correctness is blocking; CUDA claims require recent scheduled evidence.
+  See `docs/support_policy.md` and `docs/workplace_support_matrix.md`.
 
 ---
 

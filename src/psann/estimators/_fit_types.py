@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Optional, Protocol, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Mapping, Optional, Protocol, Tuple, Union
 
 import numpy as np
 import torch.nn as nn
@@ -32,6 +32,19 @@ class NormalisedFitArgs:
     verbose: int
     lr_max: Optional[float]
     lr_min: Optional[float]
+    scheduler: str
+    scheduler_params: Mapping[str, Any]
+    nonfinite_policy: str
+    fallback_policy: str
+    callback_error_policy: str
+    deterministic: bool
+    metrics: Mapping[str, Callable[..., Any]]
+    callbacks: Tuple[Callable[..., Any], ...]
+    logger: Optional[Any]
+    resume_from: Optional[str]
+    checkpoint_dir: Optional[str]
+    checkpoint_every: int
+    checkpoint_keep: int
 
 
 @dataclass

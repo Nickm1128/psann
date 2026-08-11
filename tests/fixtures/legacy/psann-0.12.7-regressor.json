@@ -1,0 +1,87 @@
+{
+  "case": {
+    "estimator": "PSANNRegressor",
+    "expected_predictions": [
+      0.04167955368757248,
+      0.0899171307682991,
+      0.10451186448335648,
+      0.12906315922737122,
+      0.12793895602226257,
+      0.15790942311286926,
+      0.12426386773586273,
+      0.165615975856781
+    ],
+    "inputs": [
+      [
+        -1.0,
+        -0.5
+      ],
+      [
+        -0.5,
+        0.25
+      ],
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.25,
+        0.5
+      ],
+      [
+        0.75,
+        -0.25
+      ],
+      [
+        1.0,
+        0.75
+      ],
+      [
+        1.25,
+        -1.0
+      ],
+      [
+        1.5,
+        0.5
+      ]
+    ],
+    "targets": [
+      -0.5249999761581421,
+      -0.3375000059604645,
+      0.10000000149011612,
+      0.16249999403953552,
+      0.7250000238418579,
+      0.6625000238418579,
+      1.287500023841858,
+      1.100000023841858
+    ],
+    "training": {
+      "batch_size": 4,
+      "device": "cpu",
+      "epochs": 3,
+      "hidden_layers": 1,
+      "hidden_units": 4,
+      "lr": 0.01,
+      "random_state": 1729
+    }
+  },
+  "fixture": {
+    "filename": "psann-0.12.7-regressor.pt",
+    "format": "torch-pickle legacy checkpoint",
+    "sha256": "99d49317fce455b3b1c419b3ea02e8846c3a5a8c345c62daefd244c2832e897b"
+  },
+  "producer": {
+    "distribution": "psann",
+    "numpy": "2.4.6",
+    "pypi_url": "https://pypi.org/project/psann/0.12.7/",
+    "python": "3.11.9",
+    "torch": "2.7.1+cu118",
+    "version": "0.12.7",
+    "wheel": {
+      "filename": "psann-0.12.7-py3-none-any.whl",
+      "sha256": "43e6bc16a06a27b72e9073d1f80dbac70e07634df4dd01459ab949032997699b",
+      "url": "https://files.pythonhosted.org/packages/a1/4c/a67991f14275e426a7773b8623f0d1dd5a2a036d14d332926b0122cde275/psann-0.12.7-py3-none-any.whl"
+    }
+  },
+  "schema_version": 1
+}

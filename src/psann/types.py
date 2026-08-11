@@ -27,6 +27,7 @@ class ActivationConfig(TypedDict, total=False):
     bounds: dict[str, Tuple[Optional[float], Optional[float]]]
     slope_init: float
     slope_trainable: bool
+    slope_bounds: Tuple[Optional[float], Optional[float]]
     clip_max: float
 
 

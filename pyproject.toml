@@ -4,19 +4,22 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psann"
-version = "0.12.4"
+dynamic = ["version"]
 description = "PSANN: Parameterized Sine-Activated Neural Networks (primary-output, sklearn-style, PyTorch backend)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
   { name = "Nicholas Milinkovich" }
 ]
 keywords = ["pytorch", "neural-networks", "sine", "siren", "sklearn", "time-series", "regression", "classification"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
   "Intended Audience :: Science/Research",
@@ -24,17 +27,19 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-  "numpy>=1.23",
-  "torch>=2.1",
+  "numpy>=1.26",
+  "packaging>=24,<27",
+  "torch>=2.4",
 ]
 
 [project.urls]
-Homepage = "https://github.com/psann-project/psann"
-Repository = "https://github.com/psann-project/psann"
-Issues = "https://github.com/psann-project/psann/issues"
-Documentation = "https://github.com/psann-project/psann/tree/main/docs"
-Changelog = "https://github.com/psann-project/psann/blob/main/docs/migration.md"
-Contributing = "https://github.com/psann-project/psann/blob/main/docs/CONTRIBUTING.md"
+Homepage = "https://github.com/Nickm1128/psann"
+Repository = "https://github.com/Nickm1128/psann"
+Issues = "https://github.com/Nickm1128/psann/issues"
+Documentation = "https://github.com/Nickm1128/psann/tree/main/docs"
+Changelog = "https://github.com/Nickm1128/psann/blob/main/CHANGELOG.md"
+Contributing = "https://github.com/Nickm1128/psann/blob/main/docs/CONTRIBUTING.md"
+Security = "https://github.com/Nickm1128/psann/blob/main/SECURITY.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/psann"]
@@ -90,50 +95,65 @@ dev = [
   "pytest>=7.0",
   "pytest-json-report>=1.5",
   "ruff>=0.5.0",
-  "black>=24.0",
+  "black==26.5.1",
   "mypy>=1.10",
   "pre-commit>=3.6",
   "coverage[toml]>=7.5",
   "build>=1.2",
+  "twine==7.0.0",
+  "nbstripout>=0.6.1",
+  "httpx2>=2,<3",
+  "PyYAML>=6,<7",
 ]
 viz = [
   "matplotlib>=3.7",
 ]
 sklearn = [
-  "scikit-learn>=1.2,<1.5",
+  "scikit-learn>=1.4,<2",
+]
+serve = [
+  "fastapi>=0.112,<1",
+  "uvicorn>=0.30,<1",
+]
+export = [
+  "onnx>=1.17,<2",
+  "onnxruntime>=1.20,<2",
+  "onnxscript>=0.1,<1",
+]
+explain = [
+  "shap>=0.50,<0.52; python_version < '3.12'",
+  "shap>=0.50,<0.53; python_version >= '3.12'",
 ]
 compat = [
   "numpy==1.26.4",
   "scipy==1.11.4",
   "scikit-learn==1.4.2",
-  "torch==2.1.2",
+  "torch==2.4.1",
 ]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py311"
 line-length = 100
-src = ["src", "tests", "examples", "scripts"]
+src = ["src", "tests", "examples", "scripts", "psannlm", "tools", "_bench_psann_lm"]
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
 ignore = ["E402"]
 per-file-ignores = {"src/psann/lsm.py" = ["E741", "F841"]}
-extend-select = ["I"]
 
 [tool.black]
 line-length = 100
-target-version = ["py39"]
+target-version = ["py311"]
 
 [tool.coverage.run]
 branch = true
-source = [
-  "src/psann",
-  "scripts",
-]
 omit = [
   "src/psann/__main__.py",
 ]
 
 [tool.coverage.report]
+fail_under = 70
 show_missing = true
 skip_covered = true
 exclude_lines = [
@@ -144,7 +164,22 @@ exclude_lines = [
 ]
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [
+  ".git",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache",
+  "artifacts",
+  "build",
+  "coverage",
+  "dist",
+  "reports",
+]
 markers = [
   "slow: marks HISSO integration runs; deselect with -m 'not slow'",
   "gpu: marks GPU-only tests; deselect with -m 'not gpu'",
 ]
+
+[tool.hatch.version]
+path = "src/psann/_version.py"

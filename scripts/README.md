@@ -131,7 +131,10 @@ When adding or updating scripts under `scripts/`:
 
 ### Release tooling
 
-- `release.py` - small helper used when cutting PyPI releases and tagging versions.
+- `release.py` - fail-closed helper for coordinated core/LM releases. It requires a
+  clean tree, synchronized versions, a changelog heading, an unused local/remote tag
+  and PyPI version, a compatible LM/core dependency, exact artifacts, Twine and
+  installed-wheel smoke success, and `--confirm-upload <version>` before publishing.
 
 ## Language Modeling
 

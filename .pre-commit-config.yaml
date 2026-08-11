@@ -1,16 +1,20 @@
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.5
-    hooks:
-      - id: ruff
-        args: [--fix]
-      - id: ruff-format
-  - repo: https://github.com/psf/black
-    rev: 24.8.0
-    hooks:
-      - id: black
   - repo: https://github.com/kynan/nbstripout
     rev: 0.6.2
     hooks:
       - id: nbstripout
         files: \.ipynb$
+  - repo: local
+    hooks:
+      - id: psann-quality
+        name: PSANN canonical Ruff, Black, and mypy checks
+        entry: python tools/quality.py lint
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: psann-hygiene
+        name: PSANN repository hygiene
+        entry: python tools/repo_hygiene_audit.py --strict-long-files
+        language: system
+        pass_filenames: false
+        always_run: true

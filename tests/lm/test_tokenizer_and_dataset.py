@@ -1,10 +1,10 @@
 import importlib.util
 import os
 import tempfile
-import pytest
 
-from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
+import pytest
 from psannlm.lm.data.dataset import LMDataset, PackingConfig, StreamingLMDataset
+from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
 
 
 def test_simple_tokenizer_roundtrip():

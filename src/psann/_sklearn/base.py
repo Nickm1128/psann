@@ -198,6 +198,11 @@ class PSANNRegressor(
         self._optimizer_: Optional[torch.optim.Optimizer] = None
         self._lr_scheduler_: Optional[Any] = None
         self._amp_scaler_: Optional[Any] = None
+        self._model_signature_: Optional[Tuple[Any, ...]] = None
+        self._resolved_training_device_: Optional[torch.device] = None
+        self._fit_fallbacks_: list[Dict[str, Any]] = []
+        self.training_events_: list[Dict[str, Any]] = []
+        self.training_metadata_: Dict[str, Any] = {}
         self._training_state_token_: int = 0
         self._stream_opt_: Optional[torch.optim.Optimizer] = None
         self._stream_loss_: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None
@@ -222,6 +227,7 @@ class PSANNRegressor(
         self._context_dim_: Optional[int] = None
         self._model_device_: Optional[torch.device] = None
         self._attention_shape_: Optional[Tuple[int, int]] = None
+        self._feature_schema_policy_: str = "strict"
 
     @classmethod
     def with_conv_stem(
@@ -281,6 +287,17 @@ class PSANNRegressor(
             "conv_kernel_size": int(self.conv_kernel_size),
             "conv_channels": int(self.conv_channels),
         }
+        return self
+
+    def set_feature_schema_policy(self, policy: str) -> "PSANNRegressor":
+        """Configure named-feature inference as strict, reorder, or positional."""
+
+        value = str(policy).strip().lower()
+        if value not in {"strict", "reorder", "positional"}:
+            raise ValueError("policy must be 'strict', 'reorder', or 'positional'.")
+        self._feature_schema_policy_ = value
+        if hasattr(self, "feature_schema_policy_"):
+            self.feature_schema_policy_ = value
         return self
 
     def set_params(self, **params: Any):

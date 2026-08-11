@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 import torch
 
+from .schema import validate_inference_schema
 from .shared import _sk_r2_score
 
 
@@ -15,6 +16,7 @@ class _PSANNRegressorInferenceMixin:
         context: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
         self._ensure_fitted()
+        X = validate_inference_schema(self, X)
         X_arr = np.asarray(X, dtype=np.float32)
         if X_arr.ndim == len(self.input_shape_):
             X_arr = X_arr.reshape((1,) + tuple(self.input_shape_))

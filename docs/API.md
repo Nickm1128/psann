@@ -2,6 +2,43 @@
 
 Install the core library with `pip install psann`. When you need scikit-learn conveniences, use `pip install psann[sklearn]`; the base wheel only depends on NumPy and PyTorch. Language-modeling utilities now live in the separate `psannlm` package (`pip install psannlm`). For pinned environments use the compatibility extra (`pip install -e .[compat]`) as documented in the README. This document summarises the public, user-facing API of `psann` with parameter names, expected shapes, and behavioural notes.
 
+## Workplace lifecycle API
+
+`TaskSpec`, `ModelSpec`, `DataSchema`, `TrainingConfig`, and `InferenceConfig` are
+JSON-serializable configuration objects. `create_model(spec)` resolves a registered
+backbone, and `train(model, data, ...)` returns a `TrainingRun` while delegating to the
+same fit implementation as the sklearn estimators.
+
+Regression, binary, multiclass, and multilabel task semantics are owned by task
+adapters. `PSANNClassifier` provides `classes_`, `predict`, `predict_proba`,
+`decision_function`, and classification `score`, and it works in sklearn clones,
+pipelines, and grid searches. See [`workplace_api.md`](workplace_api.md) for the full
+specification, registry, task, schema, backbone, and extension contracts.
+
+`TrainingRun.export("model.psann")` writes the safe native artifact.
+`inspect_artifact(path)` validates and reads metadata without loading tensors, while
+`load_model(path, device="cpu")` restricted-loads weights and returns the reconstructed
+task-aware estimator. `migrate_artifact` rewrites a supported prior native manifest
+schema, and `migrate_legacy_checkpoint(..., trusted_legacy_checkpoint=True)` converts
+an explicitly trusted whole-object snapshot. Current `0.9` manifest coverage is
+synthetic schema validation; the retained public `0.12.7` checkpoint provides the
+authentic legacy migration evidence. See [`artifacts.md`](artifacts.md) and
+[`compatibility_evidence.md`](compatibility_evidence.md).
+
+`load_runtime(path, config=InferenceConfig(...))` wraps the loaded model in the
+deployment adapter. `InferenceRuntime.predict` applies the complete raw-input
+contract in bounded chunks and returns an `InferenceResult` containing values,
+task/output names, artifact/run identity, device, chunk, and output-kind metadata.
+Classification returns probabilities by default; configure labels or logits
+explicitly. Mutable state is available only from
+`InferenceRuntime.create_session()`.
+
+`evaluate_export_capabilities` and `export_derived` parity-gate dynamic-batch
+`torch.export` and ONNX graphs and write a generated preprocessing/postprocessing
+contract beside each derived file. `load_runtime_pool` provides independent
+per-device replicas, while explicit artifact resolvers integrate internal registries.
+See [`deployment.md`](deployment.md) for the complete serving and container contract.
+
 ## psann.PSANNRegressor
 
 Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variants). Constructor parameters are grouped by concern. Unless otherwise stated, arguments accept plain Python scalars.
@@ -15,8 +52,8 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `hidden_units: int = 64` - width/features per hidden block (preferred name).
 - `hidden_width: int | None` - deprecated alias for `hidden_units`; conflicts emit a warning and the canonical `hidden_units` value wins (automatically normalised by `set_params`).
 - `w0: float = 30.0` - SIREN-style initialisation scale.
-- `activation: ActivationConfig | None` - forwarded to `SineParam`.
-- `activation_type: str = "psann" | "relu" | "tanh" | "relu_sigmoid_psann"` - nonlinearity per block.
+- `activation: ActivationConfig | None` - forwarded to the selected parameterized activation.
+- `activation_type: str = "psann" | "relu" | "tanh" | "gelu" | "silu" | "relu_sigmoid_psann" | "sigmoid"` - nonlinearity per block. `"parameterized_sigmoid"` is accepted as an alias for `"sigmoid"`.
 - `attention: dict | AttentionConfig | None` - optional token attention module (e.g. `{"kind": "mha", "num_heads": 4}`) that activates when inputs are sequences shaped `(batch, timesteps, features)` or preserved spatial tensors. Flattened inputs currently require `lsm=None`, while preserve-shape paths (including `per_element=True`) treat each spatial location as a token. Defaults to `"none"` which preserves historical behaviour.
 
 **Training**
@@ -25,13 +62,24 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `weight_decay: float = 0.0`.
 - `loss: str | callable = "mse" | "l1" | "smooth_l1" | "huber" | callable`.
 - `loss_params: dict | None` - extra kwargs for built-in losses.
-- `loss_reduction: str = "mean" | "sum" | "none"`.
+- `loss_reduction: str = "mean" | "sum"`. Optimizer-driven training rejects
+  `"none"` because backward requires a scalar.
 - `early_stopping: bool = False`, `patience: int = 20`.
+- `warm_start: bool = False` - reuse a compatible fitted model and training state on
+  the next `fit`; the default rebuilds the model and clears fitted scaler state.
 
 **Runtime**
 - `device: "auto" | "cpu" | "cuda" | torch.device`.
 - `random_state: int | None` - seeds NumPy, Torch, and Python.
 - `num_workers: int = 0` - DataLoader workers for supervised fits.
+- `amp: bool = False` - enable automatic mixed precision only on CUDA.
+- `amp_dtype: "bfloat16" | "float16" | torch.dtype | None = "bfloat16"` - requested
+  AMP dtype. CPU fits remain full precision.
+- `compile: bool = False` - opt into `torch.compile` for supervised training.
+- `compile_backend: str = "inductor"`, `compile_mode: str = "default"`,
+  `compile_fullgraph: bool = False`, and `compile_dynamic: bool = False` - forwarded
+  to the available `torch.compile` implementation. Compile failure currently warns
+  and falls back to eager execution.
 
 **Input handling**
 - `preserve_shape: bool = False` - use convolutional body instead of flattening.
@@ -54,6 +102,17 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `lsm_lr: float | None` - separate learning rate for expander parameters.
 - `scaler: str | object | None` - string alias (`"standard"`/`"minmax"`) or any transformer exposing `fit`/`transform`.
 - `scaler_params: dict | None` - keyword arguments forwarded to the built-in scalers.
+- `target_scaler: str | object | None` - optional target-side transformer. Training
+  uses scaled targets and prediction applies its inverse transform.
+- `target_scaler_params: dict | None` - keyword arguments for built-in target scalers.
+
+**Context construction**
+
+- `context_builder: "cosine" | callable | None` - build auxiliary context from raw
+  inputs consistently during `fit`, `predict`, and sequence inference.
+- `context_builder_params: dict | None` - deep-copied builder configuration.
+- Custom callable builders work in local estimator workflows but are rejected by the
+  safe artifact contract until registered under a serializable identifier.
 
 **HISSO configuration**
 - `hisso_window: int | None` - episode length when training with `hisso=True` (defaults to 64).
@@ -92,6 +151,19 @@ def fit(
     hisso_supervised: Optional[Mapping[str, Any] | bool] = None,
     lr_max: Optional[float] = None,
     lr_min: Optional[float] = None,
+    scheduler: str = "none",
+    scheduler_params: Optional[Mapping[str, Any]] = None,
+    nonfinite_policy: str = "error",
+    fallback_policy: str = "warn",
+    callback_error_policy: str = "raise",
+    deterministic: bool = False,
+    metrics: Optional[Mapping[str, Callable]] = None,
+    callbacks: Optional[Sequence[Callable[[TrainingEvent], None]]] = None,
+    logger: Optional[logging.Logger] = None,
+    resume_from: Optional[str | os.PathLike[str]] = None,
+    checkpoint_dir: Optional[str | os.PathLike[str]] = None,
+    checkpoint_every: int = 0,
+    checkpoint_keep: int = 3,
 ) -> "PSANNRegressor":
     ...
 ```
@@ -103,7 +175,25 @@ def fit(
 - `hisso`: switch to episodic Horizon-Informed Sampling Strategy Optimisation. When true the helper normalises reward/context/transform settings via `HISSOOptions.from_kwargs` before launching the episodic loop.
 - `hisso_batch_episodes` / `hisso_updates_per_epoch`: tune HISSO schedule (`episodes_per_batch` and update count) without changing model code.
 - Recommended starting presets: CPU `hisso_batch_episodes=8`, `hisso_updates_per_epoch=4`; CUDA `hisso_batch_episodes=16`, `hisso_updates_per_epoch=4` (increase batch size until memory limits).
-- `lr_max` / `lr_min`: optional bounds for one-cycle style schedulers.
+- `lr_max` / `lr_min`: optional bounds for the legacy linear per-epoch schedule; both
+  values are required and they cannot be combined with a named scheduler.
+- `scheduler` / `scheduler_params`: `none`, `step`, or `cosine` with validated
+  scheduler-specific parameters.
+- `nonfinite_policy`: `error` (default), `skip_step`, or explicitly opt-in `continue`
+  behavior for non-finite loss/gradient steps.
+- `fallback_policy`: `warn` or `error` for unavailable devices, AMP, and compilation.
+- `callback_error_policy`: callback/hook exceptions raise by default; `warn` preserves
+  the run with a visible warning.
+- `metrics`: detached user metrics, reported independently from loss.
+- `callbacks` / `logger`: structured event consumers and a standard logging adapter.
+- `deterministic`: deterministic algorithms plus seeded data-loader/sampler state.
+- `resume_from` / `checkpoint_dir`: resume or create restricted `.psann-train`
+  checkpoints. `checkpoint_every` and `checkpoint_keep` control periodic retention.
+
+Training and validation arrays reject NaN and infinity before model construction.
+Prediction/target shapes are checked with a sample forward before optimizer creation.
+See [`training_core.md`](training_core.md) for the complete policy, event schema,
+checkpoint contents, and deterministic limitations.
 
 When HISSO is enabled and no targets are provided the primary dimension defaults to 1. If you provide `hisso_supervised={"y": targets}` the estimator runs a supervised warm start before episodic training.
 
@@ -159,6 +249,36 @@ Constructor:
 - `feature_dim=-1` - axis that holds feature channels
 
 Forward applies `A * exp(-d * g(z)) * sin(f * z)` with broadcast parameters.
+
+## psann.SigmoidParam
+
+Learnable sigmoid activation with one positive per-feature slope.
+
+Constructor:
+- `out_features: int`
+- `slope_init=1.0`
+- `slope_trainable=True`
+- `slope_bounds=(1e-3, 10.0)` - optional `(low, high)` clamp after the positive transform
+- `feature_dim=-1` - axis that holds feature channels
+
+Forward applies `sigmoid(slope * z)` with outputs in `[0, 1]`. Upstream linear biases learn threshold shifts and downstream linear layers learn output scaling. For deeper sigmoid models, prefer `ResPSANNRegressor(activation_type="sigmoid")` or GeoSparse residual blocks because residual connections reduce saturation and vanishing-gradient risk.
+
+## psann.platform lifecycle and typed contracts
+
+`psann.platform` exposes the workplace specifications, registries, task adapters,
+factory, training orchestration, deployment runtime, optional explainability
+contracts, module adapter, and the lower-level
+`ModelSpecContract`, `BackboneProtocol`, `ArtifactManifest`, `TaskAdapter`,
+`InferenceResult`, and `TaskKind` types.
+
+The platform modules are checked as a strict typed boundary without requiring all
+legacy estimator internals to be fully typed. See [`workplace_api.md`](workplace_api.md),
+[`deployment.md`](deployment.md), [`explainability.md`](explainability.md), and
+[`workplace_operations.md`](workplace_operations.md).
+
+Phase 7 adds `StreamingSupervisedData`, memory-mapped `NumpyShard` sources, explicit
+accelerator/dtype capabilities, performance baselines, model/data fingerprints,
+retention/redaction contracts, and optional dependency-free operational hooks.
 
 ## LSM expanders and preprocessors
 

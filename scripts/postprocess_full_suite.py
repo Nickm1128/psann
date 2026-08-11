@@ -201,7 +201,9 @@ def _plot_bundle(out_dir: Path) -> None:
     try:
         import matplotlib.pyplot as plt
     except Exception as exc:
-        (out_dir / "plot_note.txt").write_text(f"Plot generation skipped: {exc}\n", encoding="utf-8")
+        (out_dir / "plot_note.txt").write_text(
+            f"Plot generation skipped: {exc}\n", encoding="utf-8"
+        )
         return
 
     lp_path = out_dir / "light_probes_rmse_r2.csv"

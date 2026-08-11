@@ -18,6 +18,20 @@ from typing import Iterable, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GENERATED_DIRS = {"reports", "runs", "outputs", "logs"}
+ALLOWED_TOP_LEVEL_FILES = {
+    ".gitignore",
+    ".pre-commit-config.yaml",
+    "CHANGELOG.md",
+    "LICENSE",
+    "Makefile",
+    "README.md",
+    "SECURITY.md",
+    "TECHNICAL_DETAILS.md",
+    "bench_psann_lm.py",
+    "mypy.ini",
+    "psann_adapter.py",
+    "pyproject.toml",
+}
 
 
 @dataclass(frozen=True)
@@ -61,6 +75,52 @@ def _classify_prohibited_tracked(path_text: str) -> str | None:
     return None
 
 
+def _classify_top_level_file(path_text: str) -> str | None:
+    if "/" in path_text or path_text in ALLOWED_TOP_LEVEL_FILES:
+        return None
+    return (
+        "undocumented top-level file; move it to its owning directory or add it "
+        "to the reviewed allowlist"
+    )
+
+
+def _inspect_notebook(repo_root: Path, path_text: str) -> PathIssue | None:
+    path = repo_root / path_text
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return PathIssue(path=path_text, reason=f"invalid notebook JSON: {exc}")
+
+    cells = payload.get("cells")
+    if not isinstance(cells, list):
+        return PathIssue(path=path_text, reason="notebook JSON has no cells list")
+
+    output_cells = 0
+    executed_cells = 0
+    for cell in cells:
+        if not isinstance(cell, dict):
+            continue
+        outputs = cell.get("outputs")
+        if isinstance(outputs, list) and outputs:
+            output_cells += 1
+        if cell.get("execution_count") is not None:
+            executed_cells += 1
+
+    reasons = []
+    if output_cells:
+        reasons.append(f"{output_cells} cell(s) contain committed outputs")
+    if executed_cells:
+        reasons.append(f"{executed_cells} cell(s) contain execution counts")
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict) and metadata.get("widgets"):
+        reasons.append("widget state is committed")
+    if not reasons:
+        return None
+    return PathIssue(path=path_text, reason="; ".join(reasons))
+
+
 def _count_lines(path: Path) -> int:
     with path.open("r", encoding="utf-8", errors="ignore") as handle:
         return sum(1 for _ in handle)
@@ -84,6 +144,17 @@ def collect_report(
         for path in tracked_files
         if (reason := _classify_prohibited_tracked(path)) is not None
     ]
+    top_level = [
+        PathIssue(path=path, reason=reason)
+        for path in tracked_files
+        if (reason := _classify_top_level_file(path)) is not None
+    ]
+    notebook_violations = [
+        issue
+        for path in tracked_files
+        if path.endswith(".ipynb")
+        if (issue := _inspect_notebook(repo_root, path)) is not None
+    ]
 
     long_python = []
     for path in _iter_python_files(tracked_files):
@@ -100,6 +171,8 @@ def collect_report(
         "repo_root": str(repo_root),
         "long_file_threshold": long_file_threshold,
         "prohibited_tracked": [asdict(item) for item in prohibited],
+        "top_level_violations": [asdict(item) for item in top_level],
+        "notebook_violations": [asdict(item) for item in notebook_violations],
         "long_python_files": [asdict(item) for item in long_python[:top_n]],
         "over_threshold": [asdict(item) for item in over_threshold[:top_n]],
         "over_threshold_scripts": [asdict(item) for item in over_threshold_scripts[:top_n]],
@@ -141,6 +214,8 @@ def parse_args() -> argparse.Namespace:
 
 def _print_text_report(report: dict[str, object]) -> None:
     prohibited = report["prohibited_tracked"]
+    top_level = report["top_level_violations"]
+    notebook_violations = report["notebook_violations"]
     over_threshold = report["over_threshold"]
 
     print("Repo hygiene audit")
@@ -150,6 +225,22 @@ def _print_text_report(report: dict[str, object]) -> None:
     print("Tracked output violations:")
     if prohibited:
         for item in prohibited:
+            print(f"- {item['path']}: {item['reason']}")
+    else:
+        print("- none")
+
+    print()
+    print("Undocumented top-level files:")
+    if top_level:
+        for item in top_level:
+            print(f"- {item['path']}: {item['reason']}")
+    else:
+        print("- none")
+
+    print()
+    print("Notebook output violations:")
+    if notebook_violations:
+        for item in notebook_violations:
             print(f"- {item['path']}: {item['reason']}")
     else:
         print("- none")
@@ -180,7 +271,10 @@ def main() -> int:
     else:
         _print_text_report(report)
 
-    has_prohibited = bool(report["prohibited_tracked"])
+    has_prohibited = any(
+        bool(report[key])
+        for key in ("prohibited_tracked", "top_level_violations", "notebook_violations")
+    )
     has_long_files = bool(report["over_threshold"])
     if has_prohibited or (args.strict_long_files and has_long_files):
         return 1

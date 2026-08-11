@@ -1,6 +1,9 @@
 # Deprecation and Alias Policy
 
-This document defines the canonical parameter names, the legacy aliases that still exist for compatibility, and the removal policy for those aliases.
+This document defines the canonical parameter names, the legacy aliases that still
+exist for compatibility, and their removal policy. The normative workplace transition
+decision, including legacy whole-object checkpoints, is
+[`ADR 0005`](adr/0005-legacy-deprecation-policy.md).
 
 ## Canonical names
 
@@ -80,13 +83,31 @@ Warnings may stay internal-only when the alias handling is part of compatibility
 ## Removal policy
 
 - No new docs or examples should introduce deprecated aliases.
-- Deprecated aliases stay supported for the current `0.x` line unless a migration note says otherwise.
-- Earliest removal target: the next major release after a documented warning period.
+- Normal public deprecations receive at least two published minor releases and 90 days
+  of documented warning.
+- Deprecated estimator aliases stay supported through the `1.x` line unless a
+  security-critical migration note says otherwise.
+- New `ModelSpec` and related structured configuration accept canonical names only.
+- Earliest estimator-alias removal target: `2.0`.
 - Before removing an alias:
   1. update `docs/migration.md`
   2. update `docs/API.md` and examples
   3. add or refresh regression tests covering the migration path
   4. audit serialization and checkpoint-loading paths if the alias appears in saved configs
+
+## Legacy checkpoint transition
+
+- `1.1` release-candidate cycle: introduce safe `.psann` artifacts, generic loading,
+  migration tooling, and warnings on legacy class-specific save/load.
+- `1.1` GA: make safe artifacts the workplace default. Legacy loading stays
+  class-specific and requires `trusted_legacy_checkpoint=True`.
+- `1.x`: retain the explicit trusted migration path without adding new legacy-format
+  capabilities.
+- `2.0`: remove whole-object legacy loading from the core package.
+
+Legacy whole-object checkpoints may execute arbitrary Python during deserialization.
+Only migrate a file after explicitly establishing that its source and contents are
+trusted.
 
 ## Contributor rule
 

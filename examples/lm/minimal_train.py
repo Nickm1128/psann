@@ -12,10 +12,10 @@ Run:
 
 from __future__ import annotations
 
-from pathlib import Path
-from datetime import datetime
 import argparse
 import json
+from datetime import datetime
+from pathlib import Path
 
 from psannlm.lm import psannLM, psannLMDataPrep
 
@@ -81,8 +81,12 @@ def main() -> None:
         d_mlp=1024,
         vocab_size=data.vocab_size,
     )
-    print(f"Loaded {len(base_texts)} unique documents from {corpus_path.name} (repeat x{repeats} -> {len(texts)} total)")
-    print(f"Dataset batches: {len(data)} (max_length={data.max_length}, pack_sequences={data.pack_sequences})")
+    print(
+        f"Loaded {len(base_texts)} unique documents from {corpus_path.name} (repeat x{repeats} -> {len(texts)} total)"
+    )
+    print(
+        f"Dataset batches: {len(data)} (max_length={data.max_length}, pack_sequences={data.pack_sequences})"
+    )
     print(f"Tokenizer model: {TOKENIZER_MODEL}")
     print(f"Vocab size: {data.vocab_size}")
 

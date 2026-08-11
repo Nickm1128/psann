@@ -121,8 +121,10 @@ def main() -> None:
     lm._tokenizer = tokenizer
 
     prompts: Iterable[str] = args.prompt if args.prompt else _default_prompts()
-    print(f"[info] device={device} vocab_size={vocab_size} d_model={d_model} "
-          f"n_layers={n_layers} n_heads={n_heads} d_mlp={d_mlp}")
+    print(
+        f"[info] device={device} vocab_size={vocab_size} d_model={d_model} "
+        f"n_layers={n_layers} n_heads={n_heads} d_mlp={d_mlp}"
+    )
     for p in prompts:
         out = lm.generate(
             p,

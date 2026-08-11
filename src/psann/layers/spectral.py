@@ -95,9 +95,7 @@ class SpectralGate1D(nn.Module):
             raise ValueError("SpectralGate1D expects input shaped (B, T, D).")
         bsz, steps, dim = x.shape
         if dim != self.channels:
-            raise ValueError(
-                f"SpectralGate1D expected {self.channels} channels, received {dim}."
-            )
+            raise ValueError(f"SpectralGate1D expected {self.channels} channels, received {dim}.")
 
         window = self._window_input(x)
         xt = window.transpose(1, 2)  # (B, D, K)

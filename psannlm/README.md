@@ -3,7 +3,10 @@
 This package hosts the PSANN-LM core library plus the standalone training CLI.
 
 - Importable module: `psannlm` (e.g. `python -m psannlm` or `python -m psannlm.train`).
-- Depends on the core `psann` library for shared utilities.
+- Depends on `psann>=1.1.0rc1,<1.2` for shared utilities. Import fails clearly when
+  the installed core is outside that supported line.
+- Reports the LM wheel's own version through `psannlm.__version__`; it does not alias
+  `psann.__version__`.
 - Includes the LM APIs previously hosted under `psann.lm` (now a stub in `psann`).
 - Intended to be published as its own wheel (`psannlm`) so users can opt into LM tooling separately from the core `psann` estimators.
 - `psannlm.train` remains the canonical LM training entrypoint and now delegates

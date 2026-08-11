@@ -28,9 +28,22 @@ def test_fit_stateless_uses_shuffled_dataloader(monkeypatch) -> None:
 
     observed_shuffle: list[bool] = []
 
-    def _capture_dataloader(dataset, *, batch_size, shuffle, num_workers):
+    def _capture_dataloader(
+        dataset,
+        *,
+        batch_size,
+        shuffle,
+        num_workers,
+        **kwargs,
+    ):
         observed_shuffle.append(bool(shuffle))
-        return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            **kwargs,
+        )
 
     monkeypatch.setattr(fit_utils, "DataLoader", _capture_dataloader)
 
@@ -53,9 +66,22 @@ def test_fit_stateful_epoch_reset_disables_shuffle(monkeypatch) -> None:
 
     observed_shuffle: list[bool] = []
 
-    def _capture_dataloader(dataset, *, batch_size, shuffle, num_workers):
+    def _capture_dataloader(
+        dataset,
+        *,
+        batch_size,
+        shuffle,
+        num_workers,
+        **kwargs,
+    ):
         observed_shuffle.append(bool(shuffle))
-        return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        return DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=num_workers,
+            **kwargs,
+        )
 
     monkeypatch.setattr(fit_utils, "DataLoader", _capture_dataloader)
 

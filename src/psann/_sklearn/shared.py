@@ -7,35 +7,11 @@ import torch
 import torch.nn as nn
 
 try:  # Optional scikit-learn import for API compatibility
-    from sklearn.base import BaseEstimator, RegressorMixin  # type: ignore
+    from sklearn.base import BaseEstimator, ClassifierMixin, RegressorMixin  # type: ignore
     from sklearn.metrics import r2_score as _sk_r2_score  # type: ignore
 except Exception:  # Fallbacks if sklearn isn't installed at runtime
-
-    class BaseEstimator:  # minimal stub
-        def get_params(self, deep: bool = True):
-            # Return non-private, non-callable attributes
-            params = {}
-            for k, v in self.__dict__.items():
-                if k.endswith("_"):
-                    continue
-                if not k.startswith("_") and not callable(v):
-                    params[k] = v
-            return params
-
-        def set_params(self, **params):
-            for k, v in params.items():
-                setattr(self, k, v)
-            return self
-
-    class RegressorMixin:
-        pass
-
-    def _sk_r2_score(y_true, y_pred):
-        y_true = np.asarray(y_true)
-        y_pred = np.asarray(y_pred)
-        u = ((y_true - y_pred) ** 2).sum()
-        v = ((y_true - y_true.mean()) ** 2).sum()
-        return 1.0 - (u / v if v != 0 else np.nan)
+    from .fallback import BaseEstimator, ClassifierMixin, RegressorMixin
+    from .fallback import r2_score as _sk_r2_score
 
 
 from ..hisso import HISSOOptions, HISSOTrainerConfig, ensure_hisso_trainer_config
@@ -298,6 +274,7 @@ class _WaveResNetConvModel(nn.Module):
 
 __all__ = [
     "BaseEstimator",
+    "ClassifierMixin",
     "RegressorMixin",
     "ValidationDataLike",
     "_AttentionDenseModel",

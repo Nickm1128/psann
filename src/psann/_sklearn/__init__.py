@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .base import PSANNRegressor
+from .classifier import PSANNClassifier
 from .geosparse import GeoSparseRegressor
 from .residual import ResConvPSANNRegressor, ResPSANNRegressor
 from .sgr import SGRPSANNRegressor
@@ -14,6 +15,7 @@ from .wave import WaveResNetRegressor
 
 __all__ = [
     "PSANNRegressor",
+    "PSANNClassifier",
     "ResPSANNRegressor",
     "ResConvPSANNRegressor",
     "SGRPSANNRegressor",

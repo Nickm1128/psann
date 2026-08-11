@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import logging
+import os
 import warnings
+from collections.abc import Sequence
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union
 
 import numpy as np
@@ -9,6 +12,13 @@ import torch.nn as nn
 
 from ..attention import AttentionConfig
 from ..conv import ResidualPSANNConv2dNet
+from ..estimators._fit_contracts import (
+    build_model_signature,
+    configure_deterministic_mode,
+    validate_fit_configuration,
+    validate_prepared_finite_values,
+    validate_warm_start_signature,
+)
 from ..estimators._fit_utils import (
     ModelBuildRequest,
     build_model_from_hooks,
@@ -22,6 +32,7 @@ from ..state import StateConfig
 from ..types import ActivationConfig, LossLike, NoiseSpec, ScalerSpec
 from ..utils import seed_all
 from .base import PSANNRegressor
+from .schema import capture_fit_schema, capture_preprocessing_contract
 from .shared import ValidationDataLike
 
 
@@ -335,6 +346,19 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         hisso_supervised: Optional[Mapping[str, Any] | bool] = None,
         lr_max: Optional[float] = None,
         lr_min: Optional[float] = None,
+        scheduler: str = "none",
+        scheduler_params: Optional[Mapping[str, Any]] = None,
+        nonfinite_policy: str = "error",
+        fallback_policy: str = "warn",
+        callback_error_policy: str = "raise",
+        deterministic: bool = False,
+        metrics: Optional[Mapping[str, Callable[..., Any]]] = None,
+        callbacks: Optional[Sequence[Callable[..., Any]]] = None,
+        logger: Optional[logging.Logger] = None,
+        resume_from: Optional[str | os.PathLike[str]] = None,
+        checkpoint_dir: Optional[str | os.PathLike[str]] = None,
+        checkpoint_every: int = 0,
+        checkpoint_keep: int = 3,
     ) -> "ResConvPSANNRegressor":
         if not hisso:
             return super().fit(
@@ -355,11 +379,26 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
                 hisso_supervised=hisso_supervised,
                 lr_max=lr_max,
                 lr_min=lr_min,
+                scheduler=scheduler,
+                scheduler_params=scheduler_params,
+                nonfinite_policy=nonfinite_policy,
+                fallback_policy=fallback_policy,
+                callback_error_policy=callback_error_policy,
+                deterministic=deterministic,
+                metrics=metrics,
+                callbacks=callbacks,
+                logger=logger,
+                resume_from=resume_from,
+                checkpoint_dir=checkpoint_dir,
+                checkpoint_every=checkpoint_every,
+                checkpoint_keep=checkpoint_keep,
             )
 
         if self.per_element:
             raise ValueError("hisso=True currently supports per_element=False.")
 
+        X = capture_fit_schema(self, X, y)
+        configure_deterministic_mode(bool(deterministic))
         seed_all(self.random_state)
 
         fit_args = normalise_fit_args(
@@ -371,6 +410,19 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
             verbose=verbose,
             lr_max=lr_max,
             lr_min=lr_min,
+            scheduler=scheduler,
+            scheduler_params=scheduler_params,
+            nonfinite_policy=nonfinite_policy,
+            fallback_policy=fallback_policy,
+            callback_error_policy=callback_error_policy,
+            deterministic=deterministic,
+            metrics=metrics,
+            callbacks=callbacks,
+            logger=logger,
+            resume_from=resume_from,
+            checkpoint_dir=checkpoint_dir,
+            checkpoint_every=checkpoint_every,
+            checkpoint_keep=checkpoint_keep,
             hisso=True,
             hisso_kwargs={
                 "hisso_window": hisso_window,
@@ -386,9 +438,11 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         )
 
         verbose = fit_args.verbose
+        validate_fit_configuration(self, fit_args)
         self._keep_column_output_ = bool(fit_args.y is not None and fit_args.y.ndim > 1)
 
         prepared_state, primary_dim = prepare_inputs_and_scaler(self, fit_args)
+        validate_prepared_finite_values(prepared_state)
         primary_dim = int(primary_dim)
         self._primary_dim_ = primary_dim
         self._output_dim_ = int(prepared_state.output_dim)
@@ -418,9 +472,12 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
             preserve_shape=True,
         )
 
+        model_signature = build_model_signature(self, prepared_state)
+        validate_warm_start_signature(self, model_signature)
         rebuild = not (self.warm_start and isinstance(getattr(self, "model_", None), nn.Module))
         if rebuild:
             self.model_ = build_model_from_hooks(hooks, request)
+        self._model_signature_ = model_signature
 
         device = self._device()
         self._ensure_model_device(device)
@@ -428,6 +485,7 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         result = maybe_run_hisso(hooks, request, fit_args=fit_args)
         if result is None:
             raise RuntimeError("HISSO requested but no variant hook was provided.")
+        capture_preprocessing_contract(self)
         return self
 
 

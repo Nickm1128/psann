@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import copy
+import warnings
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 import torch
 
+from ..legacy import LEGACY_CHECKPOINT_MESSAGE, LegacyCheckpointWarning
+from ..training_checkpoint import is_training_checkpoint
+from .schema import SCHEMA_STATE_FIELDS
 from .shared import (
     _deserialize_hisso_cfg,
     _deserialize_hisso_options,
@@ -57,9 +61,19 @@ class _PSANNRegressorSerializationMixin:
             "hisso_reward_fn": getattr(self, "_hisso_reward_fn_", None),
             "hisso_context_extractor": getattr(self, "_hisso_context_extractor_", None),
             "hisso_trained": bool(getattr(self, "_hisso_trained_", False)),
+            "schema_state": {
+                field: copy.deepcopy(getattr(self, field))
+                for field in SCHEMA_STATE_FIELDS
+                if hasattr(self, field)
+            },
         }
 
     def save(self, path: str) -> None:
+        warnings.warn(
+            LEGACY_CHECKPOINT_MESSAGE,
+            LegacyCheckpointWarning,
+            stacklevel=2,
+        )
         self._ensure_fitted()
         model = self.model_
         orig_device = torch.device("cpu")
@@ -78,6 +92,16 @@ class _PSANNRegressorSerializationMixin:
         *,
         map_location: Optional[Union[str, torch.device]] = "cpu",
     ) -> "PSANNRegressor":
+        warnings.warn(
+            LEGACY_CHECKPOINT_MESSAGE,
+            LegacyCheckpointWarning,
+            stacklevel=2,
+        )
+        if is_training_checkpoint(path):
+            raise ValueError(
+                "This file is a resumable PSANN training checkpoint, not a deployment "
+                "snapshot. Pass it to fit(..., resume_from=path) instead of load()."
+            )
         try:
             payload = torch.load(path, map_location=map_location, weights_only=False)
         except TypeError:
@@ -87,7 +111,9 @@ class _PSANNRegressorSerializationMixin:
             raise ValueError(
                 f"Checkpoint was created for '{class_name}', cannot load into '{cls.__name__}'."
             )
-        params = payload.get("params", {})
+        params = dict(payload.get("params", {}))
+        if not bool(params.get("preserve_shape", False)):
+            params.pop("conv_channels", None)
         estimator = cls(**params)
         if "model" not in payload:
             raise RuntimeError("Checkpoint is missing model weights.")
@@ -137,6 +163,9 @@ class _PSANNRegressorSerializationMixin:
         estimator._hisso_trained_ = bool(payload.get("hisso_trained", False))
         estimator._hisso_trainer_ = None
         estimator._hisso_cache_ = None
+        for field, value in dict(payload.get("schema_state", {})).items():
+            if field in SCHEMA_STATE_FIELDS:
+                setattr(estimator, field, value)
         return estimator
 
 

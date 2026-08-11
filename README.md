@@ -12,16 +12,24 @@ Quick links:
 - Project map (start here): `docs/PROJECT_MAP.md`
 - Repo structure & output conventions: `docs/REPO_STRUCTURE.md`
 - API reference: `docs/API.md`
+- Unified workplace API: `docs/workplace_api.md`
+- Workplace quick starts: `docs/quickstarts/README.md`
+- Deployment runtime and service: `docs/deployment.md`
+- SHAP explainability: `docs/explainability.md`
+- Accelerator, streaming, security, and operations: `docs/workplace_operations.md`
 - Supported public API: `docs/public_api.md`
 - Deprecation and alias policy: `docs/deprecation_policy.md`
 - Scenario walkthroughs: `docs/examples/README.md`
 - Architecture overview: `docs/architecture.md`
 - Performance tips: `docs/performance_tips.md`
 - Migration notes: `docs/migration.md`
+- Supported versions: `docs/support_policy.md`
+- Security policy: `SECURITY.md`
+- Changelog: `CHANGELOG.md`
 - Results compendium: `docs/PSANN_Results_Compendium.md`
 - Contributor guide: `docs/CONTRIBUTING.md`
 - Technical design notes: `TECHNICAL_DETAILS.md`
- - Utility scripts overview: `scripts/README.md`
+- Utility scripts overview: `scripts/README.md`
 
 ## Start Here (5 minutes)
 
@@ -29,6 +37,61 @@ Quick links:
 pip install psann
 python examples/01_basic_regression.py
 ```
+
+For a task-aware workplace workflow:
+
+```python
+import psann
+
+spec = psann.ModelSpec(
+    task=psann.TaskSpec(kind="binary"),
+    backbone="respsann_mlp",
+    input_schema=psann.DataSchema(
+        feature_names=("amount", "velocity", "age"),
+        input_shape=(3,),
+        feature_policy="reorder",
+    ),
+    activation="gelu",
+    normalization="layer",
+)
+model = psann.create_model(spec)
+run = psann.train(
+    model,
+    (train_features, train_labels),
+    config=psann.TrainingConfig(epochs=25, metrics=("accuracy",)),
+)
+probabilities = model.predict_proba(features)
+artifact = run.export("artifacts/fraud.psann")
+deployed = psann.load_runtime(
+    artifact,
+    config=psann.InferenceConfig(batch_size=256, device="cpu"),
+)
+result = deployed.predict(features)
+explanation = deployed.explain(
+    features[:8],
+    reference_data=approved_reference_rows,
+)
+```
+
+The same API supports regression, binary, multiclass, and multilabel tasks across the
+registered dense, residual, convolutional, WaveResNet, and SGR backbones. See
+`docs/workplace_api.md` for the compatibility and schema matrices and
+`docs/artifacts.md` for safe artifact inspection, loading, trust, and legacy migration.
+See `docs/deployment.md` for bounded batching, explicit stateful sessions, certified
+Torch/ONNX exports, the reference service, and its container.
+Install `psann[explain]` for optional model-agnostic and capability-gated gradient
+SHAP explanations; see `docs/explainability.md` for explicit background and privacy
+requirements.
+
+The `1.1.0rc1` candidate adds executable six-scenario workplace certification,
+multiclass top-k results, a machine-readable public API freeze, and a registered
+custom-backbone native artifact path. Phase 7 also added bounded restartable training
+streams, explicit CPU/CUDA/MPS and dtype
+tiers, privacy-safe model/data fingerprints, vendor-neutral operational hooks,
+performance observations, vulnerability-scan tooling, and SBOM generation. The
+former release-certification and supply-chain workflows are archived, so the
+candidate is not currently promotable. See `docs/workplace_operations.md` for
+guarantees and limitations.
 
 Optional (experimental GeoSparse):
 
@@ -50,6 +113,13 @@ python examples/28_geosparse_regression.py
 
   ```bash
   pip install psann psannlm
+  ```
+
+- Reference serving or derived exports:
+
+  ```bash
+  pip install "psann[serve]"   # FastAPI/Uvicorn reference worker
+  pip install "psann[export]"  # ONNX validation/export stack
   ```
 
 ### From source (this repository)
@@ -77,9 +147,16 @@ python -m pip install -e .
 Optional extras in `pyproject.toml`:
 - `psann[sklearn]`: adds scikit-learn conveniences for estimator mixins and metrics.
 - `psann[viz]`: plotting helpers used in benchmarks and notebooks.
+- `psann[serve]`: the FastAPI/uvicorn reference service.
+- `psann[export]`: ONNX export and parity tooling.
+- `psann[explain]`: SHAP explanations; uses NumPy 2 and is separate from `compat`.
 - `psann[dev]`: pytest, ruff, black, coverage, build, pre-commit tooling, and mypy.
 
 Language modeling tooling lives in the separate `psannlm` package (`pip install psannlm` or `python -m pip install -e ./psannlm` from this checkout).
+
+The workplace development line requires Python 3.11 or newer and is tested on Python
+3.11, 3.12, and 3.13. See `docs/support_policy.md` for the release and compatibility
+policy.
 
 Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibility extra:
 
@@ -87,7 +164,10 @@ Need pre-pinned builds (e.g. on Windows or air-gapped envs)? Use the compatibili
 pip install -e .[compat]
 ```
 
-The `compat` extra pins NumPy, SciPy, scikit-learn, and PyTorch to the newest widely available wheels while keeping `pyproject.toml` as the single source of truth.
+The `compat` extra provides a conservative compatibility set. For the exact Python
+3.11 Phase 1 validation snapshot, use
+`-c constraints/workplace-py311.txt`; select the correct PyTorch index for the target
+CPU/CUDA environment first.
 
 ## FAQ / Common issues
 
@@ -95,6 +175,8 @@ The `compat` extra pins NumPy, SciPy, scikit-learn, and PyTorch to the newest wi
 - **CPU-only quick check**: run `python examples/01_basic_regression.py` to confirm the environment.
 - **Large outputs in git**: generated artifacts belong under `runs/`, `reports/`, or `outputs/` (all ignored by git).
 - **Slow GPU runs**: enable TF32 and BF16 when supported; see `docs/performance_tips.md`.
+- **Strict workplace runs**: use `fallback_policy="error"` so an unavailable device or
+  unsupported AMP/compile request cannot silently change execution.
 
 ## Running Tests
 
@@ -113,11 +195,12 @@ python -m pytest -m "not slow"
 
 The suite exercises the supported supervised, streaming, and HISSO flows. GPU-specific checks are skipped automatically when CUDA is unavailable.
 
-Common linting commands:
+Canonical quality commands:
 
 ```bash
-python -m ruff check src tests scripts examples
-python -m black --check src tests scripts examples
+python tools/quality.py lint
+python tools/quality.py format
+python tools/repo_hygiene_audit.py --strict-long-files
 ```
 
 Set up local hooks (formatting, linting, notebook output stripping) with `pre-commit`:
@@ -257,6 +340,12 @@ Install the core estimators plus the LM add-on from PyPI:
 ```bash
 pip install psann psannlm
 ```
+
+The `1.1` PSANN-LM line requires `psann>=1.1.0rc1,<1.2`. Importing `psannlm` with an
+older or newer incompatible core fails immediately with an actionable compatibility
+error. `psann.__version__` and `psannlm.__version__` each report their own installed
+distribution version, even though coordinated releases currently use the same
+candidate identity.
 
 Use the `psannlm` package for in-code training/generation and one-command training/CLI workflows:
 - High-level APIs: `from psannlm import psannLM, psannLMDataPrep`
@@ -447,6 +536,7 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 ## Core components
 
 - **Sine activations** (`psann.SineParam`) expose learnable amplitude, frequency, and decay with optional bounds and SIREN-friendly initialisation.
+- **Parameterized sigmoid activations** (`psann.SigmoidParam`) expose one learnable bounded slope per feature for `sigmoid(slope * x)`; use residual estimators for deeper sigmoid stacks.
 - **LSM expanders** (`psann.LSM`, `psann.LSMExpander`, `psann.LSMConv2d`, `psann.LSMConv2dExpander`) provide sparse learned feature maps; `build_preprocessor` wires dict specs or modules into estimators with optional pretraining and separate learning rates.
 - **State controllers** (`psann.StateController`) keep per-feature persistent gains for streaming/online workflows. Configurable via `StateConfig`.
 - **Shared fit helpers** (`psann.estimators._fit_utils`) normalise arguments, materialise scalers, route through residual and convolutional builders, and orchestrate HISSO plans.
@@ -521,6 +611,20 @@ Residual variants reuse the same call while producing `ResidualPSANNConv2dNet` c
 ### Stateful dataloaders
 
 When `stateful=True`, the training dataloader preserves sequence order. PSANN disables shuffling whenever `state_reset` is `"epoch"` or `"none"` so stateful models consume contiguous batches; keep the default `state_reset="batch"` to retain randomised mini-batches.
+
+### Observable and resumable supervised training
+
+The shared estimator `fit` path validates optimizer, loss, activation, scheduler,
+shape, device, and policy values before training. It rejects NaN/infinity at the data
+boundary, emits structured events, supports detached custom metrics and standard
+logging, and makes callback/non-finite/fallback behavior explicit.
+
+Set `checkpoint_dir="runs/<name>/checkpoints"` to atomically maintain
+`latest.psann-train` and `best.psann-train`; add `checkpoint_every` and
+`checkpoint_keep` for bounded periodic retention. Resume with
+`fit(..., resume_from=".../latest.psann-train")`. These files contain optimizer and RNG
+state and are deliberately rejected by estimator deployment loading. See
+[`docs/training_core.md`](docs/training_core.md) for the full contract.
 
 ## Docs and examples
 

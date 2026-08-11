@@ -52,11 +52,19 @@ def build_substrings(refs: Iterable[str], min_len: int) -> Set[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Heuristic decontamination: remove lines matching ref substrings")
-    p.add_argument("--input", required=True, type=str, help="Manifest of training text files (one per line)")
-    p.add_argument("--refs", nargs="+", required=True, type=str, help="Reference text files to avoid")
+    p = argparse.ArgumentParser(
+        description="Heuristic decontamination: remove lines matching ref substrings"
+    )
+    p.add_argument(
+        "--input", required=True, type=str, help="Manifest of training text files (one per line)"
+    )
+    p.add_argument(
+        "--refs", nargs="+", required=True, type=str, help="Reference text files to avoid"
+    )
     p.add_argument("--min-substr", type=int, default=32, help="Minimum substring length to match")
-    p.add_argument("--output", type=str, required=True, help="Output file for filtered training lines")
+    p.add_argument(
+        "--output", type=str, required=True, help="Output file for filtered training lines"
+    )
     args = p.parse_args(argv)
 
     shards = read_manifest(args.input)
@@ -84,4 +92,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

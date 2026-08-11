@@ -1,0 +1,2049 @@
+{
+  "candidate": "1.1.0rc1",
+  "contract": "workplace-v1",
+  "modules": {
+    "psann": {
+      "stable_exports": [
+        "__version__",
+        "AttentionConfig",
+        "PSANNClassifier",
+        "PSANNRegressor",
+        "ResPSANNRegressor",
+        "ResConvPSANNRegressor",
+        "SGRPSANNRegressor",
+        "WaveResNetRegressor",
+        "LSM",
+        "LSMExpander",
+        "LSMConv2d",
+        "LSMConv2dExpander",
+        "SineParam",
+        "SigmoidParam",
+        "ReLUSigmoidPSANN",
+        "ActivationConfig",
+        "StateConfig",
+        "StateController",
+        "ensure_state_config",
+        "TrainingEvent",
+        "TrainingCheckpointError",
+        "ArtifactError",
+        "ArtifactChecksumError",
+        "ArtifactFormatError",
+        "ArtifactVersionError",
+        "ArtifactExtensionError",
+        "ArtifactInfo",
+        "LegacyCheckpointTrustError",
+        "LegacyCheckpointWarning",
+        "AcceleratorCapability",
+        "TaskSpec",
+        "ModelSpec",
+        "TrainingConfig",
+        "DataSchema",
+        "InferenceConfig",
+        "BackgroundPolicyError",
+        "BackgroundSummary",
+        "DifferentiableInferenceAdapter",
+        "EXPLAINABLE_LAYERS",
+        "ExplainabilityError",
+        "ExplainabilityUnavailableError",
+        "ExplainerConfig",
+        "ExplanationCapabilityError",
+        "ExplanationDriftSummary",
+        "ExplanationResult",
+        "FeatureGroup",
+        "PSANNExplainer",
+        "InferenceResult",
+        "TopKResult",
+        "InferencePool",
+        "InferenceRuntime",
+        "InferenceSession",
+        "NumpyShard",
+        "OperationalEvent",
+        "OperationalHooks",
+        "OperationalMetadataError",
+        "PerformanceBaseline",
+        "PerformanceRegression",
+        "PerformanceReport",
+        "RetentionPolicy",
+        "StreamingSupervisedData",
+        "TrainingRun",
+        "SupervisedData",
+        "TorchModuleAdapter",
+        "create_model",
+        "accelerator_capability",
+        "accelerator_support_matrix",
+        "canonical_dtype",
+        "compare_performance",
+        "create_inference_runtime",
+        "explain",
+        "make_explainer",
+        "train",
+        "load_model",
+        "load_runtime",
+        "load_runtime_pool",
+        "inspect_artifact",
+        "is_model_artifact",
+        "migrate_artifact",
+        "migrate_legacy_checkpoint",
+        "adapt_module",
+        "register_backbone",
+        "register_metric",
+        "register_schema_transform",
+        "register_artifact_resolver",
+        "resolve_artifact",
+        "load_registry_runtime",
+        "DerivedExport",
+        "DerivedExportError",
+        "ExportCapability",
+        "ExportNotSupportedError",
+        "ExportReport",
+        "evaluate_export_capabilities",
+        "export_derived",
+        "preprocessing_contract",
+        "fingerprint_data",
+        "fingerprint_model",
+        "list_explainable_layers",
+        "load_explainer_config",
+        "register_explainable_layer",
+        "save_explainer_config",
+        "summarize_background",
+        "summarize_explanation_drift",
+        "write_explanation_report",
+        "numpy_shard_stream",
+        "redact_sensitive",
+        "resolve_workplace_device",
+        "runtime_accelerator_evidence",
+        "sensitive_paths",
+        "train_streaming",
+        "validate_no_secrets",
+        "create_app",
+        "EpisodeTrainer",
+        "EpisodeConfig",
+        "multiplicative_return_reward",
+        "portfolio_log_return_reward",
+        "make_episode_trainer_from_estimator",
+        "HISSOOptions",
+        "hisso_infer_series",
+        "hisso_evaluate_reward",
+        "RewardStrategyBundle",
+        "FINANCE_PORTFOLIO_STRATEGY",
+        "get_reward_strategy",
+        "register_reward_strategy",
+        "SimpleWordTokenizer",
+        "SineTokenEmbedder",
+        "apply_siren_init",
+        "siren_uniform_",
+        "WaveResNet",
+        "build_wave_resnet",
+        "WaveEncoder",
+        "WaveRNNCell",
+        "scan_regimes",
+        "jacobian_spectrum",
+        "ntk_eigens",
+        "participation_ratio",
+        "mutual_info_proxy",
+        "fit_linear_probe",
+        "encode_and_probe",
+        "make_context_rotating_moons",
+        "make_drift_series",
+        "make_shock_series",
+        "make_regime_switch_ts",
+        "count_params",
+        "dense_mlp_params",
+        "geo_sparse_net_params",
+        "match_dense_width"
+      ],
+      "experimental_exports": [
+        "GeoSparseRegressor"
+      ],
+      "signatures": {
+        "AttentionConfig": [
+          "kind",
+          "num_heads",
+          "dropout",
+          "bias",
+          "batch_first",
+          "add_bias_kv",
+          "add_zero_attn"
+        ],
+        "PSANNClassifier": [
+          "backbone",
+          "task",
+          "threshold",
+          "class_names",
+          "positive_label",
+          "estimator_params",
+          "schema"
+        ],
+        "PSANNRegressor": [
+          "hidden_layers",
+          "hidden_width",
+          "hidden_units",
+          "epochs",
+          "batch_size",
+          "lr",
+          "optimizer",
+          "weight_decay",
+          "activation",
+          "device",
+          "random_state",
+          "early_stopping",
+          "patience",
+          "num_workers",
+          "loss",
+          "loss_params",
+          "loss_reduction",
+          "w0",
+          "preserve_shape",
+          "data_format",
+          "conv_kernel_size",
+          "conv_channels",
+          "per_element",
+          "activation_type",
+          "attention",
+          "stateful",
+          "state",
+          "state_reset",
+          "stream_lr",
+          "output_shape",
+          "lsm",
+          "lsm_train",
+          "lsm_pretrain_epochs",
+          "lsm_lr",
+          "warm_start",
+          "scaler",
+          "scaler_params",
+          "target_scaler",
+          "target_scaler_params",
+          "amp",
+          "amp_dtype",
+          "compile",
+          "compile_backend",
+          "compile_mode",
+          "compile_fullgraph",
+          "compile_dynamic",
+          "context_builder",
+          "context_builder_params"
+        ],
+        "ResPSANNRegressor": [
+          "hidden_layers",
+          "hidden_width",
+          "hidden_units",
+          "epochs",
+          "batch_size",
+          "lr",
+          "optimizer",
+          "weight_decay",
+          "activation",
+          "device",
+          "random_state",
+          "early_stopping",
+          "patience",
+          "num_workers",
+          "loss",
+          "loss_params",
+          "loss_reduction",
+          "w0",
+          "preserve_shape",
+          "data_format",
+          "conv_kernel_size",
+          "conv_channels",
+          "per_element",
+          "activation_type",
+          "attention",
+          "stateful",
+          "state",
+          "state_reset",
+          "stream_lr",
+          "output_shape",
+          "lsm",
+          "lsm_train",
+          "lsm_pretrain_epochs",
+          "lsm_lr",
+          "warm_start",
+          "scaler",
+          "scaler_params",
+          "target_scaler",
+          "target_scaler_params",
+          "w0_first",
+          "w0_hidden",
+          "norm",
+          "drop_path_max",
+          "residual_alpha_init"
+        ],
+        "ResConvPSANNRegressor": [
+          "hidden_layers",
+          "hidden_width",
+          "hidden_units",
+          "epochs",
+          "batch_size",
+          "lr",
+          "optimizer",
+          "weight_decay",
+          "activation",
+          "device",
+          "random_state",
+          "early_stopping",
+          "patience",
+          "num_workers",
+          "loss",
+          "loss_params",
+          "loss_reduction",
+          "w0",
+          "preserve_shape",
+          "data_format",
+          "conv_kernel_size",
+          "conv_channels",
+          "per_element",
+          "activation_type",
+          "stateful",
+          "state",
+          "state_reset",
+          "stream_lr",
+          "output_shape",
+          "lsm",
+          "lsm_train",
+          "lsm_pretrain_epochs",
+          "lsm_lr",
+          "warm_start",
+          "scaler",
+          "scaler_params",
+          "target_scaler",
+          "target_scaler_params",
+          "w0_first",
+          "w0_hidden",
+          "norm",
+          "drop_path_max",
+          "residual_alpha_init"
+        ],
+        "SGRPSANNRegressor": [
+          "hidden_layers",
+          "hidden_width",
+          "hidden_units",
+          "epochs",
+          "batch_size",
+          "lr",
+          "optimizer",
+          "weight_decay",
+          "activation",
+          "device",
+          "random_state",
+          "early_stopping",
+          "patience",
+          "num_workers",
+          "loss",
+          "loss_params",
+          "loss_reduction",
+          "w0",
+          "preserve_shape",
+          "data_format",
+          "conv_kernel_size",
+          "conv_channels",
+          "per_element",
+          "activation_type",
+          "attention",
+          "stateful",
+          "state",
+          "state_reset",
+          "stream_lr",
+          "output_shape",
+          "lsm",
+          "lsm_train",
+          "lsm_pretrain_epochs",
+          "lsm_lr",
+          "warm_start",
+          "scaler",
+          "scaler_params",
+          "target_scaler",
+          "target_scaler_params",
+          "phase_init",
+          "phase_trainable",
+          "use_spectral_gate",
+          "k_fft",
+          "gate_type",
+          "gate_groups",
+          "gate_init",
+          "gate_strength",
+          "pool"
+        ],
+        "WaveResNetRegressor": [
+          "hidden_layers",
+          "hidden_width",
+          "hidden_units",
+          "epochs",
+          "batch_size",
+          "lr",
+          "optimizer",
+          "weight_decay",
+          "activation",
+          "device",
+          "random_state",
+          "early_stopping",
+          "patience",
+          "num_workers",
+          "loss",
+          "loss_params",
+          "loss_reduction",
+          "w0",
+          "preserve_shape",
+          "data_format",
+          "conv_kernel_size",
+          "conv_channels",
+          "per_element",
+          "activation_type",
+          "attention",
+          "stateful",
+          "state",
+          "state_reset",
+          "stream_lr",
+          "output_shape",
+          "lsm",
+          "lsm_train",
+          "lsm_pretrain_epochs",
+          "lsm_lr",
+          "warm_start",
+          "scaler",
+          "scaler_params",
+          "target_scaler",
+          "target_scaler_params",
+          "first_layer_w0",
+          "hidden_w0",
+          "norm",
+          "use_film",
+          "use_phase_shift",
+          "dropout",
+          "context_dim",
+          "context_builder",
+          "context_builder_params",
+          "residual_alpha_init",
+          "grad_clip_norm",
+          "first_layer_w0_initial",
+          "hidden_w0_initial",
+          "w0_warmup_epochs",
+          "progressive_depth_initial",
+          "progressive_depth_interval",
+          "progressive_depth_growth",
+          "use_spectral_gate",
+          "k_fft",
+          "gate_type",
+          "gate_groups",
+          "gate_init",
+          "gate_strength"
+        ],
+        "LSM": [
+          "input_dim",
+          "output_dim",
+          "hidden_layers",
+          "hidden_units",
+          "hidden_width",
+          "sparsity",
+          "nonlinearity",
+          "bias",
+          "random_state"
+        ],
+        "LSMExpander": [
+          "output_dim",
+          "hidden_layers",
+          "hidden_units",
+          "hidden_width",
+          "sparsity",
+          "nonlinearity",
+          "epochs",
+          "lr",
+          "ridge",
+          "batch_size",
+          "device",
+          "random_state",
+          "early_stopping",
+          "patience",
+          "tol",
+          "val_split",
+          "verbose",
+          "objective",
+          "alpha_ortho",
+          "alpha_sparse",
+          "alpha_var",
+          "target_var",
+          "noisy",
+          "noise_decay"
+        ],
+        "LSMConv2d": [
+          "in_channels",
+          "out_channels",
+          "hidden_layers",
+          "conv_channels",
+          "hidden_channels",
+          "kernel_size",
+          "sparsity",
+          "nonlinearity",
+          "bias",
+          "random_state"
+        ],
+        "LSMConv2dExpander": [
+          "out_channels",
+          "hidden_layers",
+          "conv_channels",
+          "hidden_channels",
+          "kernel_size",
+          "sparsity",
+          "nonlinearity",
+          "epochs",
+          "lr",
+          "ridge",
+          "device",
+          "random_state",
+          "noisy",
+          "noise_decay",
+          "alpha_ortho",
+          "alpha_sparse",
+          "alpha_var",
+          "target_var"
+        ],
+        "SineParam": [
+          "out_features",
+          "amplitude_init",
+          "frequency_init",
+          "decay_init",
+          "learnable",
+          "decay_mode",
+          "bounds",
+          "feature_dim"
+        ],
+        "SigmoidParam": [
+          "out_features",
+          "slope_init",
+          "slope_trainable",
+          "slope_bounds",
+          "feature_dim"
+        ],
+        "ReLUSigmoidPSANN": [
+          "out_features",
+          "slope_init",
+          "slope_trainable",
+          "clip_max",
+          "amplitude_init",
+          "frequency_init",
+          "decay_init",
+          "learnable",
+          "decay_mode",
+          "bounds",
+          "feature_dim"
+        ],
+        "StateConfig": [
+          "rho",
+          "beta",
+          "init",
+          "max_abs",
+          "detach"
+        ],
+        "StateController": [
+          "size",
+          "init",
+          "rho",
+          "beta",
+          "max_abs",
+          "detach"
+        ],
+        "ensure_state_config": [
+          "value"
+        ],
+        "TrainingEvent": [
+          "name",
+          "timestamp",
+          "epoch",
+          "step",
+          "data"
+        ],
+        "ArtifactInfo": [
+          "path",
+          "artifact_id",
+          "artifact_format_version",
+          "original_format_version",
+          "package_version",
+          "backbone",
+          "task",
+          "run_id",
+          "capabilities",
+          "experimental",
+          "migrations",
+          "manifest"
+        ],
+        "AcceleratorCapability": [
+          "device",
+          "dtype",
+          "operation",
+          "amp",
+          "compile",
+          "status",
+          "reason",
+          "evidence_required"
+        ],
+        "TaskSpec": [
+          "kind",
+          "class_names",
+          "threshold",
+          "positive_label"
+        ],
+        "ModelSpec": [
+          "task",
+          "backbone",
+          "input_schema",
+          "activation",
+          "normalization",
+          "dropout",
+          "parameters"
+        ],
+        "TrainingConfig": [
+          "epochs",
+          "batch_size",
+          "learning_rate",
+          "optimizer",
+          "weight_decay",
+          "scheduler",
+          "scheduler_params",
+          "loss",
+          "loss_params",
+          "loss_reduction",
+          "metrics",
+          "early_stopping",
+          "patience",
+          "device",
+          "deterministic",
+          "amp",
+          "amp_dtype",
+          "compile",
+          "nonfinite_policy",
+          "fallback_policy",
+          "callback_error_policy",
+          "resume_from",
+          "checkpoint_dir",
+          "checkpoint_every",
+          "checkpoint_keep"
+        ],
+        "DataSchema": [
+          "feature_names",
+          "output_names",
+          "input_shape",
+          "data_format",
+          "dtype",
+          "feature_policy",
+          "preprocessing",
+          "target_scaling",
+          "categorical_encoder",
+          "missing_value_imputer"
+        ],
+        "InferenceConfig": [
+          "batch_size",
+          "device",
+          "dtype",
+          "feature_policy",
+          "return_logits",
+          "classification_output",
+          "top_k",
+          "device_transfer",
+          "fallback_policy"
+        ],
+        "BackgroundSummary": [
+          "values",
+          "input_shape",
+          "feature_names",
+          "data_format",
+          "approved_for_persistence",
+          "metadata"
+        ],
+        "DifferentiableInferenceAdapter": [
+          "runtime",
+          "output_kind",
+          "output_indices"
+        ],
+        "ExplainerConfig": [
+          "algorithm",
+          "masker",
+          "group_strategy",
+          "output_kind",
+          "output",
+          "batch_size",
+          "max_evaluations",
+          "max_explanation_samples",
+          "max_background_samples",
+          "background_size",
+          "gradient_samples",
+          "local_smoothing",
+          "seed",
+          "fallback",
+          "layer"
+        ],
+        "ExplanationDriftSummary": [
+          "feature_names",
+          "reference_importance",
+          "current_importance",
+          "absolute_shift",
+          "mean_absolute_shift",
+          "maximum_absolute_shift",
+          "cosine_similarity"
+        ],
+        "ExplanationResult": [
+          "explanation",
+          "feature_groups",
+          "task",
+          "output_names",
+          "artifact_version",
+          "model_id",
+          "run_id",
+          "metadata"
+        ],
+        "FeatureGroup": [
+          "name",
+          "indices",
+          "strategy"
+        ],
+        "PSANNExplainer": [
+          "runtime",
+          "background_summary",
+          "background_policy",
+          "config"
+        ],
+        "InferenceResult": [
+          "values",
+          "task",
+          "output_names",
+          "artifact_version",
+          "model_id",
+          "run_id",
+          "metadata",
+          "top_k"
+        ],
+        "TopKResult": [
+          "labels",
+          "probabilities",
+          "indices"
+        ],
+        "InferencePool": [
+          "runtimes"
+        ],
+        "InferenceRuntime": [
+          "model",
+          "config"
+        ],
+        "InferenceSession": [
+          "model",
+          "config",
+          "session_id"
+        ],
+        "NumpyShard": [
+          "inputs",
+          "targets",
+          "context"
+        ],
+        "OperationalEvent": [
+          "kind",
+          "timestamp",
+          "run_id",
+          "model_id",
+          "metadata"
+        ],
+        "OperationalHooks": [
+          "experiment_tracker",
+          "registry_publisher",
+          "monitor",
+          "error_policy"
+        ],
+        "PerformanceBaseline": [
+          "name",
+          "metrics",
+          "relative_tolerances",
+          "environment",
+          "correctness_required"
+        ],
+        "PerformanceRegression": [
+          "metric",
+          "baseline",
+          "observed",
+          "tolerance",
+          "direction"
+        ],
+        "PerformanceReport": [
+          "baseline",
+          "correctness_passed",
+          "observed",
+          "regressions",
+          "missing_metrics"
+        ],
+        "RetentionPolicy": [
+          "history_days",
+          "checkpoint_days",
+          "explanation_days",
+          "service_log_days",
+          "redact_raw_inputs",
+          "redact_targets",
+          "redact_context"
+        ],
+        "StreamingSupervisedData": [
+          "batch_factory",
+          "steps_per_epoch",
+          "max_batch_samples",
+          "name"
+        ],
+        "TrainingRun": [
+          "model",
+          "model_spec",
+          "training_config",
+          "run_id",
+          "history",
+          "metrics",
+          "metadata",
+          "operational_hooks"
+        ],
+        "SupervisedData": [
+          "inputs",
+          "targets",
+          "context"
+        ],
+        "TorchModuleAdapter": [
+          "module",
+          "task",
+          "epochs",
+          "batch_size",
+          "learning_rate",
+          "optimizer",
+          "weight_decay",
+          "threshold",
+          "device",
+          "random_state"
+        ],
+        "create_model": [
+          "spec"
+        ],
+        "accelerator_capability": [
+          "device",
+          "dtype",
+          "operation",
+          "amp",
+          "compile"
+        ],
+        "accelerator_support_matrix": [],
+        "canonical_dtype": [
+          "value"
+        ],
+        "compare_performance": [
+          "baseline",
+          "observed",
+          "correctness_passed",
+          "default_relative_tolerance"
+        ],
+        "create_inference_runtime": [
+          "model",
+          "config"
+        ],
+        "explain": [
+          "model",
+          "inputs",
+          "background",
+          "reference_data",
+          "summary",
+          "config"
+        ],
+        "make_explainer": [
+          "model",
+          "background",
+          "reference_data",
+          "summary",
+          "config"
+        ],
+        "train": [
+          "model",
+          "train_data",
+          "validation_data",
+          "config",
+          "callbacks",
+          "logger",
+          "operational_hooks"
+        ],
+        "load_model": [
+          "path",
+          "device",
+          "trusted_legacy_checkpoint"
+        ],
+        "load_runtime": [
+          "path",
+          "config"
+        ],
+        "load_runtime_pool": [
+          "path",
+          "devices",
+          "config"
+        ],
+        "inspect_artifact": [
+          "path"
+        ],
+        "is_model_artifact": [
+          "path"
+        ],
+        "migrate_artifact": [
+          "source",
+          "destination"
+        ],
+        "migrate_legacy_checkpoint": [
+          "source",
+          "destination",
+          "trusted_legacy_checkpoint",
+          "model_spec",
+          "device",
+          "model_card"
+        ],
+        "adapt_module": [
+          "module",
+          "task",
+          "training_parameters"
+        ],
+        "register_backbone": [
+          "identifier",
+          "factory",
+          "supported_tasks",
+          "input_ranks",
+          "activations",
+          "normalizations",
+          "supports_dropout",
+          "factory_kind",
+          "experimental",
+          "plugin",
+          "plugin_version",
+          "replace"
+        ],
+        "register_metric": [
+          "identifier",
+          "factory",
+          "replace"
+        ],
+        "register_schema_transform": [
+          "kind",
+          "identifier",
+          "factory",
+          "replace"
+        ],
+        "register_artifact_resolver": [
+          "identifier",
+          "resolver",
+          "replace"
+        ],
+        "resolve_artifact": [
+          "reference",
+          "resolver"
+        ],
+        "load_registry_runtime": [
+          "reference",
+          "resolver",
+          "config"
+        ],
+        "DerivedExport": [
+          "path",
+          "format",
+          "contract_path",
+          "capability"
+        ],
+        "ExportCapability": [
+          "format",
+          "supported",
+          "parity",
+          "dynamic_batch",
+          "max_abs_error",
+          "reason"
+        ],
+        "ExportReport": [
+          "backbone",
+          "task",
+          "input_shape",
+          "capabilities"
+        ],
+        "evaluate_export_capabilities": [
+          "model",
+          "sample_inputs",
+          "context",
+          "formats",
+          "atol",
+          "rtol"
+        ],
+        "export_derived": [
+          "model",
+          "path",
+          "format",
+          "sample_inputs",
+          "context",
+          "atol",
+          "rtol"
+        ],
+        "preprocessing_contract": [
+          "model"
+        ],
+        "fingerprint_data": [
+          "inputs",
+          "targets",
+          "context"
+        ],
+        "fingerprint_model": [
+          "model"
+        ],
+        "list_explainable_layers": [
+          "model"
+        ],
+        "load_explainer_config": [
+          "path"
+        ],
+        "register_explainable_layer": [
+          "backbone",
+          "name",
+          "module_path"
+        ],
+        "save_explainer_config": [
+          "config",
+          "path",
+          "background_summary",
+          "include_background"
+        ],
+        "summarize_background": [
+          "reference_data",
+          "input_shape",
+          "feature_names",
+          "data_format",
+          "max_samples",
+          "seed",
+          "approved_for_persistence",
+          "metadata"
+        ],
+        "summarize_explanation_drift": [
+          "reference",
+          "current"
+        ],
+        "write_explanation_report": [
+          "result",
+          "path"
+        ],
+        "numpy_shard_stream": [
+          "shards",
+          "batch_size",
+          "drop_last",
+          "name"
+        ],
+        "redact_sensitive": [
+          "value"
+        ],
+        "resolve_workplace_device": [
+          "requested",
+          "fallback_policy",
+          "operation"
+        ],
+        "runtime_accelerator_evidence": [],
+        "sensitive_paths": [
+          "value",
+          "path"
+        ],
+        "train_streaming": [
+          "model",
+          "stream",
+          "config",
+          "operational_hooks"
+        ],
+        "validate_no_secrets": [
+          "value",
+          "field"
+        ],
+        "create_app": [
+          "artifact_path",
+          "runtime",
+          "config"
+        ],
+        "EpisodeTrainer": [
+          "model",
+          "reward_fn",
+          "ep_cfg",
+          "device",
+          "optimizer",
+          "lr",
+          "grad_clip",
+          "price_extractor",
+          "context_extractor"
+        ],
+        "EpisodeConfig": [
+          "episode_length",
+          "batch_episodes",
+          "allocation_transform",
+          "trans_cost",
+          "transition_penalty",
+          "spatial_pool",
+          "random_state"
+        ],
+        "multiplicative_return_reward": [
+          "actions",
+          "context",
+          "transition_penalty",
+          "trans_cost",
+          "eps"
+        ],
+        "portfolio_log_return_reward": [
+          "allocations",
+          "prices",
+          "trans_cost",
+          "eps"
+        ],
+        "make_episode_trainer_from_estimator": [
+          "est",
+          "ep_cfg",
+          "reward_fn",
+          "device",
+          "lr"
+        ],
+        "HISSOOptions": [
+          "episode_length",
+          "batch_episodes",
+          "updates_per_epoch",
+          "transition_penalty",
+          "primary_transform",
+          "reward_fn",
+          "context_extractor",
+          "input_noise_std",
+          "supervised"
+        ],
+        "hisso_infer_series": [
+          "estimator",
+          "X_obs",
+          "trainer_cfg"
+        ],
+        "hisso_evaluate_reward": [
+          "estimator",
+          "X_obs",
+          "trainer_cfg"
+        ],
+        "RewardStrategyBundle": [
+          "reward_fn",
+          "metrics_fn",
+          "description"
+        ],
+        "get_reward_strategy": [
+          "name"
+        ],
+        "register_reward_strategy": [
+          "name",
+          "bundle",
+          "overwrite"
+        ],
+        "SimpleWordTokenizer": [
+          "lowercase",
+          "max_vocab"
+        ],
+        "SineTokenEmbedder": [
+          "embedding_dim",
+          "base",
+          "scale",
+          "trainable",
+          "device"
+        ],
+        "apply_siren_init": [
+          "module",
+          "first_layer_w0",
+          "hidden_w0"
+        ],
+        "siren_uniform_": [
+          "tensor",
+          "fan_in",
+          "w0"
+        ],
+        "WaveResNet": [
+          "input_dim",
+          "hidden_dim",
+          "depth",
+          "output_dim",
+          "first_layer_w0",
+          "hidden_w0",
+          "context_dim",
+          "norm",
+          "use_film",
+          "use_phase_shift",
+          "dropout",
+          "residual_alpha_init",
+          "activation_config",
+          "trainable_params"
+        ],
+        "build_wave_resnet": [
+          "kwargs"
+        ],
+        "WaveEncoder": [
+          "return_features",
+          "wave_kwargs"
+        ],
+        "WaveRNNCell": [
+          "hidden_dim",
+          "context_dim",
+          "alpha",
+          "w0",
+          "norm",
+          "use_phase_shift",
+          "use_film"
+        ],
+        "scan_regimes": [
+          "cell",
+          "c_grid",
+          "steps",
+          "burn_in"
+        ],
+        "jacobian_spectrum": [
+          "model",
+          "x",
+          "c",
+          "topk"
+        ],
+        "ntk_eigens": [
+          "model",
+          "x",
+          "c",
+          "topk"
+        ],
+        "participation_ratio": [
+          "features",
+          "eps"
+        ],
+        "mutual_info_proxy": [
+          "features",
+          "contexts",
+          "sigma"
+        ],
+        "fit_linear_probe": [
+          "features",
+          "targets",
+          "l2",
+          "solver"
+        ],
+        "encode_and_probe": [
+          "encoder",
+          "dataloader",
+          "freeze_encoder",
+          "device",
+          "solver",
+          "l2"
+        ],
+        "make_context_rotating_moons": [
+          "n",
+          "noise",
+          "seed"
+        ],
+        "make_drift_series": [
+          "T",
+          "drift",
+          "frequency",
+          "noise",
+          "seed"
+        ],
+        "make_shock_series": [
+          "T",
+          "shock_prob",
+          "shock_scale",
+          "noise",
+          "mean_revert",
+          "seed"
+        ],
+        "make_regime_switch_ts": [
+          "T",
+          "regimes",
+          "seed"
+        ],
+        "count_params": [
+          "model",
+          "trainable_only"
+        ],
+        "dense_mlp_params": [
+          "input_dim",
+          "output_dim",
+          "hidden_dim",
+          "depth",
+          "bias"
+        ],
+        "geo_sparse_net_params": [
+          "shape",
+          "depth",
+          "k",
+          "output_dim",
+          "bias",
+          "include_head_bias"
+        ],
+        "match_dense_width": [
+          "target_params",
+          "input_dim",
+          "output_dim",
+          "depth",
+          "bias",
+          "width_candidates",
+          "max_width"
+        ]
+      },
+      "signature_exemptions": {
+        "ActivationConfig": "inspect.signature is unavailable for this public type",
+        "TrainingCheckpointError": "inspect.signature is unavailable for this public type",
+        "ArtifactError": "inspect.signature is unavailable for this public type",
+        "ArtifactChecksumError": "inspect.signature is unavailable for this public type",
+        "ArtifactFormatError": "inspect.signature is unavailable for this public type",
+        "ArtifactVersionError": "inspect.signature is unavailable for this public type",
+        "ArtifactExtensionError": "inspect.signature is unavailable for this public type",
+        "LegacyCheckpointTrustError": "inspect.signature is unavailable for this public type",
+        "LegacyCheckpointWarning": "inspect.signature is unavailable for this public type",
+        "BackgroundPolicyError": "inspect.signature is unavailable for this public type",
+        "ExplainabilityError": "inspect.signature is unavailable for this public type",
+        "ExplainabilityUnavailableError": "inspect.signature is unavailable for this public type",
+        "ExplanationCapabilityError": "inspect.signature is unavailable for this public type",
+        "OperationalMetadataError": "inspect.signature is unavailable for this public type",
+        "DerivedExportError": "inspect.signature is unavailable for this public type",
+        "ExportNotSupportedError": "inspect.signature is unavailable for this public type"
+      }
+    },
+    "psann.platform": {
+      "stable_exports": [
+        "ACTIVATIONS",
+        "ARTIFACT_FORMAT_VERSION",
+        "ARTIFACT_MANIFEST_JSON_SCHEMA",
+        "ArtifactChecksumError",
+        "ArtifactError",
+        "ArtifactExtensionError",
+        "ArtifactFormatError",
+        "ArtifactInfo",
+        "ArtifactManifest",
+        "ArtifactVersionError",
+        "AcceleratorCapability",
+        "BACKBONES",
+        "BackboneProtocol",
+        "BackboneRegistration",
+        "CATEGORICAL_ENCODERS",
+        "DROPOUTS",
+        "DataSchema",
+        "BackgroundPolicyError",
+        "BackgroundSummary",
+        "DifferentiableInferenceAdapter",
+        "EXPLAINABLE_LAYERS",
+        "ExplainabilityError",
+        "ExplainabilityUnavailableError",
+        "ExplainerConfig",
+        "ExplanationCapabilityError",
+        "ExplanationDriftSummary",
+        "ExplanationResult",
+        "FeatureGroup",
+        "PSANNExplainer",
+        "FittedTaskAdapter",
+        "InferenceConfig",
+        "InferencePool",
+        "InferenceResult",
+        "InferenceRuntime",
+        "InferenceSession",
+        "IdentifierRegistry",
+        "LegacyCheckpointTrustError",
+        "LegacyCheckpointWarning",
+        "LOSSES",
+        "METRICS",
+        "MISSING_VALUE_IMPUTERS",
+        "ModelSpec",
+        "ModelSpecContract",
+        "NumpyShard",
+        "NORMALIZATIONS",
+        "OPTIMIZERS",
+        "OperationalEvent",
+        "OperationalHooks",
+        "OperationalMetadataError",
+        "PerformanceBaseline",
+        "PerformanceRegression",
+        "PerformanceReport",
+        "RetentionPolicy",
+        "SCHEDULERS",
+        "SupervisedData",
+        "StreamingSupervisedData",
+        "TaskAdapter",
+        "TaskKind",
+        "TaskSpec",
+        "TopKResult",
+        "TorchModuleAdapter",
+        "TrainingConfig",
+        "TrainingRun",
+        "adapt_module",
+        "accelerator_capability",
+        "accelerator_support_matrix",
+        "canonical_dtype",
+        "compare_performance",
+        "create_model",
+        "create_inference_runtime",
+        "explain",
+        "make_explainer",
+        "DerivedExport",
+        "DerivedExportError",
+        "ExportCapability",
+        "ExportNotSupportedError",
+        "ExportReport",
+        "evaluate_export_capabilities",
+        "export_derived",
+        "create_task_adapter",
+        "export_model",
+        "inspect_artifact",
+        "is_model_artifact",
+        "load_model",
+        "load_runtime",
+        "load_runtime_pool",
+        "load_model_spec",
+        "migrate_artifact",
+        "migrate_legacy_checkpoint",
+        "register_backbone",
+        "register_metric",
+        "register_schema_transform",
+        "ARTIFACT_RESOLVERS",
+        "load_registry_runtime",
+        "register_artifact_resolver",
+        "resolve_artifact",
+        "preprocessing_contract",
+        "fingerprint_data",
+        "fingerprint_model",
+        "list_explainable_layers",
+        "load_explainer_config",
+        "register_explainable_layer",
+        "save_explainer_config",
+        "summarize_background",
+        "summarize_explanation_drift",
+        "write_explanation_report",
+        "save_spec",
+        "numpy_shard_stream",
+        "redact_sensitive",
+        "resolve_workplace_device",
+        "runtime_accelerator_evidence",
+        "sensitive_paths",
+        "train",
+        "train_streaming",
+        "validate_no_secrets"
+      ],
+      "experimental_exports": [],
+      "signatures": {
+        "ArtifactInfo": [
+          "path",
+          "artifact_id",
+          "artifact_format_version",
+          "original_format_version",
+          "package_version",
+          "backbone",
+          "task",
+          "run_id",
+          "capabilities",
+          "experimental",
+          "migrations",
+          "manifest"
+        ],
+        "AcceleratorCapability": [
+          "device",
+          "dtype",
+          "operation",
+          "amp",
+          "compile",
+          "status",
+          "reason",
+          "evidence_required"
+        ],
+        "BackboneProtocol": [
+          "args",
+          "kwargs"
+        ],
+        "BackboneRegistration": [
+          "identifier",
+          "factory",
+          "supported_tasks",
+          "input_ranks",
+          "activations",
+          "normalizations",
+          "supports_dropout",
+          "factory_kind",
+          "experimental",
+          "plugin",
+          "plugin_version"
+        ],
+        "DataSchema": [
+          "feature_names",
+          "output_names",
+          "input_shape",
+          "data_format",
+          "dtype",
+          "feature_policy",
+          "preprocessing",
+          "target_scaling",
+          "categorical_encoder",
+          "missing_value_imputer"
+        ],
+        "BackgroundSummary": [
+          "values",
+          "input_shape",
+          "feature_names",
+          "data_format",
+          "approved_for_persistence",
+          "metadata"
+        ],
+        "DifferentiableInferenceAdapter": [
+          "runtime",
+          "output_kind",
+          "output_indices"
+        ],
+        "ExplainerConfig": [
+          "algorithm",
+          "masker",
+          "group_strategy",
+          "output_kind",
+          "output",
+          "batch_size",
+          "max_evaluations",
+          "max_explanation_samples",
+          "max_background_samples",
+          "background_size",
+          "gradient_samples",
+          "local_smoothing",
+          "seed",
+          "fallback",
+          "layer"
+        ],
+        "ExplanationDriftSummary": [
+          "feature_names",
+          "reference_importance",
+          "current_importance",
+          "absolute_shift",
+          "mean_absolute_shift",
+          "maximum_absolute_shift",
+          "cosine_similarity"
+        ],
+        "ExplanationResult": [
+          "explanation",
+          "feature_groups",
+          "task",
+          "output_names",
+          "artifact_version",
+          "model_id",
+          "run_id",
+          "metadata"
+        ],
+        "FeatureGroup": [
+          "name",
+          "indices",
+          "strategy"
+        ],
+        "PSANNExplainer": [
+          "runtime",
+          "background_summary",
+          "background_policy",
+          "config"
+        ],
+        "FittedTaskAdapter": [
+          "spec",
+          "classes",
+          "output_names"
+        ],
+        "InferenceConfig": [
+          "batch_size",
+          "device",
+          "dtype",
+          "feature_policy",
+          "return_logits",
+          "classification_output",
+          "top_k",
+          "device_transfer",
+          "fallback_policy"
+        ],
+        "InferencePool": [
+          "runtimes"
+        ],
+        "InferenceResult": [
+          "values",
+          "task",
+          "output_names",
+          "artifact_version",
+          "model_id",
+          "run_id",
+          "metadata",
+          "top_k"
+        ],
+        "InferenceRuntime": [
+          "model",
+          "config"
+        ],
+        "InferenceSession": [
+          "model",
+          "config",
+          "session_id"
+        ],
+        "IdentifierRegistry": [
+          "name"
+        ],
+        "ModelSpec": [
+          "task",
+          "backbone",
+          "input_schema",
+          "activation",
+          "normalization",
+          "dropout",
+          "parameters"
+        ],
+        "ModelSpecContract": [
+          "args",
+          "kwargs"
+        ],
+        "NumpyShard": [
+          "inputs",
+          "targets",
+          "context"
+        ],
+        "OperationalEvent": [
+          "kind",
+          "timestamp",
+          "run_id",
+          "model_id",
+          "metadata"
+        ],
+        "OperationalHooks": [
+          "experiment_tracker",
+          "registry_publisher",
+          "monitor",
+          "error_policy"
+        ],
+        "PerformanceBaseline": [
+          "name",
+          "metrics",
+          "relative_tolerances",
+          "environment",
+          "correctness_required"
+        ],
+        "PerformanceRegression": [
+          "metric",
+          "baseline",
+          "observed",
+          "tolerance",
+          "direction"
+        ],
+        "PerformanceReport": [
+          "baseline",
+          "correctness_passed",
+          "observed",
+          "regressions",
+          "missing_metrics"
+        ],
+        "RetentionPolicy": [
+          "history_days",
+          "checkpoint_days",
+          "explanation_days",
+          "service_log_days",
+          "redact_raw_inputs",
+          "redact_targets",
+          "redact_context"
+        ],
+        "SupervisedData": [
+          "inputs",
+          "targets",
+          "context"
+        ],
+        "StreamingSupervisedData": [
+          "batch_factory",
+          "steps_per_epoch",
+          "max_batch_samples",
+          "name"
+        ],
+        "TaskAdapter": [
+          "args",
+          "kwargs"
+        ],
+        "TaskKind": [
+          "args",
+          "kwargs"
+        ],
+        "TaskSpec": [
+          "kind",
+          "class_names",
+          "threshold",
+          "positive_label"
+        ],
+        "TopKResult": [
+          "labels",
+          "probabilities",
+          "indices"
+        ],
+        "TorchModuleAdapter": [
+          "module",
+          "task",
+          "epochs",
+          "batch_size",
+          "learning_rate",
+          "optimizer",
+          "weight_decay",
+          "threshold",
+          "device",
+          "random_state"
+        ],
+        "TrainingConfig": [
+          "epochs",
+          "batch_size",
+          "learning_rate",
+          "optimizer",
+          "weight_decay",
+          "scheduler",
+          "scheduler_params",
+          "loss",
+          "loss_params",
+          "loss_reduction",
+          "metrics",
+          "early_stopping",
+          "patience",
+          "device",
+          "deterministic",
+          "amp",
+          "amp_dtype",
+          "compile",
+          "nonfinite_policy",
+          "fallback_policy",
+          "callback_error_policy",
+          "resume_from",
+          "checkpoint_dir",
+          "checkpoint_every",
+          "checkpoint_keep"
+        ],
+        "TrainingRun": [
+          "model",
+          "model_spec",
+          "training_config",
+          "run_id",
+          "history",
+          "metrics",
+          "metadata",
+          "operational_hooks"
+        ],
+        "adapt_module": [
+          "module",
+          "task",
+          "training_parameters"
+        ],
+        "accelerator_capability": [
+          "device",
+          "dtype",
+          "operation",
+          "amp",
+          "compile"
+        ],
+        "accelerator_support_matrix": [],
+        "canonical_dtype": [
+          "value"
+        ],
+        "compare_performance": [
+          "baseline",
+          "observed",
+          "correctness_passed",
+          "default_relative_tolerance"
+        ],
+        "create_model": [
+          "spec"
+        ],
+        "create_inference_runtime": [
+          "model",
+          "config"
+        ],
+        "explain": [
+          "model",
+          "inputs",
+          "background",
+          "reference_data",
+          "summary",
+          "config"
+        ],
+        "make_explainer": [
+          "model",
+          "background",
+          "reference_data",
+          "summary",
+          "config"
+        ],
+        "DerivedExport": [
+          "path",
+          "format",
+          "contract_path",
+          "capability"
+        ],
+        "ExportCapability": [
+          "format",
+          "supported",
+          "parity",
+          "dynamic_batch",
+          "max_abs_error",
+          "reason"
+        ],
+        "ExportReport": [
+          "backbone",
+          "task",
+          "input_shape",
+          "capabilities"
+        ],
+        "evaluate_export_capabilities": [
+          "model",
+          "sample_inputs",
+          "context",
+          "formats",
+          "atol",
+          "rtol"
+        ],
+        "export_derived": [
+          "model",
+          "path",
+          "format",
+          "sample_inputs",
+          "context",
+          "atol",
+          "rtol"
+        ],
+        "create_task_adapter": [
+          "spec"
+        ],
+        "export_model": [
+          "model",
+          "path",
+          "model_spec",
+          "run_id",
+          "model_card",
+          "metadata",
+          "registry"
+        ],
+        "inspect_artifact": [
+          "path"
+        ],
+        "is_model_artifact": [
+          "path"
+        ],
+        "load_model": [
+          "path",
+          "device",
+          "trusted_legacy_checkpoint"
+        ],
+        "load_runtime": [
+          "path",
+          "config"
+        ],
+        "load_runtime_pool": [
+          "path",
+          "devices",
+          "config"
+        ],
+        "load_model_spec": [
+          "path"
+        ],
+        "migrate_artifact": [
+          "source",
+          "destination"
+        ],
+        "migrate_legacy_checkpoint": [
+          "source",
+          "destination",
+          "trusted_legacy_checkpoint",
+          "model_spec",
+          "device",
+          "model_card"
+        ],
+        "register_backbone": [
+          "identifier",
+          "factory",
+          "supported_tasks",
+          "input_ranks",
+          "activations",
+          "normalizations",
+          "supports_dropout",
+          "factory_kind",
+          "experimental",
+          "plugin",
+          "plugin_version",
+          "replace"
+        ],
+        "register_metric": [
+          "identifier",
+          "factory",
+          "replace"
+        ],
+        "register_schema_transform": [
+          "kind",
+          "identifier",
+          "factory",
+          "replace"
+        ],
+        "load_registry_runtime": [
+          "reference",
+          "resolver",
+          "config"
+        ],
+        "register_artifact_resolver": [
+          "identifier",
+          "resolver",
+          "replace"
+        ],
+        "resolve_artifact": [
+          "reference",
+          "resolver"
+        ],
+        "preprocessing_contract": [
+          "model"
+        ],
+        "fingerprint_data": [
+          "inputs",
+          "targets",
+          "context"
+        ],
+        "fingerprint_model": [
+          "model"
+        ],
+        "list_explainable_layers": [
+          "model"
+        ],
+        "load_explainer_config": [
+          "path"
+        ],
+        "register_explainable_layer": [
+          "backbone",
+          "name",
+          "module_path"
+        ],
+        "save_explainer_config": [
+          "config",
+          "path",
+          "background_summary",
+          "include_background"
+        ],
+        "summarize_background": [
+          "reference_data",
+          "input_shape",
+          "feature_names",
+          "data_format",
+          "max_samples",
+          "seed",
+          "approved_for_persistence",
+          "metadata"
+        ],
+        "summarize_explanation_drift": [
+          "reference",
+          "current"
+        ],
+        "write_explanation_report": [
+          "result",
+          "path"
+        ],
+        "save_spec": [
+          "spec",
+          "path"
+        ],
+        "numpy_shard_stream": [
+          "shards",
+          "batch_size",
+          "drop_last",
+          "name"
+        ],
+        "redact_sensitive": [
+          "value"
+        ],
+        "resolve_workplace_device": [
+          "requested",
+          "fallback_policy",
+          "operation"
+        ],
+        "runtime_accelerator_evidence": [],
+        "sensitive_paths": [
+          "value",
+          "path"
+        ],
+        "train": [
+          "model",
+          "train_data",
+          "validation_data",
+          "config",
+          "callbacks",
+          "logger",
+          "operational_hooks"
+        ],
+        "train_streaming": [
+          "model",
+          "stream",
+          "config",
+          "operational_hooks"
+        ],
+        "validate_no_secrets": [
+          "value",
+          "field"
+        ]
+      },
+      "signature_exemptions": {
+        "ArtifactChecksumError": "inspect.signature is unavailable for this public type",
+        "ArtifactError": "inspect.signature is unavailable for this public type",
+        "ArtifactExtensionError": "inspect.signature is unavailable for this public type",
+        "ArtifactFormatError": "inspect.signature is unavailable for this public type",
+        "ArtifactManifest": "inspect.signature is unavailable for this public type",
+        "ArtifactVersionError": "inspect.signature is unavailable for this public type",
+        "BackgroundPolicyError": "inspect.signature is unavailable for this public type",
+        "ExplainabilityError": "inspect.signature is unavailable for this public type",
+        "ExplainabilityUnavailableError": "inspect.signature is unavailable for this public type",
+        "ExplanationCapabilityError": "inspect.signature is unavailable for this public type",
+        "LegacyCheckpointTrustError": "inspect.signature is unavailable for this public type",
+        "LegacyCheckpointWarning": "inspect.signature is unavailable for this public type",
+        "OperationalMetadataError": "inspect.signature is unavailable for this public type",
+        "DerivedExportError": "inspect.signature is unavailable for this public type",
+        "ExportNotSupportedError": "inspect.signature is unavailable for this public type"
+      }
+    }
+  },
+  "required_members": {
+    "psann.PSANNClassifier": [
+      "decision_function",
+      "fit",
+      "get_params",
+      "predict",
+      "predict_proba",
+      "score",
+      "set_params"
+    ],
+    "psann.PSANNRegressor": [
+      "fit",
+      "get_params",
+      "predict",
+      "score",
+      "set_params"
+    ],
+    "psann.ResConvPSANNRegressor": [
+      "fit",
+      "get_params",
+      "predict",
+      "score",
+      "set_params"
+    ],
+    "psann.ResPSANNRegressor": [
+      "fit",
+      "get_params",
+      "predict",
+      "score",
+      "set_params"
+    ],
+    "psann.SGRPSANNRegressor": [
+      "fit",
+      "get_params",
+      "predict",
+      "score",
+      "set_params"
+    ],
+    "psann.WaveResNetRegressor": [
+      "fit",
+      "get_params",
+      "predict",
+      "score",
+      "set_params"
+    ],
+    "psann.InferenceRuntime": [
+      "create_session",
+      "explain",
+      "make_explainer",
+      "metadata",
+      "predict"
+    ],
+    "psann.InferenceSession": [
+      "close",
+      "predict_sequence",
+      "reset",
+      "step"
+    ],
+    "psann.TrainingRun": [
+      "evaluate",
+      "export"
+    ]
+  },
+  "stability": "stable unless listed as experimental",
+  "version": 2
+}

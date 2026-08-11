@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import torch
 import pytest
+import torch
 
+from psann.activations import SigmoidParam
 from psann.conv import (
     PSANNConv1dNet,
     PSANNConv2dNet,
@@ -134,6 +135,44 @@ def test_conv_net_supports_relu_sigmoid_psann_activation() -> None:
         act_kw={"slope_init": 1.0, "clip_max": 1.0},
         segmentation_head=False,
     )
+    out = net(x)
+    assert out.shape == (2, 4)
+
+
+def test_conv_net_supports_sigmoid_activation() -> None:
+    x = torch.randn(2, 3, 9, 9)
+    net = PSANNConv2dNet(
+        in_channels=3,
+        out_dim=4,
+        hidden_layers=1,
+        conv_channels=12,
+        hidden_channels=None,
+        kernel_size=3,
+        activation_type="parameterized_sigmoid",
+        act_kw={"slope_init": 1.2, "slope_bounds": (1e-3, 5.0)},
+        segmentation_head=False,
+    )
+    block = net.body[0]
+    assert isinstance(block.act, SigmoidParam)
+    out = net(x)
+    assert out.shape == (2, 4)
+
+
+def test_residual_conv_net_supports_sigmoid_activation() -> None:
+    x = torch.randn(2, 3, 9, 9)
+    net = ResidualPSANNConv2dNet(
+        in_channels=3,
+        out_dim=4,
+        hidden_layers=1,
+        conv_channels=12,
+        kernel_size=3,
+        activation_type="sigmoid",
+        act_kw={"slope_init": 1.0},
+        segmentation_head=False,
+    )
+    block = net.body[0]
+    assert isinstance(block.act1, SigmoidParam)
+    assert isinstance(block.act2, SigmoidParam)
     out = net(x)
     assert out.shape == (2, 4)
 

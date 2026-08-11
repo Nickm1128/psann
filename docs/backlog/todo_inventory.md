@@ -5,6 +5,7 @@ Canonical issue tracker: https://github.com/psann-project/psann/issues
 ## Active planning docs
 
 - `docs/project_cleanup_todo.md` (active checklist; keep here)
+- `docs/backlog/workplace_nn_platform_todo.md` (workplace neural-network platform roadmap)
 - `docs/backlog/psann_lm_todo.md` (LM roadmap; promote actionable items to GitHub issues)
 - `docs/backlog/psann_lm_3b_todo.md` (3B run plan; convert to issues if resuming)
 - `docs/backlog/psann_sparse3d_todo.md` (Sparse-3D roadmap; convert to issues when active)

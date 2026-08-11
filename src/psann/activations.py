@@ -249,6 +249,70 @@ class ReLUSigmoidPSANN(nn.Module):
         return mixed.clamp(min=0.0, max=self.clip_max)
 
 
+class SigmoidParam(nn.Module):
+    """Sigmoid activation with a learnable positive per-feature slope.
+
+    Forward: ``sigmoid(slope * z)``.
+    """
+
+    def __init__(
+        self,
+        out_features: int,
+        *,
+        slope_init: float | torch.Tensor = 1.0,
+        slope_trainable: bool = True,
+        slope_bounds: Optional[Tuple[Optional[float], Optional[float]]] = (1e-3, 10.0),
+        feature_dim: int = -1,
+    ) -> None:
+        super().__init__()
+        if out_features <= 0:
+            raise ValueError("out_features must be positive")
+        self.out_features = int(out_features)
+        self.feature_dim = int(feature_dim)
+        self.slope_bounds = self._normalize_bounds(slope_bounds)
+
+        slope0 = _as_positive_init_vector(slope_init, self.out_features, name="slope")
+        self._slope = nn.Parameter(_softplus_inverse(slope0))
+        self._slope.requires_grad = bool(slope_trainable)
+
+    @staticmethod
+    def _normalize_bounds(
+        bounds: Optional[Tuple[Optional[float], Optional[float]]],
+    ) -> Optional[Tuple[Optional[float], Optional[float]]]:
+        if bounds is None:
+            return None
+        if len(bounds) != 2:
+            raise ValueError("slope_bounds must be a (low, high) tuple or None")
+        lo = None if bounds[0] is None else float(bounds[0])
+        hi = None if bounds[1] is None else float(bounds[1])
+        if lo is not None and lo < 0.0:
+            raise ValueError("slope_bounds lower bound must be >= 0")
+        if hi is not None and hi <= 0.0:
+            raise ValueError("slope_bounds upper bound must be > 0")
+        if lo is not None and hi is not None and hi < lo:
+            raise ValueError("slope_bounds upper bound must be >= lower bound")
+        return lo, hi
+
+    def _slope_value(self) -> torch.Tensor:
+        slope = F.softplus(self._slope) + 1e-6
+        if self.slope_bounds is None:
+            return slope
+        lo, hi = self.slope_bounds
+        return slope.clamp(
+            min=lo if lo is not None else 0.0,
+            max=hi if hi is not None else math.inf,
+        )
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        fd = self.feature_dim if self.feature_dim >= 0 else (z.ndim + self.feature_dim)
+        if fd < 0 or fd >= z.ndim:
+            raise ValueError("feature_dim is out of range for input tensor")
+        shape = [1] * z.ndim
+        shape[fd] = self.out_features
+        slope = self._slope_value().view(*shape)
+        return torch.sigmoid(slope * z)
+
+
 def _normalize_activation_name(name: str) -> str:
     key = str(name).strip().lower()
     aliases = {
@@ -257,6 +321,7 @@ def _normalize_activation_name(name: str) -> str:
         "rspsann": "relu_sigmoid_psann",
         "rsp": "relu_sigmoid_psann",
         "clipped_psann": "relu_sigmoid_psann",
+        "parameterized_sigmoid": "sigmoid",
     }
     return aliases.get(key, key)
 
@@ -376,6 +441,7 @@ class MixedActivation(nn.Module):
             "psann": lambda n: SineParam(n),
             "phase_psann": lambda n: PhaseSineParam(n),
             "relu_sigmoid_psann": lambda n: ReLUSigmoidPSANN(n),
+            "sigmoid": lambda n: SigmoidParam(n),
         }
         merged_builders = dict(default_builders)
         if builders:

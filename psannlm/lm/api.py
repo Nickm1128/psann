@@ -434,8 +434,8 @@ class psannLM:
         if not same_len:
             # Bucket by prompt length to avoid padding/masks while still batching
             buckets: dict[int, list[tuple[int, list[int]]]] = {}
-            for i, (l, ids) in enumerate(zip(lengths, enc)):
-                buckets.setdefault(int(l), []).append((i, ids))
+            for index, (length, ids) in enumerate(zip(lengths, enc)):
+                buckets.setdefault(int(length), []).append((index, ids))
             outputs: list[str] = [""] * B
             for T0, items in sorted(buckets.items(), key=lambda kv: -kv[0]):
                 idxs = [i for (i, _) in items]

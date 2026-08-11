@@ -11,10 +11,25 @@ Use this guide to locate the right document and to see which notes are still act
 | `PROJECT_MAP.md` | Active | High-level overview: what’s supported vs experimental, install model, repo layout. |
 | `REPO_STRUCTURE.md` | Active | Where things live, what’s generated, and repo conventions for scripts/outputs. |
 | `API.md` | Active | Public estimator surface reference, kept in sync with the facade in `src/psann/sklearn.py` and its backing modules under `src/psann/_sklearn/`. |
+| `workplace_api.md` | Active | Serializable model/task/data specs, registered factories, classifiers, schemas, and the high-level training run API. |
+| `training_core.md` | Active | Fail-fast configuration, non-finite policies, events, metrics, deterministic mode, and resumable `.psann-train` checkpoints. |
+| `artifacts.md` | Active | Safe `.psann` bundle layout, inspection/loading, trust model, version migration, and explicit legacy conversion. |
+| `compatibility_evidence.md` | Active | Authentic public `0.12.7` legacy-fixture provenance, native producer-support boundaries, and synthetic schema-test labeling. |
+| `deployment.md` | Active | Batched stateless inference, explicit sessions, capability-gated exports, reference HTTP service, metrics, and container operation. |
+| `explainability.md` | Active | Optional SHAP integration, explicit backgrounds, output/group semantics, gradient capability gates, limits, privacy, and interpretation guidance. |
+| `workplace_operations.md` | Active | Accelerator/dtype tiers, bounded streaming, fingerprints, retention, hooks, performance, and the current vulnerability/SBOM evidence gap. |
+| `quickstarts/README.md` | Active | Task-oriented regression, classification, deployment, resume, and SHAP quick starts using the frozen workplace API. |
+| `release_identity.md` | Active | Selected package, Git tag, container, SBOM, and release-note identity for the 1.1 candidate. |
+| `workplace_public_api.json` | Active | Machine-readable stable workplace API name and constructor-signature freeze for the 1.1 candidate. |
+| `public_api_0_12_7.json` | Active | Provenance-linked inventory of the public 0.12.7 exports and principal estimator signatures protected by the 1.1 compatibility gate. |
+| `certification_warnings.md` | Active | Zero-warning release-candidate policy plus explicit dispositions for capability and legacy boundaries. |
+| `quality_policy.md` | Active | Blocking core/PSANN-LM/release-helper coverage floors, observational scripts rationale, and the PSANN-LM Beta target. |
 | `public_api.md` | Active | Supported top-level exports and experimental surfaces. |
 | `migration.md` | Active | Upgrade guidance and behavioural changes between releases. |
 | `CONTRIBUTING.md` | Active | Contribution workflow, coding standards, and review expectations. |
 | `deprecation_policy.md` | Active | Canonical parameter names, deprecated aliases, and the removal policy. |
+| `support_policy.md` | Active | Supported Python, release-window, compatibility-evidence, and deprecation commitments. |
+| `releasing.md` | Active | Maintainer clean-tree, identity, compatibility, build, Twine, wheel-smoke, confirmation, and publishing procedure. |
 | `examples/README.md` | Active | CPU runtimes and usage notes for scripts in `examples/`. |
 | `benchmarks/hisso_variants.md` | Active | Benchmark description; accompanying JSON captures reproducible config. |
 | `benchmarks/README.md` | Active | Data provenance, size, and regeneration instructions for HISSO benchmarks. |
@@ -27,17 +42,22 @@ Use this guide to locate the right document and to see which notes are still act
 | `wave_resnet.md` | Active | Background and design rationale for the WaveResNet backbone. |
 | `architecture.md` | Active | High-level module map and data flow across the estimator stack. |
 | `performance_tips.md` | Active | Practical CPU/GPU, dtype, and memory tips for faster runs. |
+| `adr/README.md` | Active | Accepted workplace lifecycle, task, compatibility, artifact, deployment, and deprecation decisions. |
+| `workplace_support_matrix.md` | Active | Current-versus-target Python, dependency, platform, task, backbone, artifact, deployment, and SHAP support. |
+| `workplace_platform_baseline_2026-07-27.md` | Active | Reproducible Phase 0 validation, hygiene, persistence, and neural-network support baseline. |
 | `repo_hygiene_audit.md` | Active | Guardrails for tracked outputs, long scripts, and the local hygiene audit tool. |
 | `repo_hygiene_waves.md` | Active | Sequential waves for the remaining hygiene work. |
 | `repo_hygiene_followups.md` | Backlog | Prioritized follow-up checklist for remaining refactors and cleanup work. |
 | `project_cleanup_todo.md` | Backlog | Comprehensive checklist for making the repo newcomer-friendly and slimming packaging. |
 | `extras_removal_inventory.md` | Backlog | Source-of-truth inventory for removing the legacy extras stack (linked to `backlog/extras-removal.md`). |
 | `backlog/todo_inventory.md` | Backlog | Inventory of TODO documents and issue-triage guidance. |
+| `backlog/workplace_nn_platform_todo.md` | Active | Phased roadmap for a general workplace neural-network platform and its Phase 8 certification evidence. |
 | `backlog/psann_lm_todo.md` | Backlog | PSANN-LM roadmap and remaining benchmark-oriented backlog items. |
 | `backlog/psann_lm_3b_todo.md` | Backlog | 3B-scale PSANN-LM training and evaluation plan. |
 | `backlog/psann_sparse3d_todo.md` | Backlog | Sparse-3D research backlog and reactivation notes. |
 | `backlog/docs-site-generator.md` | Backlog | Notes on evaluating MkDocs/Sphinx once the HISSO refactor settles. |
 | `archive/REPO_CLEANUP_TODO.md` | Archive | Superseded root cleanup checklist retained for historical context. |
+| `archive/workflows/README.md` | Archive | Inactive release-certification, supply-chain security, and HISSO benchmark workflow definitions and their disposition. |
 | `archive/PSANN_LM_Module_TODO.txt` | Archive | Historical LM module plan retained for traceability. |
 | `lsm_robustness_todo.md` | Archive | Historical HISSO/extras backlog; superseded by the extras removal plan. |
 | `phase1_audit.md` | Archive | Snapshot of the naming audit prior to the cleanup work. Preserve for traceability. |

@@ -2,14 +2,14 @@ import numpy as np
 import pytest
 import torch
 
+from psann.episodes import multiplicative_return_reward
 from psann.metrics import equity_curve, portfolio_metrics, sharpe_ratio
+from psann.rewards import _STRATEGY_REGISTRY as REWARD_REGISTRY
 from psann.rewards import (
     RewardStrategyBundle,
     get_reward_strategy,
     register_reward_strategy,
 )
-from psann.rewards import _STRATEGY_REGISTRY as REWARD_REGISTRY
-from psann.episodes import multiplicative_return_reward
 
 
 def test_equity_curve_handles_short_series_gracefully():

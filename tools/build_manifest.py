@@ -19,10 +19,9 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import os
 import random
 from pathlib import Path
-from typing import Iterable, List
+from typing import List
 
 
 def _collect(root: Path, patterns: List[str], recurse: bool) -> List[Path]:
@@ -40,11 +39,17 @@ def _collect(root: Path, patterns: List[str], recurse: bool) -> List[Path]:
 def main(argv: List[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Build newline-separated manifest of text shard paths")
     p.add_argument("--roots", nargs="+", type=str, help="One or more root directories (or files)")
-    p.add_argument("--pattern", action="append", default=["*.txt"], help="Glob pattern(s) to include")
+    p.add_argument(
+        "--pattern", action="append", default=["*.txt"], help="Glob pattern(s) to include"
+    )
     p.add_argument("--recurse", action="store_true", help="Search directories recursively")
     p.add_argument("--absolute", action="store_true", help="Write absolute paths in manifest")
-    p.add_argument("--min-bytes", type=int, default=1, help="Skip files smaller than this size in bytes")
-    p.add_argument("--shuffle", action="store_true", help="Shuffle file order for stochastic ingestion")
+    p.add_argument(
+        "--min-bytes", type=int, default=1, help="Skip files smaller than this size in bytes"
+    )
+    p.add_argument(
+        "--shuffle", action="store_true", help="Shuffle file order for stochastic ingestion"
+    )
     p.add_argument("--seed", type=int, default=1337, help="Shuffle seed")
     p.add_argument("--output", required=True, type=str, help="Output manifest path")
     args = p.parse_args(argv)
@@ -91,4 +96,3 @@ def main(argv: List[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -2,7 +2,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from psann.activations import ReLUSigmoidPSANN, SineParam
+from psann.activations import ReLUSigmoidPSANN, SigmoidParam, SineParam
 
 
 def test_sineparam_forward_shape():
@@ -50,3 +50,35 @@ def test_relu_sigmoid_psann_slope_receives_grad_when_trainable():
     y = act(x).sum()
     y.backward()
     assert act._slope.grad is not None
+
+
+def test_sigmoid_param_forward_shape_range_and_grad():
+    act = SigmoidParam(out_features=6, slope_init=1.0, slope_trainable=True)
+    x = torch.linspace(-3.0, 3.0, steps=18, dtype=torch.float32).reshape(3, 6)
+    y = act(x)
+    assert y.shape == x.shape
+    assert torch.isfinite(y).all()
+    assert torch.all(y >= 0.0)
+    assert torch.all(y <= 1.0)
+
+    x_grad = x.clone().detach().requires_grad_(True)
+    loss = act(x_grad).sum()
+    loss.backward()
+    assert act._slope.grad is not None
+
+
+def test_sigmoid_param_vector_init_support():
+    slope = torch.linspace(0.25, 2.0, steps=8)
+    act = SigmoidParam(out_features=8, slope_init=slope)
+    x = torch.randn(4, 8)
+    y = act(x)
+    assert y.shape == (4, 8)
+
+
+def test_sigmoid_param_feature_dim_broadcasting():
+    act = SigmoidParam(out_features=3, slope_init=0.8, feature_dim=1)
+    x = torch.randn(2, 3, 5)
+    y = act(x)
+    assert y.shape == x.shape
+    assert torch.all(y >= 0.0)
+    assert torch.all(y <= 1.0)

@@ -30,12 +30,15 @@ archives the full reward trajectories, episode counts, schedule metadata (`mode`
 `configured_batch_episodes`, `configured_updates_per_epoch`), and timing/throughput statistics so
 future sessions or CI runs can diff regressions.
 
-GitHub Actions (`.github/workflows/hisso-benchmark.yml`) replays a shorter CPU run on every PR and
-compares the output against this snapshot via `scripts.compare_hisso_benchmarks.py`:
+The former GitHub Actions benchmark definition was [archived on
+2026-08-11](../archive/workflows/README.md) and no longer runs on pull requests. Its
+[historical YAML](../archive/workflows/hisso-benchmark.yml) replayed a shorter CPU run
+and compared the output against this snapshot via `scripts.compare_hisso_benchmarks.py`:
 - `compat` mode is a blocking stability check.
 - `fast` mode is tracked as a non-blocking trend signal.
 
-Adjust tolerances or refresh the baseline JSON when intentional HISSO performance changes land.
+Run the comparison manually when HISSO behavior changes. Adjust tolerances or refresh
+the baseline JSON only when an intentional performance change lands.
 
 GPU baselines are still pending; capture them manually once hardware is available and extend the
-workflow with an additional job mirroring the CPU flow.
+automation only after its replacement is active and validated.
