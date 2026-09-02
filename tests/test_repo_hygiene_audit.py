@@ -53,6 +53,8 @@ def test_repo_hygiene_audit_detects_every_private_path_family_and_inventory(tmp_
         "docs/repo_hygiene_waves.md",
         "docs/future_todo.md",
         "docs/new_architecture_plan.md",
+        "docs/team-follow-up.md",
+        "docs/team_follow_up.md",
         "benchmarks/next_sweep_plan.md",
     ]
     for path in paths:

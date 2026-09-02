@@ -101,6 +101,13 @@ def _git_ls_files(repo_root: Path) -> list[str]:
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
 
+def _filename_tokens(path: PurePosixPath) -> set[str]:
+    tokens = path.stem.lower().replace("-", "_").split("_")
+    if any(left == "follow" and right == "up" for left, right in zip(tokens, tokens[1:])):
+        tokens.append("followup")
+    return set(tokens)
+
+
 def _classify_prohibited_tracked(path_text: str) -> str | None:
     path = PurePosixPath(path_text)
     if path_text.startswith(PRIVATE_PATH_PREFIXES):
@@ -111,7 +118,7 @@ def _classify_prohibited_tracked(path_text: str) -> str | None:
         path_text not in PUBLIC_PLAN_ALLOWLIST
         and path.parts
         and path.parts[0] in {"docs", "benchmarks"}
-        and INTERNAL_PROCESS_TOKENS.intersection(path.stem.lower().replace("-", "_").split("_"))
+        and INTERNAL_PROCESS_TOKENS.intersection(_filename_tokens(path))
     ):
         return "internal-process filename token in public docs or benchmarks"
     if path_text == "test_outputs.txt":
