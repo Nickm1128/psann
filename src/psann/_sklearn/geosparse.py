@@ -160,7 +160,10 @@ class GeoSparseRegressor(PSANNRegressor):
         self.k = int(k)
         self.pattern = str(pattern)
         self.radius = int(radius)
-        self.offsets = list(offsets) if offsets is not None else None
+        # sklearn.clone() requires an estimator to retain the exact constructor
+        # parameter object. GeoSparseNet consumes offsets read-only during build, so
+        # copying this mutable value here is both unnecessary and clone-incompatible.
+        self.offsets = offsets
         self.wrap_mode = str(wrap_mode)
         self.norm = str(norm)
         self.drop_path_max = float(drop_path_max)

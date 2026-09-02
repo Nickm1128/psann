@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union
 
 import torch
 
+from ..attention import AttentionConfig, ensure_attention_config
 from .shared import (
     _deserialize_hisso_cfg,
     _deserialize_hisso_options,
@@ -39,7 +40,7 @@ _EXECUTION_DEFAULTS = {
     "compile_fullgraph": False,
     "compile_dynamic": False,
 }
-_DISCARDABLE_LEGACY_DRIFT = {
+_DISCARDABLE_LEGACY_DRIFT: Dict[str, Dict[str, Any]] = {
     "ResPSANNRegressor": {
         **_EXECUTION_DEFAULTS,
         "context_builder": None,
@@ -49,7 +50,6 @@ _DISCARDABLE_LEGACY_DRIFT = {
         **_EXECUTION_DEFAULTS,
         "context_builder": None,
         "context_builder_params": {},
-        "attention": None,
     },
     "WaveResNetRegressor": _EXECUTION_DEFAULTS,
     "SGRPSANNRegressor": {
@@ -59,6 +59,23 @@ _DISCARDABLE_LEGACY_DRIFT = {
     },
     "GeoSparseRegressor": {"context_builder": None, "context_builder_params": {}},
 }
+
+
+def _is_discardable_legacy_value(class_name: str, key: str, value: Any) -> bool:
+    """Return whether a documented old fallback-only value is semantically inert."""
+    if class_name == "ResConvPSANNRegressor" and key == "attention":
+        # The Phase 1 no-sklearn fallback serialized the inherited default as an
+        # AttentionConfig(kind="none", ...), rather than as None.  Its other fields
+        # cannot affect a disabled attention module, so normalize mappings through
+        # the public parser and retain the strict rejection of enabled values.
+        if value is None:
+            return True
+        if isinstance(value, (AttentionConfig, Mapping)):
+            return not ensure_attention_config(value).is_enabled()
+        return False
+
+    expected = _DISCARDABLE_LEGACY_DRIFT.get(class_name, {})
+    return key in expected and value == expected[key]
 
 
 def _constructor_parameter_names(cls: type) -> set[str]:
@@ -88,11 +105,10 @@ def _normalise_legacy_params(cls: type, raw_params: Any) -> Dict[str, Any]:
             params.setdefault(new_key, old_value)
 
     accepted = _constructor_parameter_names(cls)
-    discardable: Mapping[str, Any] = _DISCARDABLE_LEGACY_DRIFT.get(cls.__name__, {})
     for key in list(params):
         if key in accepted:
             continue
-        if key in discardable and params[key] == discardable[key]:
+        if _is_discardable_legacy_value(cls.__name__, key, params[key]):
             del params[key]
             continue
         raise ValueError(f"{cls.__name__} checkpoint contains unsupported parameter {key!r}.")
@@ -178,7 +194,7 @@ class _PSANNRegressorSerializationMixin:
         if map_location is not None:
             # A caller choosing a map location expects inference to remain there,
             # including when the serialized estimator used device="auto".
-            estimator.device = torch.device(map_location)
+            setattr(estimator, "device", torch.device(map_location))
         estimator.model_.to(estimator._device())
         estimator.model_.eval()
 

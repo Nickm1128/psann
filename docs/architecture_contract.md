@@ -31,7 +31,7 @@ fields are defensively copied/frozen during normalization. The target objects ar
 
 | Policy | Target fields and defaults |
 | --- | --- |
-| `ActivationConfig` | `kind="psann"`, amplitude/frequency/decay initializers `1.0/1.0/0.0`, `learnable="all"`, `decay_mode="exp"`, optional bounds/types/ratios, `slope_init=1.0`, `slope_trainable=True`, `clip_max=1.0` |
+| `ActivationConfig` | `kind="psann"`, amplitude/frequency/decay initializers `1.0/1.0/0.1`, `learnable=("amplitude", "frequency", "decay")`, `decay_mode="abs"`, optional bounds/types/ratios, `slope_init=1.0`, `slope_trainable=True`, `clip_max=1.0` |
 | `ResidualConfig` | `norm="rms"`, `alpha_init=0.0`, `drop_path=0.0`, `first_w0=12.0`, `hidden_w0=1.0` |
 | `ConvolutionConfig` | `channels=None`, `kernel_size=1`, `data_format="channels_first"`, `per_element=False` |
 | `AttentionConfig` | `kind="mha"`, `num_heads=4`, `dropout=0.0`, `bias=True`, `batch_first=True`, `add_bias_kv=False`, `add_zero_attn=False` |
@@ -74,6 +74,22 @@ the caller.
 | `waveresnet`, `wave-resnet`, `wave_resnet` | deprecated `wave` |
 | `sgrpsann`, `sgr-psann`, `sgr_psann` | deprecated `sequence` |
 | `geosparse`, `geo-sparse`, `geo_sparse` | deprecated `geometric-sparse` |
+
+The normalizer's concrete input matrix is intentionally narrow: outer whitespace,
+case, and hyphen/underscore separators are equivalent; no other punctuation or
+internal whitespace is normalized.
+
+| Input representation | Result |
+| --- | --- |
+| `"dense"`, `" DENSE "`, `"geometric-sparse"`, `"geometric_sparse"` | Accepted canonical presets with no warning. |
+| `"psann"`, `"res-psann"`, `"res_psann"`, `"wave-resnet"`, `"wave_resnet"` | Accepted deprecated aliases; each warns and maps to its documented canonical preset. |
+| Typed `ArchitectureConfig(kind="dense")` and `{kind: "dense"}` | Accepted and equal after normalization. |
+| `{kind: "dense", residual: {norm: "rms"}}` | Accepted tagged mapping with a valid nested policy. |
+| `"dense!"`, `"dense residual"` | Rejected: punctuation and internal spaces are not aliases. |
+| `{kind: "unknown"}` or `{kind: "dense", extra: 1}` | Rejected with a path-specific `ValueError`. |
+| `{kind: "dense", residual: "rms"}` | Rejected with a path-specific `TypeError`. |
+| Explicit architecture plus a legacy architecture-specific flat argument | Rejected and names both conflicting paths. |
+| One invalid policy combination for each kind (for example sequence plus attention) | Rejected before fit. |
 
 A tagged mapping uses `ArchitectureConfig` field names, for example
 `{kind: dense, residual: {norm: rms, alpha_init: 0.0, drop_path: 0.1}}`. Typed,
