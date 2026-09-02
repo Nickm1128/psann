@@ -62,9 +62,10 @@ _DISCARDABLE_LEGACY_DRIFT = {
 
 
 def _constructor_parameter_names(cls: type) -> set[str]:
+    signature = inspect.signature(cls.__init__)  # type: ignore[misc]
     return {
         name
-        for name, parameter in inspect.signature(cls.__init__).parameters.items()
+        for name, parameter in signature.parameters.items()
         if name != "self"
         and parameter.kind not in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}
     }
@@ -87,7 +88,7 @@ def _normalise_legacy_params(cls: type, raw_params: Any) -> Dict[str, Any]:
             params.setdefault(new_key, old_value)
 
     accepted = _constructor_parameter_names(cls)
-    discardable = _DISCARDABLE_LEGACY_DRIFT.get(cls.__name__, {})
+    discardable: Mapping[str, Any] = _DISCARDABLE_LEGACY_DRIFT.get(cls.__name__, {})
     for key in list(params):
         if key in accepted:
             continue

@@ -155,7 +155,7 @@ class GeoSparseRegressor(PSANNRegressor):
         )
         # GeoSparse intentionally ignores attention in its builder, but keeps the
         # supplied constructor parameter visible for sklearn clone/checkpoint parity.
-        self.attention = attention
+        self.attention = attention  # type: ignore[assignment]
         self.shape = tuple(shape) if shape is not None else None
         self.k = int(k)
         self.pattern = str(pattern)
