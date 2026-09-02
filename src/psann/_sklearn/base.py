@@ -177,9 +177,10 @@ class PSANNRegressor(
         self.compile_fullgraph = bool(compile_fullgraph)
         self.compile_dynamic = bool(compile_dynamic)
         self.context_builder = context_builder
-        self.context_builder_params = (
+        self._context_builder_params_constructor_ = (
             context_builder_params if context_builder_params is not None else {}
         )
+        self.context_builder_params = copy.deepcopy(self._context_builder_params_constructor_)
         self._context_builder_callable_: Optional[Callable[[np.ndarray], np.ndarray]] = None
         self._use_channel_first_train_inputs_ = False
         self._preproc_cfg_ = {
@@ -285,6 +286,12 @@ class PSANNRegressor(
         }
         return self
 
+    def get_params(self, deep: bool = True):
+        params = super().get_params(deep=deep)
+        if "context_builder_params" in params:
+            params["context_builder_params"] = self._context_builder_params_constructor_
+        return params
+
     def set_params(self, **params: Any):
         if not params:
             return self
@@ -295,6 +302,9 @@ class PSANNRegressor(
         if "context_builder_params" in normalised:
             reset_builder = True
             params_value = normalised.get("context_builder_params")
+            if params_value is None:
+                params_value = {}
+            self._context_builder_params_constructor_ = params_value
             if params_value is None:
                 normalised["context_builder_params"] = {}
             else:
