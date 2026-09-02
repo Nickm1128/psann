@@ -17,6 +17,9 @@ from psann import (
 )
 from psann._sklearn.serialization import _normalise_legacy_params
 from psann.attention import AttentionConfig
+from psann.hisso import HISSOTrainer
+from psann.lsm import LSMConv2dExpander, LSMExpander
+from psann.state import StateConfig, StateController
 
 ESTIMATOR_CLASSES = (
     PSANNRegressor,
@@ -233,8 +236,7 @@ for cls in (PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor, WaveResNet
 
 
 def test_current_attention_state_lsm_and_hisso_capability_matrix() -> None:
-    """Pin legacy behavior that Phase 3 must replace with canonical validation."""
-    from psann import StateConfig
+    """Pin constructor-time rejected and ignored legacy capability boundaries."""
 
     attention = AttentionConfig(kind="mha")
     state = StateConfig()
@@ -247,38 +249,17 @@ def test_current_attention_state_lsm_and_hisso_capability_matrix() -> None:
     with pytest.raises(TypeError, match="attention"):
         ResConvPSANNRegressor(attention=attention)
 
-    # SGR and GeoSparse document ignored attention; SGR emits its warning at model
-    # build while GeoSparse reports it directly at construction.
-    assert SGRPSANNRegressor(attention=attention).attention.is_enabled()
+    # GeoSparse documents ignored attention at construction. SGR's build-time
+    # attention boundary is exercised below with a fitted model.
     with pytest.warns(RuntimeWarning, match="ignores attention"):
         GeoSparseRegressor(attention=attention)
 
-    # Dense retains state. The remaining legacy variants either normalize it away at
-    # construction or retain it only until their builder emits its documented ignore.
-    assert PSANNRegressor(stateful=True, state=state).stateful is True
+    # Wave and SGR normalize state away at construction. ResPSANN, ResConv, and
+    # GeoSparse require a builder-boundary test because they retain compatibility
+    # attributes until model construction.
     for cls in (WaveResNetRegressor, SGRPSANNRegressor):
         with pytest.warns(RuntimeWarning, match="does not support stateful"):
             assert cls(stateful=True, state=state).stateful is False
-    assert ResPSANNRegressor(stateful=True, state=state).stateful is True
-    assert ResConvPSANNRegressor(stateful=True, state=state).stateful is True
-    assert GeoSparseRegressor(stateful=True, state=state).stateful is True
-
-    # Every legacy estimator still exposes the HISSO fit route. LSM is supported by
-    # all except SGR, which both warns and clears the ignored value.
-    for cls in ESTIMATOR_CLASSES:
-        fit_parameters = inspect.signature(cls.fit).parameters
-        assert "hisso" in fit_parameters or "kwargs" in fit_parameters
-    sentinel_lsm = object()
-    for cls in (
-        PSANNRegressor,
-        ResPSANNRegressor,
-        ResConvPSANNRegressor,
-        WaveResNetRegressor,
-        GeoSparseRegressor,
-    ):
-        assert cls(lsm=sentinel_lsm).lsm is sentinel_lsm
-    with pytest.warns(RuntimeWarning, match="does not support LSM"):
-        assert SGRPSANNRegressor(lsm=sentinel_lsm).lsm is None
 
 
 @pytest.mark.parametrize(
@@ -293,7 +274,6 @@ def test_ignored_capability_cells_warn_when_the_legacy_builder_runs(
     estimator_cls, parameter, value, warning
 ) -> None:
     """Exercise the build-time ignored cells recorded in the capability matrix."""
-    from psann import StateConfig
 
     X, y, kwargs = _roundtrip_case(estimator_cls)
     config = StateConfig() if value == "state" else AttentionConfig(kind="mha")
@@ -312,6 +292,160 @@ def test_ignored_capability_cells_warn_when_the_legacy_builder_runs(
     )
     with pytest.warns(RuntimeWarning, match=warning):
         estimator.fit(X[:8], y[:8], verbose=0)
+
+
+def _dense_lsm() -> LSMExpander:
+    return LSMExpander(
+        output_dim=4,
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=59,
+    )
+
+
+@pytest.mark.parametrize(
+    "estimator_cls",
+    (PSANNRegressor, ResPSANNRegressor, WaveResNetRegressor, GeoSparseRegressor),
+)
+def test_flat_lsm_support_reaches_fit_and_predict(estimator_cls) -> None:
+    """Exercise the documented dense-preprocessor support path for each wrapper."""
+    X, y, kwargs = _roundtrip_case(estimator_cls)
+    estimator = estimator_cls(
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=59,
+        device="cpu",
+        lsm=_dense_lsm(),
+        lsm_train=True,
+        lsm_pretrain_epochs=0,
+        **kwargs,
+    ).fit(X[:8], y[:8], verbose=0)
+    predictions = estimator.predict(X[8:])
+    assert predictions.shape[0] == 4
+    assert np.isfinite(predictions).all()
+    assert hasattr(estimator.model_, "preproc")
+
+
+def test_resconv_lsm_support_reaches_convolutional_fit_and_predict() -> None:
+    X, y, kwargs = _roundtrip_case(ResConvPSANNRegressor)
+    lsm = LSMConv2dExpander(
+        out_channels=2,
+        hidden_layers=1,
+        conv_channels=4,
+        epochs=1,
+        random_state=61,
+    )
+    estimator = ResConvPSANNRegressor(
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=61,
+        device="cpu",
+        lsm=lsm,
+        lsm_train=True,
+        lsm_pretrain_epochs=0,
+        **kwargs,
+    ).fit(X[:8], y[:8], verbose=0)
+    predictions = estimator.predict(X[8:])
+    assert predictions.shape == y[8:].shape
+    assert np.isfinite(predictions).all()
+    assert hasattr(estimator.model_, "preproc")
+
+
+def test_wave_shaped_lsm_is_rejected_at_its_documented_boundary() -> None:
+    with pytest.raises(
+        ValueError, match="does not support lsm preprocessors when preserve_shape=True"
+    ):
+        WaveResNetRegressor(
+            preserve_shape=True,
+            lsm=LSMConv2dExpander(out_channels=2, hidden_layers=1, conv_channels=4),
+        )
+
+
+def test_sgr_lsm_ignore_warning_reaches_fit_without_a_preprocessor() -> None:
+    X, y, kwargs = _roundtrip_case(SGRPSANNRegressor)
+    with pytest.warns(RuntimeWarning, match="does not support LSM"):
+        estimator = SGRPSANNRegressor(
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=4,
+            random_state=67,
+            device="cpu",
+            lsm=_dense_lsm(),
+            **kwargs,
+        )
+    estimator.fit(X[:8], y[:8], verbose=0)
+    predictions = estimator.predict(X[8:])
+    assert np.isfinite(predictions).all()
+    assert not hasattr(estimator.model_, "preproc")
+
+
+@pytest.mark.parametrize("estimator_cls", ESTIMATOR_CLASSES)
+def test_hisso_fit_reaches_trainer_state_and_prediction_for_every_wrapper(estimator_cls) -> None:
+    X, y, kwargs = _roundtrip_case(estimator_cls)
+    estimator = estimator_cls(
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=71,
+        device="cpu",
+        **kwargs,
+    ).fit(
+        X[:8],
+        y[:8],
+        hisso=True,
+        hisso_window=4,
+        hisso_batch_episodes=1,
+        hisso_updates_per_epoch=1,
+        verbose=0,
+    )
+    assert estimator._hisso_trained_ is True
+    assert isinstance(estimator._hisso_trainer_, HISSOTrainer)
+    assert len(estimator._hisso_trainer_.history) == 1
+    predictions = estimator.predict(X[8:])
+    assert predictions.shape[0] == 4
+    assert np.isfinite(predictions).all()
+
+
+def test_respsann_attention_reaches_model_build_and_predict() -> None:
+    rng = np.random.default_rng(73)
+    X = rng.standard_normal((12, 2, 2)).astype(np.float32)
+    y = X.mean(axis=(1, 2)).astype(np.float32)
+    estimator = ResPSANNRegressor(
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=73,
+        device="cpu",
+        attention=AttentionConfig(kind="mha", num_heads=2),
+    ).fit(X[:8], y[:8], verbose=0)
+    assert estimator._attention_shape_ is not None
+    assert np.isfinite(estimator.predict(X[8:])).all()
+
+
+def test_resconv_state_reaches_build_without_a_state_controller() -> None:
+    X, y, kwargs = _roundtrip_case(ResConvPSANNRegressor)
+    estimator = ResConvPSANNRegressor(
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=79,
+        device="cpu",
+        stateful=True,
+        state=StateConfig(),
+        **kwargs,
+    ).fit(X[:8], y[:8], verbose=0)
+    assert not any(isinstance(module, StateController) for module in estimator.model_.modules())
+    assert np.isfinite(estimator.predict(X[8:])).all()
 
 
 def test_geosparse_legacy_keys_are_renamed_and_conflicts_fail() -> None:
