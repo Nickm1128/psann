@@ -8,6 +8,7 @@ private workflow material, and historical task lists are intentionally not publi
 | `PROJECT_MAP.md` | Supported surfaces, installation model, and repository map. |
 | `REPO_STRUCTURE.md` | Repository and output conventions. |
 | `API.md` and `public_api.md` | Supported estimator and package APIs. |
+| `architecture.md` and `architecture_contract.md` | Current implementation map and approved Phase 3 architecture contract. |
 | `migration.md` | Compatibility and upgrade guidance for the current 0.12.4 source line. |
 | `CONTRIBUTING.md` | Contribution workflow and local quality checks. |
 | `deprecation_policy.md` | Canonical parameter names and alias policy. |

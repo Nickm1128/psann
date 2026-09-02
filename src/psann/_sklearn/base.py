@@ -135,7 +135,9 @@ class PSANNRegressor(
         self.lr = float(lr)
         self.optimizer = str(optimizer)
         self.weight_decay = float(weight_decay)
-        self.activation = activation or {}
+        # Preserve constructor-object identity for sklearn.clone().  Builders treat
+        # activation as read-only; Phase 3 owns typed immutable normalization.
+        self.activation = activation if activation is not None else {}
         self.device = device
         self.random_state = random_state
         self.early_stopping = bool(early_stopping)
@@ -176,7 +178,7 @@ class PSANNRegressor(
         self.compile_dynamic = bool(compile_dynamic)
         self.context_builder = context_builder
         self.context_builder_params = (
-            copy.deepcopy(context_builder_params) if context_builder_params is not None else {}
+            context_builder_params if context_builder_params is not None else {}
         )
         self._context_builder_callable_: Optional[Callable[[np.ndarray], np.ndarray]] = None
         self._use_channel_first_train_inputs_ = False

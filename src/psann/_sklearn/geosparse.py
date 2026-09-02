@@ -153,18 +153,35 @@ class GeoSparseRegressor(PSANNRegressor):
             compile_fullgraph=compile_fullgraph,
             compile_dynamic=compile_dynamic,
         )
-        self.geo_shape = tuple(shape) if shape is not None else None
-        self.geo_k = int(k)
-        self.geo_pattern = str(pattern)
-        self.geo_radius = int(radius)
-        self.geo_offsets = list(offsets) if offsets is not None else None
-        self.geo_wrap_mode = str(wrap_mode)
-        self.geo_norm = str(norm)
-        self.geo_drop_path_max = float(drop_path_max)
-        self.geo_residual_alpha_init = float(residual_alpha_init)
-        self.geo_bias = bool(bias)
-        self.geo_compute_mode = str(compute_mode)
+        # GeoSparse intentionally ignores attention in its builder, but keeps the
+        # supplied constructor parameter visible for sklearn clone/checkpoint parity.
+        self.attention = attention
+        self.shape = tuple(shape) if shape is not None else None
+        self.k = int(k)
+        self.pattern = str(pattern)
+        self.radius = int(radius)
+        self.offsets = list(offsets) if offsets is not None else None
+        self.wrap_mode = str(wrap_mode)
+        self.norm = str(norm)
+        self.drop_path_max = float(drop_path_max)
+        self.residual_alpha_init = float(residual_alpha_init)
+        self.bias = bool(bias)
+        self.compute_mode = str(compute_mode)
         self.geo_seed = geo_seed if geo_seed is not None else random_state
+
+        # Retain these read-only-in-practice aliases for existing callers and legacy
+        # payload discovery.  New parameter and checkpoint paths use the public names.
+        self.geo_shape = self.shape
+        self.geo_k = self.k
+        self.geo_pattern = self.pattern
+        self.geo_radius = self.radius
+        self.geo_offsets = self.offsets
+        self.geo_wrap_mode = self.wrap_mode
+        self.geo_norm = self.norm
+        self.geo_drop_path_max = self.drop_path_max
+        self.geo_residual_alpha_init = self.residual_alpha_init
+        self.geo_bias = self.bias
+        self.geo_compute_mode = self.compute_mode
 
     def _build_dense_core(
         self,
@@ -186,18 +203,18 @@ class GeoSparseRegressor(PSANNRegressor):
             int(output_dim),
             shape=shape,
             depth=int(self.hidden_layers),
-            k=int(self.geo_k),
-            pattern=self.geo_pattern,
-            radius=int(self.geo_radius),
-            offsets=self.geo_offsets,
-            wrap_mode=self.geo_wrap_mode,
+            k=int(self.k),
+            pattern=self.pattern,
+            radius=int(self.radius),
+            offsets=self.offsets,
+            wrap_mode=self.wrap_mode,
             activation_type=self.activation_type,
             activation_config=self.activation,
-            norm=self.geo_norm,
-            drop_path_max=self.geo_drop_path_max,
-            residual_alpha_init=self.geo_residual_alpha_init,
-            bias=self.geo_bias,
-            compute_mode=self.geo_compute_mode,
+            norm=self.norm,
+            drop_path_max=self.drop_path_max,
+            residual_alpha_init=self.residual_alpha_init,
+            bias=self.bias,
+            compute_mode=self.compute_mode,
             seed=self.geo_seed,
         )
 
@@ -217,7 +234,7 @@ class GeoSparseRegressor(PSANNRegressor):
         input_dim: int,
         input_shape: Optional[Tuple[int, ...]],
     ) -> Tuple[int, int]:
-        shape = self.geo_shape
+        shape = self.shape
         if shape is None and input_shape is not None and len(input_shape) == 2:
             shape = (int(input_shape[0]), int(input_shape[1]))
         if shape is None:

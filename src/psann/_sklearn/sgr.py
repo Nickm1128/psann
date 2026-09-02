@@ -89,16 +89,16 @@ class SGRPSANNRegressor(PSANNRegressor):
             raise ValueError("SGRPSANNRegressor requires activation_type='psann'.")
         if k_fft <= 0:
             raise ValueError("k_fft must be positive.")
-        gate_type = str(gate_type).lower()
-        if gate_type not in {"rfft", "fourier_features"}:
+        gate_type_value = str(gate_type).lower()
+        if gate_type_value not in {"rfft", "fourier_features"}:
             raise ValueError("gate_type must be 'rfft' or 'fourier_features'.")
-        gate_groups = str(gate_groups).lower()
-        if gate_groups not in {"depthwise", "full"}:
+        gate_groups_value = str(gate_groups).lower()
+        if gate_groups_value not in {"depthwise", "full"}:
             raise ValueError("gate_groups must be 'depthwise' or 'full'.")
         if gate_strength < 0:
             raise ValueError("gate_strength must be >= 0.")
-        pool = str(pool).lower()
-        if pool not in {"mean", "last"}:
+        pool_value = str(pool).lower()
+        if pool_value not in {"mean", "last"}:
             raise ValueError("pool must be 'mean' or 'last'.")
 
         if stateful or state is not None:
@@ -156,11 +156,11 @@ class SGRPSANNRegressor(PSANNRegressor):
         self.phase_trainable = bool(phase_trainable)
         self.use_spectral_gate = bool(use_spectral_gate)
         self.k_fft = int(k_fft)
-        self.gate_type = gate_type
-        self.gate_groups = gate_groups
+        self.gate_type = gate_type if gate_type == gate_type_value else gate_type_value
+        self.gate_groups = gate_groups if gate_groups == gate_groups_value else gate_groups_value
         self.gate_init = float(gate_init)
         self.gate_strength = float(gate_strength)
-        self.pool = pool
+        self.pool = pool if pool == pool_value else pool_value
 
     def _build_sequence_core(
         self,

@@ -230,7 +230,7 @@ class WaveResNetRegressor(PSANNRegressor):
             float(hidden_w0_initial) if hidden_w0_initial is not None else self.hidden_w0
         )
         self.w0_warmup_epochs = warmup_epochs
-        self.norm = norm_value
+        self.norm = norm if norm == norm_value else norm_value
         self.use_film = bool(use_film)
         self.use_phase_shift = bool(use_phase_shift)
         self.dropout = float(dropout)
@@ -252,8 +252,8 @@ class WaveResNetRegressor(PSANNRegressor):
         self._wave_hidden_dim = int(self.hidden_units)
         self.use_spectral_gate = bool(use_spectral_gate)
         self.k_fft = int(k_fft)
-        self.gate_type = gate_type_value
-        self.gate_groups = gate_groups_value
+        self.gate_type = gate_type if gate_type == gate_type_value else gate_type_value
+        self.gate_groups = gate_groups if gate_groups == gate_groups_value else gate_groups_value
         self.gate_init = float(gate_init)
         self.gate_strength = float(gate_strength)
 

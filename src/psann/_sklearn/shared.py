@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
 
 import numpy as np
@@ -13,17 +14,37 @@ except Exception:  # Fallbacks if sklearn isn't installed at runtime
 
     class BaseEstimator:  # minimal stub
         def get_params(self, deep: bool = True):
-            # Return non-private, non-callable attributes
+            """Return constructor parameters when scikit-learn is unavailable.
+
+            The fallback has to obey the same public constructor contract as
+            ``sklearn.base.BaseEstimator`` because checkpoint payloads use this
+            method.  Instance-attribute enumeration leaks inherited implementation
+            fields from legacy subclasses and creates unloadable checkpoints.
+            """
             params = {}
-            for k, v in self.__dict__.items():
-                if k.endswith("_"):
+            signature = inspect.signature(self.__class__.__init__)
+            for name, parameter in signature.parameters.items():
+                if name == "self" or parameter.kind in {
+                    inspect.Parameter.VAR_KEYWORD,
+                    inspect.Parameter.VAR_POSITIONAL,
+                }:
                     continue
-                if not k.startswith("_") and not callable(v):
-                    params[k] = v
+                try:
+                    params[name] = getattr(self, name)
+                except AttributeError as error:
+                    raise AttributeError(
+                        f"{self.__class__.__name__} must expose constructor parameter "
+                        f"{name!r} as a public attribute."
+                    ) from error
             return params
 
         def set_params(self, **params):
+            valid_params = self.get_params(deep=True)
             for k, v in params.items():
+                if k not in valid_params:
+                    raise ValueError(
+                        f"Invalid parameter {k!r} for estimator {self.__class__.__name__}."
+                    )
                 setattr(self, k, v)
             return self
 

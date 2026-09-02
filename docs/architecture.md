@@ -2,6 +2,9 @@
 
 This document sketches the PSANN module layout and how data flows through the core estimator stack. It is intentionally high level; see `docs/API.md` for the public surface and `docs/REPO_STRUCTURE.md` for repo layout.
 
+For the approved Phase 3 target and the boundary between current compatibility behavior
+and that target, see [Architecture Contract](architecture_contract.md).
+
 ## High-level stack
 
 ```

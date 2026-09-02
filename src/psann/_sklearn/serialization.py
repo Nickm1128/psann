@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+import inspect
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union
 
 import torch
 
@@ -14,6 +15,87 @@ from .shared import (
 
 if TYPE_CHECKING:
     from .base import PSANNRegressor
+
+
+_LEGACY_GEOSPARSE_KEYS = {
+    "geo_shape": "shape",
+    "geo_k": "k",
+    "geo_pattern": "pattern",
+    "geo_radius": "radius",
+    "geo_offsets": "offsets",
+    "geo_wrap_mode": "wrap_mode",
+    "geo_norm": "norm",
+    "geo_drop_path_max": "drop_path_max",
+    "geo_residual_alpha_init": "residual_alpha_init",
+    "geo_bias": "bias",
+    "geo_compute_mode": "compute_mode",
+}
+_EXECUTION_DEFAULTS = {
+    "amp": False,
+    "amp_dtype": "bfloat16",
+    "compile": False,
+    "compile_backend": "inductor",
+    "compile_mode": "default",
+    "compile_fullgraph": False,
+    "compile_dynamic": False,
+}
+_DISCARDABLE_LEGACY_DRIFT = {
+    "ResPSANNRegressor": {
+        **_EXECUTION_DEFAULTS,
+        "context_builder": None,
+        "context_builder_params": {},
+    },
+    "ResConvPSANNRegressor": {
+        **_EXECUTION_DEFAULTS,
+        "context_builder": None,
+        "context_builder_params": {},
+        "attention": None,
+    },
+    "WaveResNetRegressor": _EXECUTION_DEFAULTS,
+    "SGRPSANNRegressor": {
+        **_EXECUTION_DEFAULTS,
+        "context_builder": None,
+        "context_builder_params": {},
+    },
+    "GeoSparseRegressor": {"context_builder": None, "context_builder_params": {}},
+}
+
+
+def _constructor_parameter_names(cls: type) -> set[str]:
+    return {
+        name
+        for name, parameter in inspect.signature(cls.__init__).parameters.items()
+        if name != "self"
+        and parameter.kind not in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}
+    }
+
+
+def _normalise_legacy_params(cls: type, raw_params: Any) -> Dict[str, Any]:
+    """Translate only documented legacy payload drift into constructor parameters."""
+    if not isinstance(raw_params, Mapping):
+        raise TypeError(f"{cls.__name__} checkpoint params must be a mapping.")
+    params = dict(raw_params)
+    if cls.__name__ == "GeoSparseRegressor":
+        for old_key, new_key in _LEGACY_GEOSPARSE_KEYS.items():
+            if old_key not in params:
+                continue
+            old_value = params.pop(old_key)
+            if new_key in params and params[new_key] != old_value:
+                raise ValueError(
+                    f"GeoSparseRegressor checkpoint has conflicting {old_key!r} and {new_key!r}."
+                )
+            params.setdefault(new_key, old_value)
+
+    accepted = _constructor_parameter_names(cls)
+    discardable = _DISCARDABLE_LEGACY_DRIFT.get(cls.__name__, {})
+    for key in list(params):
+        if key in accepted:
+            continue
+        if key in discardable and params[key] == discardable[key]:
+            del params[key]
+            continue
+        raise ValueError(f"{cls.__name__} checkpoint contains unsupported parameter {key!r}.")
+    return params
 
 
 class _PSANNRegressorSerializationMixin:
@@ -87,11 +169,15 @@ class _PSANNRegressorSerializationMixin:
             raise ValueError(
                 f"Checkpoint was created for '{class_name}', cannot load into '{cls.__name__}'."
             )
-        params = payload.get("params", {})
+        params = _normalise_legacy_params(cls, payload.get("params", {}))
         estimator = cls(**params)
         if "model" not in payload:
             raise RuntimeError("Checkpoint is missing model weights.")
         estimator.model_ = payload["model"]
+        if map_location is not None:
+            # A caller choosing a map location expects inference to remain there,
+            # including when the serialized estimator used device="auto".
+            estimator.device = torch.device(map_location)
         estimator.model_.to(estimator._device())
         estimator.model_.eval()
 
