@@ -43,7 +43,32 @@ PROVENANCE_RULES = {
     "agent-authored/generated claim": r"\bagent[- ](?:authored|generated)\b",
 }
 PROVENANCE_EXCLUSIONS = {"tools/repo_hygiene_audit.py", "tests/test_repo_hygiene_audit.py"}
-TEXT_SUFFIXES = {"", ".md", ".rst", ".txt", ".py", ".toml", ".yaml", ".yml", ".json", ".ini"}
+TEXT_SUFFIXES = {
+    "",
+    ".ini",
+    ".ipynb",
+    ".json",
+    ".md",
+    ".py",
+    ".rst",
+    ".toml",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
+INTERNAL_PROCESS_TOKENS = {
+    "audit",
+    "backlog",
+    "followup",
+    "followups",
+    "instructions",
+    "inventory",
+    "next",
+    "plan",
+    "roadmap",
+    "todo",
+}
+PUBLIC_PLAN_ALLOWLIST: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -82,6 +107,13 @@ def _classify_prohibited_tracked(path_text: str) -> str | None:
         return "private planning, archive, or internal document tracked publicly"
     if path_text in INTERNAL_PLAN_PATHS:
         return "internal plan document tracked publicly"
+    if (
+        path_text not in PUBLIC_PLAN_ALLOWLIST
+        and path.parts
+        and path.parts[0] in {"docs", "benchmarks"}
+        and INTERNAL_PROCESS_TOKENS.intersection(path.stem.lower().replace("-", "_").split("_"))
+    ):
+        return "internal-process filename token in public docs or benchmarks"
     if path_text == "test_outputs.txt":
         return "tracked console/test output should stay local"
     if path.parts and path.parts[0] in GENERATED_DIRS:

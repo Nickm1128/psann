@@ -162,8 +162,3 @@ See also: `docs/lm_3b_quickstart.md` for a focused 3B quickstart.
 - The portfolio dataset ships a trimmed AAPL open/close series at
   `benchmarks/hisso_portfolio_prices.csv`; point `--dataset-path` at a custom CSV
   (columns: `open,close,...`) to benchmark other assets.
-
-## TODO
-
-- Expand the benchmarking harness to support custom datasets and export
-  structured reports.

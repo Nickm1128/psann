@@ -51,6 +51,9 @@ def test_repo_hygiene_audit_detects_every_private_path_family_and_inventory(tmp_
         "docs/repo_hygiene_audit.md",
         "docs/repo_hygiene_followups.md",
         "docs/repo_hygiene_waves.md",
+        "docs/future_todo.md",
+        "docs/new_architecture_plan.md",
+        "benchmarks/next_sweep_plan.md",
     ]
     for path in paths:
         target = tmp_path / path
@@ -77,11 +80,14 @@ def test_repo_hygiene_audit_detects_provenance_and_excludes_detector_terms(tmp_p
     tests.write_text(
         "Codex ChatGPT Claude Copilot GPT-5 ai-generated agent-authored\n", encoding="utf-8"
     )
+    notebook = tmp_path / "notebooks" / "provenance.ipynb"
+    notebook.parent.mkdir()
+    notebook.write_text('{"cells": [{"source": ["Codex"]}]}\n', encoding="utf-8")
 
     payload = _run_audit(tmp_path)
     references = payload["provenance_references"]
-    assert len(references) == 7
-    assert {item["path"] for item in references} == {"README.md"}
+    assert len(references) == 8
+    assert {item["path"] for item in references} == {"README.md", "notebooks/provenance.ipynb"}
 
 
 def test_repo_hygiene_audit_allows_technical_ai_lm_and_gpt2_terms(tmp_path):

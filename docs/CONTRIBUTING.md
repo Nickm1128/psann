@@ -63,6 +63,10 @@ python tools/repo_hygiene_audit.py --json  # flag tracked outputs + oversized Py
 - Keep `README.md`, `docs/examples/README.md`, and `docs/migration.md` aligned with the code. Mention the reward registry and `transition_penalty` terminology when documenting HISSO flows.
 - New docs live under `docs/`. Cross-link notable additions from the README and `pyproject` metadata where practical.
 - Use the issue tracker for roadmap proposals and follow-up work; do not commit task lists or private process material.
+- `tools/repo_hygiene_audit.py` rejects private path families and internal-process
+  filename tokens (`todo`, `plan`, `audit`, `inventory`, `follow-up`, `instructions`,
+  `backlog`, `roadmap`, and `next-steps`) under `docs/` or `benchmarks/`. It also scans
+  tracked notebooks for prohibited authorship provenance.
 - Use `docs/benchmarks/promotion_guide.md` when turning local run outputs into checked-in benchmark summaries, and keep alias terminology aligned with `docs/deprecation_policy.md`.
 - For new model bases, benchmarks, or datasets, follow `docs/how_to_add_model_benchmark_dataset.md`.
 
