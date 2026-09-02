@@ -1,8 +1,7 @@
 # Archived Note
 
-This document is historical and kept for reference. The active roadmap lives in
-`docs/project_cleanup_todo.md` and recent findings are summarised in
-`docs/PSANN_Results_Compendium.md`.
+This document is historical and kept for reference. Current public findings are
+summarised in `docs/PSANN_Results_Compendium.md`.
 
 # Research Findings and Next Steps
 

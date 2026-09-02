@@ -84,3 +84,5 @@ examples/results_*.csv
 # Office/editor scratch
 *.odt
 .~lock.*#
+.psann-dev/
+docs/internal/

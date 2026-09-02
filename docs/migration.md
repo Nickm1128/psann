@@ -1,6 +1,13 @@
 # Migration Notes
 
 Guidance for upgrading projects to the refactored training surface introduced after 0.9.19. Follow this checklist when updating downstream code so documentation and implementation stay aligned.
+## Current source line and historical snapshot
+
+The current source tree and both package metadata files report version `0.12.4`; that
+version governs this compatibility program. The `v1.0.0` Git tag is a historical
+notebook/release snapshot, retained without modification for reproducibility. It does
+not change the current source version or claim that an unpublished source version is a
+package-registry release.
 
 ## What changed
 
@@ -12,7 +19,7 @@ Guidance for upgrading projects to the refactored training surface introduced af
   - Development tooling extras now install coverage and build so CI can publish coverage reports and validate wheels.  
   - HISSO integration tests are marked `slow` to unblock quick `pytest -m "not slow"` iterations while the refactor settles.  
   - GitHub Actions runs Ruff/Black across the full tree, captures coverage on Python 3.11, and uploads built artifacts.  
-  - Benchmark data provenance moved into `benchmarks/README.md` with a helper downloader; legacy Colab instructions live under `docs/archive/`.
+  - Benchmark data provenance lives in `benchmarks/README.md` with a helper downloader.
 
 - **Primary-output pipeline** - predictive extras and growth schedules were removed. Constructors ignore legacy `extras_*` arguments and emit warnings so downstream projects can detect stale configuration.
 - **Shared fit helpers** - all estimators route through `normalise_fit_args`, `prepare_inputs_and_scaler`, `build_model_from_hooks`, and `run_supervised_training`. Custom loops should import these helpers instead of copying logic from `PSANNRegressor.fit`.
@@ -41,11 +48,5 @@ Guidance for upgrading projects to the refactored training surface introduced af
 2. Remove any `extras_*` constructor arguments or `extras_targets` usage. Confirm your tests no longer expect extras outputs.
 3. Swap bespoke reward wiring for registry lookups (`register_reward_strategy`, `get_reward_strategy`) and keep configs on the neutral naming (`transition_penalty`).
 4. Update notebooks and scripts to mention the curated example set (`examples/21`, `26`, `27`, etc.) instead of the retired predictive extras demos.
-5. Log progress in `CLEANUP_TODO.md` whenever you touch docs or code that affects the migration effort.
-
-## Outstanding TODOs
-
-- Stage GPU benchmark baselines once shared hardware becomes available so CI can compare CPU and CUDA runs side by side.
-- Expand regression coverage around HISSO evaluation helpers to exercise both supervised warm starts and reward-only episodes.
-- Publish CI guidance tied to the contributor workflow (ruff and pytest gates) after the documentation refresh completes.
+5. Open or update an issue when migration work needs follow-up beyond the current change.
 

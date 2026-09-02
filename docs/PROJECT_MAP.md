@@ -80,8 +80,6 @@ We want the default install to be lighter and more newcomer-friendly.
   - `eval_adapter.py` - active lm-eval adapter; the root `psann_adapter.py` file is now only a compatibility shim
 - `tests/` – unit and integration tests for supported functionality
 - `docs/` – documentation (see `docs/README.md` for the index)
-  - `backlog/` - active roadmap notes and research TODOs
-  - `archive/` - historical planning notes retained for traceability
 - `scripts/` — operational scripts (training, evaluation, sweeps); not shipped in the wheel
   - large benchmark CLIs keep their historical filenames and delegate to nearby internal `scripts/_<tool>/` packages
 - `examples/` — runnable examples and configuration snippets
@@ -106,4 +104,4 @@ We want the default install to be lighter and more newcomer-friendly.
 - “What docs are current?” → `docs/README.md`
 - “Where do things live?” → `docs/REPO_STRUCTURE.md`
 - “How do I contribute?” → `docs/CONTRIBUTING.md`
-- “What are we doing next?” → `docs/project_cleanup_todo.md`
+- “What should change next?” → the project issue tracker

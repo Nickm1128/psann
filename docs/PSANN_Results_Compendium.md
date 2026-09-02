@@ -33,7 +33,7 @@
 
 ### Archived datasets (extras)
 - Predictive “extras” datasets, heads, and growth-schedule mixes used in earlier demos are archived. New results and sweeps cover the primary-output pipeline only.
-- See `docs/backlog/extras-removal.md` and `docs/README.md` for migration notes and historical references.
+- See `docs/migration.md` for supported migration guidance.
 
 **Methods**
 - PSANN Conv Spine (`scripts/run_light_probes.py:PSANNConvSpine`)

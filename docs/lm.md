@@ -326,7 +326,8 @@ Scaling Tips
 
 Benchmarks & Reporting
 ----------------------
-- Benchmark targets live in `benchmarks/lm_plan.md` and mirror the TODO list items:
+- Use the following reproducible benchmark categories and record outputs under
+  `reports/benchmarks/<timestamp>/`:
   - **BMRK-01** (tiny corpus baseline): ~50 MB text shard, track loss + perplexity curves,
     and log results under `reports/benchmarks/<timestamp>/loss_curve.png`.
   - **BMRK-02** (throughput table): measure tokens/sec for `{base} x {batch_tokens}` grids

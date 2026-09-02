@@ -536,12 +536,13 @@ When `stateful=True`, the training dataloader preserves sequence order. PSANN di
   - Colab (2025-11-01): dense (seed 7) duration 2.68 s, throughput 203 eps/s, train/val/test loss 0.245/0.304/0.231, reward_mean -0.111; WaveResNet (seed 11) duration 3.34 s, throughput 161 eps/s, train/val/test loss 1.435/1.402/1.569, reward_mean -0.182 (std 0.068).
   - Runpod L4 (2025-11-02; AMP float16): WaveResNet small `configs/hisso/wave_resnet_small.yaml` → `runs/hisso/wave_resnet_cuda_runpod_20251102_153117/` — 19.41 s over 1920 episodes (~107.3 eps/s), best_epoch 17, train/val/test 0.621/0.755/0.670, reward_mean -0.114 (std 0.010), turnover 2.69.
   - Note: Colab did not expose CUDA memory metrics; instrument `torch.cuda.max_memory_allocated()` on runpod if co-locating jobs.
-- Ongoing cleanup work now lives in `docs/project_cleanup_todo.md` and `docs/repo_hygiene_followups.md`; the historical root checklist moved to `docs/archive/REPO_CLEANUP_TODO.md`.
+- Contribution and maintenance guidance lives in `docs/CONTRIBUTING.md`; proposed work
+  belongs in the issue tracker rather than repository task lists.
 
 ### Reproducibility
 
 The notebook **PSANN_Parity_and_Probes.ipynb** (now under `notebooks/`) reproduces all key results under compute parity.  
-- **Release:** [v1.0.0](https://github.com/Nickm1128/psann/releases/tag/v1.0.0)  
+- **Historical snapshot:** [v1.0.0](https://github.com/Nickm1128/psann/releases/tag/v1.0.0)
 - **DOI:** [doi.org/10.5281/zenodo.17391523](https://doi.org/doi.org/10.5281/zenodo.17391523)  
 - **Permalink:** [GitHub](https://github.com/Nickm1128/psann/blob/v1.0.0/notebooks/PSANN_Parity_and_Probes.ipynb)  
 - **Render:** [nbviewer](https://nbviewer.org/github/Nickm1128/psann/blob/v1.0.0/notebooks/PSANN_Parity_and_Probes.ipynb)  

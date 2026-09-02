@@ -62,16 +62,14 @@ python tools/repo_hygiene_audit.py --json  # flag tracked outputs + oversized Py
 
 - Keep `README.md`, `docs/examples/README.md`, and `docs/migration.md` aligned with the code. Mention the reward registry and `transition_penalty` terminology when documenting HISSO flows.
 - New docs live under `docs/`. Cross-link notable additions from the README and `pyproject` metadata where practical.
-- Route roadmap notes through `docs/backlog/` or `docs/archive/` instead of dropping new TODO files at repo root.
+- Use the issue tracker for roadmap proposals and follow-up work; do not commit task lists or private process material.
 - Use `docs/benchmarks/promotion_guide.md` when turning local run outputs into checked-in benchmark summaries, and keep alias terminology aligned with `docs/deprecation_policy.md`.
-- After each work session, update the relevant section in `docs/project_cleanup_todo.md` with a short status note and any blockers.
 - For new model bases, benchmarks, or datasets, follow `docs/how_to_add_model_benchmark_dataset.md`.
 
 ## Pull request checklist
 
 - [ ] Lint (`ruff`) and tests (`pytest`) pass locally.
 - [ ] Documentation reflects new behaviour (and points to `docs/migration.md` for edge cases).
-- [ ] `docs/project_cleanup_todo.md` has been updated for the task you touched.
-- [ ] Commits include concise summaries and link to the corresponding cleanup task where possible.
+- [ ] Commits include concise summaries and link to the corresponding issue when applicable.
 
-Questions? Open a draft PR or drop notes next to the task in `docs/project_cleanup_todo.md` so the next session can pick up smoothly.
+Questions? Open a draft PR or issue so maintainers can discuss the next step in public.

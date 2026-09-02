@@ -9,7 +9,7 @@ This document defines **what belongs where** in the PSANN repository and where s
 | `src/psann/` | Core library code shipped by `pip install psann` | Keep this lean and stable; avoid importing heavyweight optional deps at import time. |
 | `psannlm/` | Separate LM tooling distribution | Contains LM training/CLI code and heavier dependencies. |
 | `tests/` | Unit + integration tests | Keep “fast” tests default; GPU/slow tests opt-in. |
-| `docs/` | Maintained documentation | Link new docs from `docs/README.md`; keep active plans in `docs/backlog/` and historical notes in `docs/archive/`. |
+| `docs/` | Maintained documentation | Link new public documentation from `docs/README.md`; keep private plans outside the public repository. |
 | `scripts/` | Operational CLIs and benchmark runners | Should have `--help`, log config + output directory, and write outputs outside tracked source directories. |
 | `examples/` | Runnable examples and config snippets | Prefer small, focused YAML configs and short “how to run” notes. |
 | `configs/` | Shared configuration files used by scripts | Prefer stable relative paths; keep configs small and documented. |

@@ -18,6 +18,32 @@ from typing import Iterable, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GENERATED_DIRS = {"reports", "runs", "outputs", "logs"}
+PRIVATE_PATH_PREFIXES = (".psann-dev/", "docs/internal/", "docs/archive/", "docs/backlog/")
+INTERNAL_PLAN_PATHS = {
+    "benchmarks/lm_plan.md",
+    "docs/HISSO_logging_spec.md",
+    "docs/attention_api_plan.md",
+    "docs/extras_removal_inventory.md",
+    "docs/geosparse_vs_relu_colab_notebook_todo.md",
+    "docs/hisso_optimization_todo.md",
+    "docs/lsm_robustness_todo.md",
+    "docs/phase1_audit.md",
+    "docs/project_cleanup_todo.md",
+    "docs/repo_hygiene_audit.md",
+    "docs/repo_hygiene_followups.md",
+    "docs/repo_hygiene_waves.md",
+}
+PROVENANCE_RULES = {
+    "codex": r"\bcodex\b",
+    "chatgpt": r"\bchatgpt\b",
+    "claude": r"\bclaude\b",
+    "copilot": r"\bcopilot\b",
+    "gpt-5 family": r"\bgpt[ -]?5(?:\.\d+)?\b",
+    "AI-authored/generated claim": r"\bai[- ](?:authored|generated)\b",
+    "agent-authored/generated claim": r"\bagent[- ](?:authored|generated)\b",
+}
+PROVENANCE_EXCLUSIONS = {"tools/repo_hygiene_audit.py", "tests/test_repo_hygiene_audit.py"}
+TEXT_SUFFIXES = {"", ".md", ".rst", ".txt", ".py", ".toml", ".yaml", ".yml", ".json", ".ini"}
 
 
 @dataclass(frozen=True)
@@ -30,6 +56,13 @@ class PathIssue:
 class FileLength:
     path: str
     lines: int
+
+
+@dataclass(frozen=True)
+class ProvenanceReference:
+    path: str
+    line: int
+    matched_rule: str
 
 
 def _git_ls_files(repo_root: Path) -> list[str]:
@@ -45,6 +78,10 @@ def _git_ls_files(repo_root: Path) -> list[str]:
 
 def _classify_prohibited_tracked(path_text: str) -> str | None:
     path = PurePosixPath(path_text)
+    if path_text.startswith(PRIVATE_PATH_PREFIXES):
+        return "private planning, archive, or internal document tracked publicly"
+    if path_text in INTERNAL_PLAN_PATHS:
+        return "internal plan document tracked publicly"
     if path_text == "test_outputs.txt":
         return "tracked console/test output should stay local"
     if path.parts and path.parts[0] in GENERATED_DIRS:
@@ -59,6 +96,35 @@ def _classify_prohibited_tracked(path_text: str) -> str | None:
     if path.parts and path.parts[0] == "benchmarks" and path.suffix.lower() == ".zip":
         return "benchmark archive bundles should live outside git"
     return None
+
+
+def _collect_provenance_references(
+    repo_root: Path, tracked_files: Sequence[str]
+) -> list[ProvenanceReference]:
+    import re
+
+    rules = [
+        (name, re.compile(pattern, re.IGNORECASE)) for name, pattern in PROVENANCE_RULES.items()
+    ]
+    references: list[ProvenanceReference] = []
+    for path_text in tracked_files:
+        if (
+            path_text in PROVENANCE_EXCLUSIONS
+            or Path(path_text).suffix.lower() not in TEXT_SUFFIXES
+        ):
+            continue
+        path = repo_root / path_text
+        if not path.is_file():
+            continue
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1
+        ):
+            for rule, pattern in rules:
+                if pattern.search(line):
+                    references.append(
+                        ProvenanceReference(path=path_text, line=line_number, matched_rule=rule)
+                    )
+    return references
 
 
 def _count_lines(path: Path) -> int:
@@ -84,6 +150,7 @@ def collect_report(
         for path in tracked_files
         if (reason := _classify_prohibited_tracked(path)) is not None
     ]
+    provenance = _collect_provenance_references(repo_root, tracked_files)
 
     long_python = []
     for path in _iter_python_files(tracked_files):
@@ -100,6 +167,7 @@ def collect_report(
         "repo_root": str(repo_root),
         "long_file_threshold": long_file_threshold,
         "prohibited_tracked": [asdict(item) for item in prohibited],
+        "provenance_references": [asdict(item) for item in provenance],
         "long_python_files": [asdict(item) for item in long_python[:top_n]],
         "over_threshold": [asdict(item) for item in over_threshold[:top_n]],
         "over_threshold_scripts": [asdict(item) for item in over_threshold_scripts[:top_n]],
@@ -141,6 +209,7 @@ def parse_args() -> argparse.Namespace:
 
 def _print_text_report(report: dict[str, object]) -> None:
     prohibited = report["prohibited_tracked"]
+    provenance = report["provenance_references"]
     over_threshold = report["over_threshold"]
 
     print("Repo hygiene audit")
@@ -151,6 +220,14 @@ def _print_text_report(report: dict[str, object]) -> None:
     if prohibited:
         for item in prohibited:
             print(f"- {item['path']}: {item['reason']}")
+    else:
+        print("- none")
+
+    print()
+    print("Public provenance references:")
+    if provenance:
+        for item in provenance:
+            print(f"- {item['path']}:{item['line']}: {item['matched_rule']}")
     else:
         print("- none")
 
@@ -181,8 +258,9 @@ def main() -> int:
         _print_text_report(report)
 
     has_prohibited = bool(report["prohibited_tracked"])
+    has_provenance = bool(report["provenance_references"])
     has_long_files = bool(report["over_threshold"])
-    if has_prohibited or (args.strict_long_files and has_long_files):
+    if has_prohibited or has_provenance or (args.strict_long_files and has_long_files):
         return 1
     return 0
 

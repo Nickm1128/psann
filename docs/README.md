@@ -1,57 +1,30 @@
 # Documentation Index
 
-Use this guide to locate the right document and to see which notes are still active versus historical context. Status values:
+This directory contains maintained product and engineering documentation. Planning,
+private workflow material, and historical task lists are intentionally not published.
 
-- **Active**: maintained reference material that matches the current codebase.
-- **Backlog**: planning notes that feed directly into upcoming issues or refactors.
-- **Archive**: historical context retained for posterity; do not treat as up to date.
+| Document | Purpose |
+| --- | --- |
+| `PROJECT_MAP.md` | Supported surfaces, installation model, and repository map. |
+| `REPO_STRUCTURE.md` | Repository and output conventions. |
+| `API.md` and `public_api.md` | Supported estimator and package APIs. |
+| `migration.md` | Compatibility and upgrade guidance for the current 0.12.4 source line. |
+| `CONTRIBUTING.md` | Contribution workflow and local quality checks. |
+| `deprecation_policy.md` | Canonical parameter names and alias policy. |
+| `lm.md` | PSANN-LM usage, training, and benchmark guidance. |
+| `PSANN_Results_Compendium.md` | Curated experiment results and interpretation notes. |
+| `benchmarks/` | Reproducible benchmark inputs, promotion guidance, and checked-in summaries. |
+| `examples/README.md` | Runnable example notes. |
 
-| Document | Status | Notes |
-| --- | --- | --- |
-| `PROJECT_MAP.md` | Active | High-level overview: what’s supported vs experimental, install model, repo layout. |
-| `REPO_STRUCTURE.md` | Active | Where things live, what’s generated, and repo conventions for scripts/outputs. |
-| `API.md` | Active | Public estimator surface reference, kept in sync with the facade in `src/psann/sklearn.py` and its backing modules under `src/psann/_sklearn/`. |
-| `public_api.md` | Active | Supported top-level exports and experimental surfaces. |
-| `migration.md` | Active | Upgrade guidance and behavioural changes between releases. |
-| `CONTRIBUTING.md` | Active | Contribution workflow, coding standards, and review expectations. |
-| `deprecation_policy.md` | Active | Canonical parameter names, deprecated aliases, and the removal policy. |
-| `examples/README.md` | Active | CPU runtimes and usage notes for scripts in `examples/`. |
-| `benchmarks/hisso_variants.md` | Active | Benchmark description; accompanying JSON captures reproducible config. |
-| `benchmarks/README.md` | Active | Data provenance, size, and regeneration instructions for HISSO benchmarks. |
-| `benchmarks/lm_base_sweeps.md` | Active | Summary of recent PSANN-LM base sweeps + recommendations for the next full-scale run. |
-| `benchmarks/promotion_guide.md` | Active | How to promote local `reports/` outputs into compact checked-in benchmark summaries. |
-| `geo_sparse_benchmarks_summary.md` | Active | Short index of GeoSparse sweeps with repro pointers. |
-| `geo_sparse_benchmarks_report.md` | Archive | Long-form GeoSparse benchmark handoff with raw appendix. |
-| `PSANN_Results_Compendium.md` | Active | Curated experiment results and interpretation tips. |
-| `diagnostics.md` | Active | Quick reference for feature quality diagnostics; see revision history for recent notation fixes. |
-| `wave_resnet.md` | Active | Background and design rationale for the WaveResNet backbone. |
-| `architecture.md` | Active | High-level module map and data flow across the estimator stack. |
-| `performance_tips.md` | Active | Practical CPU/GPU, dtype, and memory tips for faster runs. |
-| `repo_hygiene_audit.md` | Active | Guardrails for tracked outputs, long scripts, and the local hygiene audit tool. |
-| `repo_hygiene_waves.md` | Active | Sequential waves for the remaining hygiene work. |
-| `repo_hygiene_followups.md` | Backlog | Prioritized follow-up checklist for remaining refactors and cleanup work. |
-| `project_cleanup_todo.md` | Backlog | Comprehensive checklist for making the repo newcomer-friendly and slimming packaging. |
-| `extras_removal_inventory.md` | Backlog | Source-of-truth inventory for removing the legacy extras stack (linked to `backlog/extras-removal.md`). |
-| `backlog/todo_inventory.md` | Backlog | Inventory of TODO documents and issue-triage guidance. |
-| `backlog/psann_lm_todo.md` | Backlog | PSANN-LM roadmap and remaining benchmark-oriented backlog items. |
-| `backlog/psann_lm_3b_todo.md` | Backlog | 3B-scale PSANN-LM training and evaluation plan. |
-| `backlog/psann_sparse3d_todo.md` | Backlog | Sparse-3D research backlog and reactivation notes. |
-| `backlog/docs-site-generator.md` | Backlog | Notes on evaluating MkDocs/Sphinx once the HISSO refactor settles. |
-| `archive/REPO_CLEANUP_TODO.md` | Archive | Superseded root cleanup checklist retained for historical context. |
-| `archive/PSANN_LM_Module_TODO.txt` | Archive | Historical LM module plan retained for traceability. |
-| `lsm_robustness_todo.md` | Archive | Historical HISSO/extras backlog; superseded by the extras removal plan. |
-| `phase1_audit.md` | Archive | Snapshot of the naming audit prior to the cleanup work. Preserve for traceability. |
-| `ResearchFindings_and_NextSteps.md` | Archive | Historical research notes; see Results Compendium for current takeaways. |
-| `archive/codex_instructions.md` | Archive | Legacy Colab instructions; kept for historical context only. |
+## Logging directories
 
-## Maintenance Notes
+- Use `runs/hisso/` for local HISSO logs and `/content/hisso_logs/` on hosted notebooks.
+- The HISSO logging CLI accepts `--output-dir`; run
+  `python -m psann.scripts.hisso_log_run -h` for its current options.
 
-- The extras deprecation effort is tracked in `backlog/extras-removal.md`; update both files together when status changes.
-- Root-level planning notes were consolidated into `docs/backlog/` and `docs/archive/`; add new roadmap notes there instead of creating fresh root TODO files.
-- If a document moves to Archive status, add a banner at the top explaining why and where to find current guidance.
-- When adding new documentation, link it here and mark the status so downstream readers know whether it is normative guidance or planning material.
+## Documentation maintenance
 
-## Logging Directories
-
-- Recommended locations: use `runs/hisso/` for local shells; use `/content/hisso_logs/` on Colab/Runpod.
-- The HISSO logging CLI accepts `--output-dir` to control where artifacts are written. See `python -m psann.scripts.hisso_log_run -h` for details.
+- Keep public documents focused on supported behavior and reproducible guidance.
+- Link new maintained documentation from this index.
+- Use the issue tracker for proposed work and follow-up tasks rather than committing
+  project plans or session notes to the repository.
