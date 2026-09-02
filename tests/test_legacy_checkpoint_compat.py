@@ -281,6 +281,39 @@ def test_current_attention_state_lsm_and_hisso_capability_matrix() -> None:
         assert SGRPSANNRegressor(lsm=sentinel_lsm).lsm is None
 
 
+@pytest.mark.parametrize(
+    ("estimator_cls", "parameter", "value", "warning"),
+    [
+        (ResPSANNRegressor, "state", "state", "does not currently support stateful"),
+        (SGRPSANNRegressor, "attention", "attention", "ignores attention"),
+        (GeoSparseRegressor, "state", "state", "does not support stateful"),
+    ],
+)
+def test_ignored_capability_cells_warn_when_the_legacy_builder_runs(
+    estimator_cls, parameter, value, warning
+) -> None:
+    """Exercise the build-time ignored cells recorded in the capability matrix."""
+    from psann import StateConfig
+
+    X, y, kwargs = _roundtrip_case(estimator_cls)
+    config = StateConfig() if value == "state" else AttentionConfig(kind="mha")
+    if parameter == "state":
+        kwargs.update({"stateful": True, "state": config})
+    else:
+        kwargs[parameter] = config
+    estimator = estimator_cls(
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=43,
+        device="cpu",
+        **kwargs,
+    )
+    with pytest.warns(RuntimeWarning, match=warning):
+        estimator.fit(X[:8], y[:8], verbose=0)
+
+
 def test_geosparse_legacy_keys_are_renamed_and_conflicts_fail() -> None:
     params = _normalise_legacy_params(
         GeoSparseRegressor,
