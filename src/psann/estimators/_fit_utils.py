@@ -314,13 +314,26 @@ def run_supervised_training(
 
 
 def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.optim.Optimizer:
-    if estimator.lsm_train and isinstance(model, WithPreprocessor) and model.preproc is not None:
+    training = getattr(getattr(estimator, "preprocessor", None), "training", None)
+    joint_preprocessor = bool(getattr(training, "trainable", False))
+    legacy_joint = bool(getattr(estimator, "lsm_train", False))
+    if (
+        (joint_preprocessor or legacy_joint)
+        and isinstance(model, WithPreprocessor)
+        and model.preproc is not None
+    ):
         params = [
             {"params": model.core.parameters(), "lr": float(estimator.lr)},
             {
                 "params": model.preproc.parameters(),
                 "lr": (
-                    float(estimator.lsm_lr) if estimator.lsm_lr is not None else float(estimator.lr)
+                    float(training.lr)
+                    if training is not None and training.lr is not None
+                    else (
+                        float(estimator.lsm_lr)
+                        if getattr(estimator, "lsm_lr", None) is not None
+                        else float(estimator.lr)
+                    )
                 ),
             },
         ]

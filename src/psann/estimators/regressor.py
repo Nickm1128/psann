@@ -49,6 +49,14 @@ from ..architectures.wrappers import _FlattenedConvModel
 from ..attention import AttentionConfig as LegacyAttentionConfig
 from ..state import StateConfig as LegacyStateConfig
 from ..nn import WithPreprocessor
+from ..preprocessing import (
+    PreprocessorBuildRequest,
+    PreprocessorConfig,
+    PreprocessorLike,
+    normalize_preprocessor,
+    prepare_preprocessor,
+    validate_preprocessor_capability,
+)
 from ..types import LossLike, ScalerSpec
 
 _DEFAULT_ARCHITECTURE = ArchitectureConfig.dense()
@@ -337,10 +345,11 @@ class PSANNRegressor(_Phase2Regressor):
         # Explicit 0.x compatibility inputs retained through this line.
         hidden_width: int | None = None,
         w0: float = 30.0,
-        lsm: object | None = None,
-        lsm_train: bool = False,
-        lsm_pretrain_epochs: int = 0,
-        lsm_lr: float | None = None,
+        preprocessor: PreprocessorLike = None,
+        lsm: object = _OMITTED,
+        lsm_train: object = _OMITTED,
+        lsm_pretrain_epochs: object = _OMITTED,
+        lsm_lr: object = _OMITTED,
         activation: object = _OMITTED,
         activation_type: object = _OMITTED,
         preserve_shape: object = _OMITTED,
@@ -392,6 +401,33 @@ class PSANNRegressor(_Phase2Regressor):
         compute_mode: object = _OMITTED,
         geo_seed: object = _OMITTED,
     ) -> None:
+        legacy_preprocessor = {
+            name: value
+            for name, value in {
+                "lsm": lsm,
+                "lsm_train": lsm_train,
+                "lsm_pretrain_epochs": lsm_pretrain_epochs,
+                "lsm_lr": lsm_lr,
+            }.items()
+            if value is not _OMITTED
+        }
+        if preprocessor is not None and legacy_preprocessor:
+            raise ValueError(
+                "preprocessor conflicts with legacy preprocessing keyword(s): "
+                + ", ".join(legacy_preprocessor)
+            )
+        if legacy_preprocessor:
+            warnings.warn(
+                "lsm, lsm_train, lsm_pretrain_epochs, and lsm_lr are deprecated; "
+                "use preprocessor=PreprocessorConfig(...).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        canonical_preprocessor = normalize_preprocessor(preprocessor)
+        legacy_lsm = legacy_preprocessor.get("lsm")
+        legacy_lsm_train = bool(legacy_preprocessor.get("lsm_train", False))
+        legacy_lsm_epochs = int(legacy_preprocessor.get("lsm_pretrain_epochs", 0))
+        legacy_lsm_lr = legacy_preprocessor.get("lsm_lr")
         flat_supplied = {
             name: value
             for name, value in {
@@ -665,10 +701,10 @@ class PSANNRegressor(_Phase2Regressor):
             state_reset=canonical.state.reset if canonical.state else state_reset,
             stream_lr=canonical.state.stream_lr if canonical.state else stream_lr,
             output_shape=output_shape,
-            lsm=lsm,  # type: ignore[arg-type]
-            lsm_train=lsm_train,
-            lsm_pretrain_epochs=lsm_pretrain_epochs,
-            lsm_lr=lsm_lr,
+            lsm=legacy_lsm,  # type: ignore[arg-type]
+            lsm_train=legacy_lsm_train,
+            lsm_pretrain_epochs=legacy_lsm_epochs,
+            lsm_lr=legacy_lsm_lr,
             warm_start=warm_start,
             scaler=scaler,
             scaler_params=scaler_params,
@@ -691,6 +727,13 @@ class PSANNRegressor(_Phase2Regressor):
             ),
         )
         self.architecture = canonical
+        self.preprocessor = canonical_preprocessor
+        if canonical_preprocessor is not None:
+            # Retained fit hooks still consult these private compatibility values
+            # while Phase 4 moves their construction ownership behind
+            # ``preprocessor``. They are deliberately absent from canonical params.
+            self.lsm_train = canonical_preprocessor.training.trainable
+            self.lsm_lr = canonical_preprocessor.training.lr
         self.hidden_width = units
         # Flat ``preserve_shape`` retains its historical train/validation layout,
         # but its model is now a registry-built convolutional core wrapped only
@@ -705,6 +748,10 @@ class PSANNRegressor(_Phase2Regressor):
         self._architecture_capabilities_: Any = None
         self._architecture_lifecycle_: Any = None
         self._architecture_structure_: dict[str, object] | None = None
+        self._prepared_preprocessor_: nn.Module | None = None
+        self.preprocessor_ = None
+        self.preprocessor_capabilities_ = None
+        self.preprocessor_diagnostics_: dict[str, object] | None = None
 
     def _request(
         self,
@@ -741,6 +788,9 @@ class PSANNRegressor(_Phase2Regressor):
             bool(self.per_element),
             self._device(),
             torch.float32,
+            # The retained fit hook owns the one composition wrapper.  It receives
+            # the prepared module/output width separately; passing it here would
+            # make the registry wrap it a second time.
             None,
             None,
             getattr(self, "_architecture_structure_", None),
@@ -760,6 +810,57 @@ class PSANNRegressor(_Phase2Regressor):
             self._attention_shape_ = (seq_len, request.hidden_units)
         self._architecture_lifecycle_.on_model_built(model=result.model, runtime={})
         return result.model
+
+    def _resolve_lsm_module(
+        self, data: object, *, preserve_shape: bool
+    ) -> tuple[nn.Module | None, int | None]:
+        """Prepare canonical preprocessing before architecture construction.
+
+        The inherited method remains the isolated 0.x route for a supplied legacy
+        ``lsm`` argument; canonical callers never enter that compatibility builder.
+        """
+
+        if self.preprocessor is None:
+            return super()._resolve_lsm_module(data, preserve_shape=preserve_shape)
+        array = np.asarray(data, dtype=np.float32)
+        input_topology = {
+            2: "flat",
+            3: "tokens",
+            4: "spatial-2d",
+            5: "spatial-3d",
+        }.get(array.ndim)
+        if input_topology is None:
+            raise ValueError("preprocessor input must have a supported batch topology.")
+        spatial_ndim = array.ndim - 2 if input_topology.startswith("spatial-") else None
+        result = prepare_preprocessor(
+            PreprocessorBuildRequest(
+                self.preprocessor,
+                input_topology,
+                tuple(array.shape[1:]),
+                array,
+                self._device(),
+                torch.float32,
+            )
+        )
+        geometry_size = None
+        if self.architecture.geometry is not None and self.architecture.geometry.shape is not None:
+            geometry_size = int(np.prod(self.architecture.geometry.shape))
+        validate_preprocessor_capability(
+            architecture_kind=self.architecture.kind,
+            attention=self.architecture.attention is not None,
+            convolutional=self.architecture.convolution is not None,
+            spatial_ndim=spatial_ndim,
+            capabilities=result.capabilities,
+            geometry_size=geometry_size,
+        )
+        for parameter in result.module.parameters():
+            parameter.requires_grad = self.preprocessor.training.trainable
+        self._prepared_preprocessor_ = result.module
+        self.preprocessor_ = result.module
+        self.preprocessor_capabilities_ = result.capabilities
+        self.preprocessor_diagnostics_ = dict(result.diagnostics)
+        self._lsm_module_ = result.module
+        return result.module, result.capabilities.output_dim
 
     def _build_dense_core(
         self,
@@ -925,13 +1026,27 @@ class PSANNRegressor(_Phase2Regressor):
             "compile_dynamic",
             "hidden_width",
             "w0",
-            "lsm",
-            "lsm_train",
-            "lsm_pretrain_epochs",
-            "lsm_lr",
+            "preprocessor",
         )
         params = {name: getattr(self, name) for name in names}
         if deep:
+            if self.preprocessor is not None:
+                params["preprocessor__component"] = self.preprocessor.component
+                params["preprocessor__training"] = self.preprocessor.training
+                for field in fields(self.preprocessor.training):
+                    params[f"preprocessor__training__{field.name}"] = getattr(
+                        self.preprocessor.training, field.name
+                    )
+                component = self.preprocessor.component
+                for field in fields(component):
+                    params[f"preprocessor__component__{field.name}"] = getattr(
+                        component, field.name
+                    )
+                if hasattr(component, "pretraining"):
+                    for field in fields(component.pretraining):
+                        params[f"preprocessor__component__pretraining__{field.name}"] = getattr(
+                            component.pretraining, field.name
+                        )
             # ``conv_channels`` was historically visible from the public
             # deep parameter mapping.  Keeping it here (rather than in the
             # shallow constructor map) preserves that inspection surface
@@ -973,6 +1088,10 @@ class PSANNRegressor(_Phase2Regressor):
             "_architecture_lifecycle_",
             "_architecture_capabilities_",
             "_architecture_structure_",
+            "_prepared_preprocessor_",
+            "preprocessor_",
+            "preprocessor_capabilities_",
+            "preprocessor_diagnostics_",
         ):
             self.__dict__.pop(name, None)
 
@@ -999,6 +1118,10 @@ class PSANNRegressor(_Phase2Regressor):
             raise ValueError(
                 "architecture and architecture__ parameters cannot be updated together."
             )
+        if "preprocessor" in params and any(key.startswith("preprocessor__") for key in params):
+            raise ValueError(
+                "preprocessor and preprocessor__ parameters cannot be updated together."
+            )
         candidate = self.architecture
         if "architecture" in params:
             candidate = normalize_architecture(cast(ArchitectureLike, params.pop("architecture")))
@@ -1009,6 +1132,42 @@ class PSANNRegressor(_Phase2Regressor):
                 nested,
                 hidden_layers=int(cast(Any, params.get("hidden_layers", self.hidden_layers))),
             )
+        preprocessor_candidate = self.preprocessor
+        if "preprocessor" in params:
+            preprocessor_candidate = normalize_preprocessor(
+                cast(PreprocessorLike, params.pop("preprocessor"))
+            )
+        preprocessor_nested = {
+            key: params.pop(key) for key in list(params) if key.startswith("preprocessor__")
+        }
+        if preprocessor_nested:
+            if preprocessor_candidate is None:
+                raise ValueError("preprocessor__ updates require a configured preprocessor.")
+            component_changes: dict[str, object] = {}
+            training_changes: dict[str, object] = {}
+            pretraining_changes: dict[str, object] = {}
+            for key, value in preprocessor_nested.items():
+                path = key.split("__")[1:]
+                if path[:2] == ["component", "pretraining"] and len(path) == 3:
+                    pretraining_changes[path[2]] = value
+                elif path[:1] == ["component"] and len(path) == 2:
+                    component_changes[path[1]] = value
+                elif path[:1] == ["training"] and len(path) == 2:
+                    training_changes[path[1]] = value
+                else:
+                    raise ValueError(f"Invalid parameter {key!r} for PSANNRegressor.")
+            component = preprocessor_candidate.component
+            if pretraining_changes:
+                if not hasattr(component, "pretraining"):
+                    raise ValueError(
+                        "preprocessor.component does not support pretraining parameters."
+                    )
+                component_changes["pretraining"] = replace(
+                    component.pretraining, **cast(Any, pretraining_changes)
+                )
+            component = replace(component, **cast(Any, component_changes))
+            training = replace(preprocessor_candidate.training, **cast(Any, training_changes))
+            preprocessor_candidate = PreprocessorConfig(component=component, training=training)
         validate_architecture(
             candidate, hidden_layers=int(cast(Any, params.get("hidden_layers", self.hidden_layers)))
         )
@@ -1021,6 +1180,7 @@ class PSANNRegressor(_Phase2Regressor):
         if unknown:
             raise ValueError(f"Invalid parameter {sorted(unknown)[0]!r} for PSANNRegressor.")
         changed_architecture = candidate != self.architecture
+        changed_preprocessor = preprocessor_candidate != self.preprocessor
         for key, value in params.items():
             setattr(self, key, value)
         if reset_context_builder:
@@ -1044,6 +1204,9 @@ class PSANNRegressor(_Phase2Regressor):
             self.attention = cast(Any, _legacy_attention(candidate))
             self.state = _legacy_state(candidate)
             self.stateful = candidate.state is not None
+            self._clear_architecture_runtime()
+        if changed_preprocessor:
+            self.preprocessor = preprocessor_candidate
             self._clear_architecture_runtime()
         return self
 

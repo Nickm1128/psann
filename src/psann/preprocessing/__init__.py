@@ -12,6 +12,13 @@ from .config import (
     normalize_preprocessor,
     preprocessor_to_mapping,
 )
+from .runtime import (
+    PreprocessorBuildRequest,
+    PreprocessorBuildResult,
+    PreprocessorCapabilities,
+    prepare_preprocessor,
+    validate_preprocessor_capability,
+)
 
 __all__ = [
     "LSM",
@@ -22,8 +29,13 @@ __all__ = [
     "LSMPretrainingConfig",
     "ModulePreprocessorConfig",
     "PreprocessorConfig",
+    "PreprocessorBuildRequest",
+    "PreprocessorBuildResult",
+    "PreprocessorCapabilities",
     "PreprocessorLike",
     "PreprocessorTrainingConfig",
     "normalize_preprocessor",
     "preprocessor_to_mapping",
+    "prepare_preprocessor",
+    "validate_preprocessor_capability",
 ]
