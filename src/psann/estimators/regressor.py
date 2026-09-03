@@ -320,7 +320,8 @@ class PSANNRegressor(_Phase2Regressor):
                 "architecture conflicts with legacy architecture keyword(s): "
                 + ", ".join(names or ["activation_type"])
             )
-        if architecture is _DEFAULT_ARCHITECTURE and explicit_flat:
+        legacy_flat_adapter = architecture is _DEFAULT_ARCHITECTURE and explicit_flat
+        if legacy_flat_adapter:
             warnings.warn(
                 "Flat architecture keywords are deprecated; pass architecture=ArchitectureConfig(...).",
                 DeprecationWarning,
@@ -451,7 +452,15 @@ class PSANNRegressor(_Phase2Regressor):
         )
         self.architecture = canonical
         self.hidden_width = units
-        self._use_channel_first_train_inputs_ = canonical.convolution is not None
+        # Flat ``preserve_shape`` is an old base-estimator mode that keeps its
+        # flattened validation layout.  Canonical and wrapper convolutional
+        # policies use the channel-first registry path instead.
+        self._use_channel_first_train_inputs_ = (
+            canonical.convolution is not None and not legacy_flat_adapter
+        )
+        self._legacy_flattened_preserve_shape_ = bool(
+            legacy_flat_adapter and canonical.convolution is not None and not per_element
+        )
         self._architecture_capabilities_ = None
         self._architecture_lifecycle_ = None
         self._architecture_structure_ = None
@@ -519,6 +528,18 @@ class PSANNRegressor(_Phase2Regressor):
         state_cfg: Optional[dict[str, Any]] = None,
         input_shape: Optional[tuple[int, ...]] = None,
     ) -> nn.Module:
+        # The pre-Phase-3 flat ``preserve_shape`` adapter deliberately kept
+        # flattened optimisation and a dense core.  Preserve that executable
+        # compatibility boundary while canonical convolution policies always
+        # enter the registry through ``_build_conv_core``.
+        if getattr(self, "_legacy_flattened_preserve_shape_", False):
+            return _Phase2Regressor._build_dense_core(
+                self,
+                input_dim,
+                output_dim,
+                state_cfg=state_cfg,
+                input_shape=input_shape,
+            )
         return self._receive_build(
             self._request(
                 input_dim=input_dim, output_dim=output_dim, input_shape=input_shape or (input_dim,)
@@ -646,16 +667,15 @@ class PSANNRegressor(_Phase2Regressor):
             "lsm_train",
             "lsm_pretrain_epochs",
             "lsm_lr",
-            # These names remain visible during 0.x because the Phase 2
-            # estimator accepted them through ``set_params``.  They are a
-            # compatibility adapter, not a second canonical architecture
-            # representation.
-            "conv_channels",
-            "context_builder",
-            "context_builder_params",
         )
         params = {name: getattr(self, name) for name in names}
         if deep:
+            # ``conv_channels`` was historically visible from the public
+            # deep parameter mapping.  Keeping it here (rather than in the
+            # shallow constructor map) preserves that inspection surface
+            # without feeding a flat architecture mirror back to sklearn
+            # clone alongside ``architecture``.
+            params["conv_channels"] = self.conv_channels
             for policy in (
                 "activation",
                 "residual",
@@ -731,7 +751,11 @@ class PSANNRegressor(_Phase2Regressor):
         validate_architecture(
             candidate, hidden_layers=int(params.get("hidden_layers", self.hidden_layers))
         )
-        valid = set(self.get_params(deep=False))
+        valid = set(self.get_params(deep=False)) | {
+            "conv_channels",
+            "context_builder",
+            "context_builder_params",
+        }
         unknown = set(params) - valid
         if unknown:
             raise ValueError(f"Invalid parameter {sorted(unknown)[0]!r} for PSANNRegressor.")
@@ -802,6 +826,9 @@ class PSANNRegressor(_Phase2Regressor):
             "hisso_cfg": self._hisso_cfg_,
             "hisso_options": self._hisso_options_,
             "hisso_trained": self._hisso_trained_,
+            "legacy_flattened_preserve_shape": getattr(
+                self, "_legacy_flattened_preserve_shape_", False
+            ),
         }
         structure = (
             self._architecture_lifecycle_.structure_metadata()
@@ -817,7 +844,9 @@ class PSANNRegressor(_Phase2Regressor):
                 "fitted": fitted,
                 "structure": structure,
                 "model_state_dict": state_dict,
-                "artifacts": {},
+                "artifacts": {
+                    "hisso_reward_fn": getattr(self, "_hisso_reward_fn_", None),
+                },
             },
             path,
         )
@@ -989,13 +1018,21 @@ class PSANNRegressor(_Phase2Regressor):
             raise ValueError("Schema-v1 checkpoint is missing estimator_params.architecture.")
         estimator = cls(**raw_params)
         fitted = dict(payload.get("fitted", {}))
+        estimator._legacy_flattened_preserve_shape_ = bool(
+            fitted.get("legacy_flattened_preserve_shape", False)
+        )
+        if estimator._legacy_flattened_preserve_shape_:
+            estimator._use_channel_first_train_inputs_ = False
         estimator._architecture_structure_ = payload.get("structure") or {}
         input_shape = tuple(fitted.get("input_shape") or ())
         output_dim = fitted.get("output_dim")
         primary_dim = fitted.get("primary_dim")
         if not input_shape or output_dim is None or primary_dim is None:
             raise ValueError("Schema-v1 checkpoint is missing fitted input/output metadata.")
-        if estimator.architecture.convolution is not None:
+        if (
+            estimator.architecture.convolution is not None
+            and not estimator._legacy_flattened_preserve_shape_
+        ):
             internal = tuple(fitted.get("internal_shape_cf") or input_shape)
             estimator.model_ = estimator._build_conv_core(
                 len(internal) - 1,
@@ -1056,6 +1093,9 @@ class PSANNRegressor(_Phase2Regressor):
                 )
         estimator._optimizer_ = None
         estimator._hisso_trainer_ = None
+        estimator._hisso_reward_fn_ = dict(payload.get("artifacts", {})).get(
+            "hisso_reward_fn"
+        )
         return estimator
 
 
