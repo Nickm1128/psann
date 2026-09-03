@@ -7,7 +7,7 @@ legacy estimator implementation package.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple, cast
 
 import torch
 import torch.nn as nn
@@ -69,15 +69,16 @@ class _AttentionConvModel(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        tokens = self.conv_core.forward_tokens(x)
+        conv_core = cast(Any, self.conv_core)
+        tokens = conv_core.forward_tokens(x)
         batch, channels, spatial = tokens.shape[0], tokens.shape[1], tokens.shape[2:]
         seq = tokens.reshape(batch, channels, -1).transpose(1, 2)
         context = (
             self.attention(seq, seq, seq)[0].transpose(1, 2).reshape(batch, channels, *spatial)
         )
         if self.segmentation_head:
-            return self.conv_core.head(context)
-        return self.conv_core.fc(self.conv_core.pool(context).flatten(1))
+            return conv_core.head(context)
+        return conv_core.fc(conv_core.pool(context).flatten(1))
 
 
 class _WaveResNetSpectralDenseModel(nn.Module):
@@ -140,7 +141,7 @@ class _WaveResNetConvModel(nn.Module):
         self.spatial_shape = tuple(map(int, spatial_shape))
 
     def forward_tokens(self, x: torch.Tensor) -> torch.Tensor:
-        return self.conv_core.forward_tokens(x)
+        return cast(Any, self.conv_core).forward_tokens(x)
 
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
         tokens = self.forward_tokens(x)

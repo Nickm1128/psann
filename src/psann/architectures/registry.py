@@ -244,6 +244,7 @@ def _dense_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult
         seq_len = int(math.prod(request.input_shape[:-1]))
         if request.hidden_units % attention.num_heads:
             raise ValueError("attention.num_heads must divide hidden_units.")
+        token_core: nn.Module
         if cfg.residual is None:
             token_core = PSANNNet(
                 token_dim,

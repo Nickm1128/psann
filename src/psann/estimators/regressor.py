@@ -702,7 +702,7 @@ class PSANNRegressor(_Phase2Regressor):
         )
         self._architecture_capabilities_: Any = None
         self._architecture_lifecycle_: Any = None
-        self._architecture_structure_ = None
+        self._architecture_structure_: dict[str, object] | None = None
 
     def _request(
         self,
@@ -1334,9 +1334,9 @@ class PSANNRegressor(_Phase2Regressor):
                         (wave.warmup.first_initial, wave.first_w0),
                         (wave.warmup.hidden_initial, wave.hidden_w0),
                     )
-                    for observed, (initial, target) in zip(effective, endpoints):
-                        if observed is not None and not math.isclose(initial, target):
-                            ratios.append((float(observed) - initial) / (target - initial))
+                    for observed, (initial, endpoint) in zip(effective, endpoints):
+                        if observed is not None and not math.isclose(initial, endpoint):
+                            ratios.append((float(observed) - initial) / (endpoint - initial))
                     if ratios:
                         warmup_step = max(
                             0,
