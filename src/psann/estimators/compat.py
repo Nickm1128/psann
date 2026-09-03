@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import warnings
-from inspect import signature
+from inspect import Parameter, Signature
 from typing import Any, Mapping, cast
 
 from ..architectures import (
@@ -21,13 +21,63 @@ from ..architectures import (
     WaveConfig,
 )
 from .regressor import PSANNRegressor
-from .._sklearn.geosparse import GeoSparseRegressor as _Phase2GeoSparseRegressor
-from .._sklearn.residual import (
-    ResConvPSANNRegressor as _Phase2ResConvPSANNRegressor,
-    ResPSANNRegressor as _Phase2ResPSANNRegressor,
-)
-from .._sklearn.sgr import SGRPSANNRegressor as _Phase2SGRPSANNRegressor
-from .._sklearn.wave import WaveResNetRegressor as _Phase2WaveResNetRegressor
+
+
+def _legacy_signature(defaults: dict[str, object]) -> Signature:
+    """Define 0.x wrapper signatures without importing derivative estimators."""
+
+    return Signature(
+        [Parameter(name, Parameter.KEYWORD_ONLY, default=value) for name, value in defaults.items()]
+    )
+
+
+_COMMON_DEFAULTS: dict[str, object] = {
+    "hidden_layers": 2,
+    "hidden_width": None,
+    "hidden_units": None,
+    "epochs": 200,
+    "batch_size": 128,
+    "lr": 1e-3,
+    "optimizer": "adam",
+    "weight_decay": 0.0,
+    "activation": None,
+    "device": "auto",
+    "random_state": None,
+    "early_stopping": False,
+    "patience": 20,
+    "num_workers": 0,
+    "loss": "mse",
+    "loss_params": None,
+    "loss_reduction": "mean",
+    "w0": 30.0,
+    "preserve_shape": False,
+    "data_format": "channels_first",
+    "conv_kernel_size": 1,
+    "conv_channels": None,
+    "per_element": False,
+    "activation_type": "psann",
+    "attention": None,
+    "stateful": False,
+    "state": None,
+    "state_reset": "batch",
+    "stream_lr": None,
+    "output_shape": None,
+    "lsm": None,
+    "lsm_train": False,
+    "lsm_pretrain_epochs": 0,
+    "lsm_lr": None,
+    "warm_start": False,
+    "scaler": None,
+    "scaler_params": None,
+    "target_scaler": None,
+    "target_scaler_params": None,
+}
+
+
+def _with_defaults(**overrides: object) -> dict[str, object]:
+    values = dict(_COMMON_DEFAULTS)
+    values.update(overrides)
+    return values
 
 
 def _activation(kwargs: dict[str, Any]) -> ActivationConfig:
@@ -182,7 +232,7 @@ class _LegacyFacade(PSANNRegressor):
     """Shared warning/clone behavior; subclasses only construct a config."""
 
     _legacy_name = "legacy estimator"
-    _signature_source: type[object]
+    _legacy_signature: Signature
 
     def _warn(self) -> None:
         warnings.warn(
@@ -193,9 +243,7 @@ class _LegacyFacade(PSANNRegressor):
 
     def _capture_legacy_params(self, supplied: Mapping[str, Any]) -> None:
         values: dict[str, Any] = {}
-        for name, parameter in signature(self._signature_source.__init__).parameters.items():
-            if name == "self" or parameter.kind.name in {"VAR_KEYWORD", "VAR_POSITIONAL"}:
-                continue
+        for name, parameter in self._legacy_signature.parameters.items():
             value = supplied.get(name, parameter.default)
             values[name] = value
             # These compatibility attributes intentionally retain their original
@@ -632,11 +680,93 @@ __all__ = [
 ]
 
 
-ResPSANNRegressor._signature_source = _Phase2ResPSANNRegressor
-ResConvPSANNRegressor._signature_source = _Phase2ResConvPSANNRegressor
-WaveResNetRegressor._signature_source = _Phase2WaveResNetRegressor
-SGRPSANNRegressor._signature_source = _Phase2SGRPSANNRegressor
-GeoSparseRegressor._signature_source = _Phase2GeoSparseRegressor
+ResPSANNRegressor._legacy_signature = _legacy_signature(
+    _with_defaults(
+        hidden_layers=8,
+        w0_first=12.0,
+        w0_hidden=1.0,
+        norm="rms",
+        drop_path_max=0.0,
+        residual_alpha_init=0.0,
+    )
+)
+_resconv_defaults = _with_defaults(
+    hidden_layers=6,
+    batch_size=64,
+    preserve_shape=True,
+    conv_kernel_size=3,
+    w0_first=12.0,
+    w0_hidden=1.0,
+    norm="rms",
+    drop_path_max=0.0,
+    residual_alpha_init=0.0,
+)
+_resconv_defaults.pop("attention")
+ResConvPSANNRegressor._legacy_signature = _legacy_signature(_resconv_defaults)
+WaveResNetRegressor._legacy_signature = _legacy_signature(
+    _with_defaults(
+        hidden_layers=6,
+        first_layer_w0=30.0,
+        hidden_w0=1.0,
+        norm="none",
+        use_film=True,
+        use_phase_shift=True,
+        dropout=0.0,
+        context_dim=None,
+        context_builder=None,
+        context_builder_params=None,
+        residual_alpha_init=0.0,
+        grad_clip_norm=5.0,
+        first_layer_w0_initial=10.0,
+        hidden_w0_initial=0.5,
+        w0_warmup_epochs=10,
+        progressive_depth_initial=None,
+        progressive_depth_interval=15,
+        progressive_depth_growth=1,
+        use_spectral_gate=False,
+        k_fft=64,
+        gate_type="rfft",
+        gate_groups="depthwise",
+        gate_init=0.0,
+        gate_strength=1.0,
+    )
+)
+SGRPSANNRegressor._legacy_signature = _legacy_signature(
+    _with_defaults(
+        phase_init=0.0,
+        phase_trainable=True,
+        use_spectral_gate=True,
+        k_fft=64,
+        gate_type="rfft",
+        gate_groups="depthwise",
+        gate_init=0.0,
+        gate_strength=1.0,
+        pool="last",
+    )
+)
+GeoSparseRegressor._legacy_signature = _legacy_signature(
+    _with_defaults(
+        amp=False,
+        amp_dtype="bfloat16",
+        compile=False,
+        compile_backend="inductor",
+        compile_mode="default",
+        compile_fullgraph=False,
+        compile_dynamic=False,
+        shape=None,
+        k=8,
+        pattern="local",
+        radius=1,
+        offsets=None,
+        wrap_mode="clamp",
+        norm="rms",
+        drop_path_max=0.0,
+        residual_alpha_init=0.0,
+        bias=True,
+        compute_mode="gather",
+        geo_seed=None,
+    )
+)
 for _facade in (
     ResPSANNRegressor,
     ResConvPSANNRegressor,
@@ -647,5 +777,5 @@ for _facade in (
     setattr(
         cast(Any, _facade.__init__),
         "__signature__",
-        signature(_facade._signature_source.__init__),
+        _facade._legacy_signature,
     )
