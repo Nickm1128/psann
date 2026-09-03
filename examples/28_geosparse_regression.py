@@ -21,9 +21,7 @@ if __name__ == "__main__":
     X_test, y_test = X[te_idx], y[te_idx]
 
     model = PSANNRegressor(
-        architecture=ArchitectureConfig.geometric_sparse(
-            geometry=GeometryConfig(shape=(4, 4))
-        ),
+        architecture=ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(4, 4))),
         hidden_layers=4,
         k=8,
         activation_type="relu",
