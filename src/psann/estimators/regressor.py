@@ -1490,9 +1490,10 @@ class PSANNRegressor(_Phase2Regressor):
                 int(output_dim),
                 input_shape=input_shape,
             )
-        if state_dict and (
-            any(str(key).startswith("preproc.") for key in state_dict)
-            or all(str(key).startswith("core.") for key in state_dict)
+        if has_preprocessor or (
+            state_dict
+            and all(str(key).startswith("core.") for key in state_dict)
+            and not estimator._legacy_flattened_preserve_shape_
         ):
             # State-dict checkpoints retain constructor parameters, including the
             # fitted LSM module.  Recreate the same wrapper rather than a
