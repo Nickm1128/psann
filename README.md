@@ -204,17 +204,19 @@ model.fit(seqs, y, verbose=0)
 
 The estimator infers the `(timesteps, features)` layout automatically from the training tensor shape and inserts `nn.MultiheadAttention` after the PSANN per-token backbone. The same knob works when `preserve_shape=True` (including `per_element=True` conv paths); spatial positions are treated as tokens before passing through the existing convolutional heads. Set `attention=None` (default) to keep the legacy architecture.
 
-### Residual regression with `ResPSANNRegressor`
+### Residual regression
 
 ```python
 import numpy as np
-from psann import ResPSANNRegressor
+from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig, ResidualConfig
 
 rng = np.random.default_rng(1234)
 X = rng.uniform(-2.0, 2.0, size=(512, 4)).astype(np.float32)
 y = (np.sin(X[:, :1]) + 0.25 * X[:, 1:2]).astype(np.float32)
 
-est = ResPSANNRegressor(
+est = PSANNRegressor(
+    architecture=ArchitectureConfig.dense(residual=ResidualConfig()),
     hidden_layers=4,
     hidden_units=48,
     lr=1e-3,
@@ -227,31 +229,30 @@ est.fit(X, y, verbose=0)
 print("Residual R^2:", est.score(X, y))
 ```
 
-`ResPSANNRegressor` keeps the same `.fit`/`.predict` interface but routes training through the residual backbone with DropPath, RMSNorm, and optional HISSO hooks enabled.
+The canonical residual policy routes training through the residual backbone with DropPath, RMSNorm, and optional HISSO hooks enabled.
 
-### Spectral-gated regression with `SGRPSANNRegressor`
+### Spectral-gated sequence regression
 
 ```python
 import numpy as np
-from psann import SGRPSANNRegressor
+from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig
 
 rng = np.random.default_rng(7)
 X = rng.standard_normal((256, 32, 3)).astype(np.float32)  # (batch, timesteps, features)
 y = (X[:, -1:, :1].sum(axis=1) + 0.1 * X.mean(axis=(1, 2), keepdims=True)).astype(np.float32)
 
-est = SGRPSANNRegressor(
+est = PSANNRegressor(
+    architecture=ArchitectureConfig.for_sequence(),
     hidden_layers=3,
     hidden_units=32,
     epochs=40,
-    k_fft=64,
-    gate_type="rfft",
-    pool="last",
 )
 est.fit(X, y, verbose=0)
 print("SGR R^2:", est.score(X, y))
 ```
 
-`SGRPSANNRegressor` adds per-channel phase shifts plus a lightweight spectral gate over the sequence axis. It expects `(N, T, F)` inputs and keeps the rest of the sklearn API identical.
+The sequence architecture adds per-channel phase shifts plus a lightweight spectral gate over `(N, T, F)` inputs.
 
 ### Language modeling (PSANN-LM)
 
@@ -297,24 +298,26 @@ python examples/lm/minimal_train.py --epochs 12 --repeat 64 --out reports/exampl
 
 See `docs/lm.md` for the complete PSANN-LM reference plus GPU benchmark notes, and browse the ready-made snippets in `examples/lm/`.
 
-### Convolutional regression with `ResConvPSANNRegressor`
+### Convolutional regression
 
 ```python
 import numpy as np
-from psann import ResConvPSANNRegressor
+from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig, ConvolutionConfig, ResidualConfig
 
 rng = np.random.default_rng(321)
 X = rng.normal(size=(64, 12, 3)).astype(np.float32)  # (N, length, channels)
 y = X.mean(axis=(1, 2), keepdims=True).astype(np.float32)
 
-conv_est = ResConvPSANNRegressor(
+conv_est = PSANNRegressor(
+    architecture=ArchitectureConfig.convolutional(
+        convolution=ConvolutionConfig(channels=24, kernel_size=3, data_format="channels_last"),
+        residual=ResidualConfig(),
+    ),
     hidden_layers=3,
     hidden_units=32,
-    conv_channels=24,
-    conv_kernel_size=3,
     epochs=60,
     batch_size=16,
-    data_format="channels_last",
     random_state=321,
 )
 conv_est.fit(X, y, verbose=0)
@@ -324,11 +327,12 @@ print("Conv R^2:", conv_est.score(X, y))
 Passing `data_format="channels_last"` lets you keep inputs as `(N, length, channels)` arrays; the estimator handles the channel-first conversion internally while respecting `float32` inputs and the shared alias policy.
 Tip: For GPU training set `device="cuda"` on construction, and keep NumPy arrays as `np.float32` to avoid extra copies.
 
-### Wave-based regression with `WaveResNetRegressor`
+### Wave-based regression
 
 ```python
 import numpy as np
-from psann import WaveResNetRegressor
+from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig
 
 X = np.linspace(0, 2 * np.pi, 400, dtype=np.float32).reshape(-1, 1)
 context = np.stack(
@@ -337,22 +341,19 @@ context = np.stack(
 ).astype(np.float32)
 y = (np.sin(3 * X) + 0.1 * np.cos(5 * X)).astype(np.float32)
 
-wave = WaveResNetRegressor(
+wave = PSANNRegressor(
+    architecture=ArchitectureConfig.for_wave(),
     hidden_layers=4,
     hidden_units=64,
     epochs=150,
     lr=3e-4,
-    w0=30.0,
-    w0_warmup_epochs=20,
-    progressive_depth_initial=2,
-    progressive_depth_interval=25,
     random_state=7,
 )
 wave.fit(X, y, context=context, verbose=0)
 print("WaveResNet R^2:", wave.score(X, y, context=context))
 ```
 
-`WaveResNetRegressor` applies SIREN-style initialisation with optional `w0` warmup and progressive depth expansion. Providing explicit `float32` context arrays keeps inference aligned with the estimator's cached `context_dim`.
+The Wave architecture applies SIREN-style initialisation with optional `w0` warmup and progressive depth expansion.
 Tip: Specify `device="cuda"` for GPU runs; use `np.float32` inputs (including `context`) to stay on the fast path without extra dtype casts.
 
 For sequence-shaped inputs `(N, T, F)`, `WaveResNetRegressor` can optionally apply a lightweight spectral gate over the inferred sequence axis before the WaveResNet readout. Enable it with `use_spectral_gate=True` and configure `k_fft`, `gate_type`, `gate_groups`, `gate_init`, and `gate_strength`.

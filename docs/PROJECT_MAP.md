@@ -21,11 +21,9 @@ This document explains what PSANN *is*, what is considered *stable*, what is *ex
 These are intended to be stable and documented, and they are covered by the main test suite.
 
 - **Sklearn-style estimators**
-  - `PSANNRegressor`
-  - `ResPSANNRegressor`
-  - `ResConvPSANNRegressor`
-  - `WaveResNetRegressor`
-  - `SGRPSANNRegressor`
+  - `PSANNRegressor(architecture=ArchitectureConfig(...))`
+  - The historical `Res*`, `WaveResNetRegressor`, and `SGRPSANNRegressor`
+    names are deprecated compatibility wrappers.
 - **Training utilities** shared by those estimators
   - Data preparation (shape handling, scaling) in `psann.estimators._fit_utils`
   - Supervised training loop utilities and stateful streaming utilities
@@ -38,7 +36,7 @@ These are under active iteration; APIs may change and performance characteristic
 
 - **GeoSparse**
   - Torch backbone: `psann.nn_geo_sparse`
-  - Estimator wrapper: `GeoSparseRegressor`
+  - Canonical estimator: `PSANNRegressor(architecture=ArchitectureConfig.geometric_sparse(...))`
   - Benchmark scripts and sweep harnesses under `scripts/` and `reports/`
 - **Language modeling**
   - Core LM library code lives in the separate `psannlm` distribution

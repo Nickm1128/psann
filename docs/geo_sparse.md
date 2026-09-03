@@ -60,16 +60,17 @@ print(y.shape)  # (32, 1)
 
 ```python
 import numpy as np
-from psann import GeoSparseRegressor
+from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig, GeometryConfig
 
 X = np.random.randn(256, 4, 4).astype("float32")
 y = X.reshape(X.shape[0], -1).sum(axis=1, keepdims=True).astype("float32")
 
-est = GeoSparseRegressor(
-    shape=(4, 4),
+est = PSANNRegressor(
+    architecture=ArchitectureConfig.geometric_sparse(
+        geometry=GeometryConfig(shape=(4, 4), k=8),
+    ),
     hidden_layers=4,
-    k=8,
-    activation_type="relu",
     epochs=10,
     batch_size=64,
     lr=1e-3,

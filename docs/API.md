@@ -125,9 +125,11 @@ When HISSO is enabled and no targets are provided the primary dimension defaults
 3. Use `predict_sequence(...)` for open-loop rollouts, or `predict_sequence_online(...)` when teacher forcing and online adaptation are required.
 4. Utilities such as `psann.make_drift_series`, `psann.make_shock_series`, and `psann.make_regime_switch_ts` provide quick regression regimes for exercising the streaming APIs.
 
-## psann.SGRPSANNRegressor
+## Sequence architecture (canonical)
 
-Spectral-gated PSANN variant for sequence inputs. It adds per-channel phase shifts and a lightweight spectral gate over the sequence axis while keeping the sklearn-style API.
+Use `PSANNRegressor(architecture=ArchitectureConfig.for_sequence(...))` for the
+spectral-gated sequence architecture. `SGRPSANNRegressor` is retained only as a
+deprecated compatibility wrapper.
 
 **Key parameters**
 - `phase_init: float = 0.0` - initial phase offset for each hidden channel.
