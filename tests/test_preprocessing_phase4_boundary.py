@@ -191,7 +191,34 @@ def test_v2_metadata_is_strict_and_lsm_controller_survives_two_generations(tmp_p
     torch.save(payload, broken)
     with pytest.raises(ValueError, match="fitted.preprocessing.input_topology"):
         PSANNRegressor.load(str(broken))
+    payload = torch.load(first, weights_only=False)
+    payload["fitted"]["preprocessing"]["output_topology"] = "tokens"
+    torch.save(payload, broken)
+    with pytest.raises(ValueError, match="fitted.preprocessing.output_topology"):
+        PSANNRegressor.load(str(broken))
+    # map_location must choose CPU before construction, even if the serialized
+    # constructor record came from a CUDA training host.
+    payload = torch.load(first, weights_only=False)
+    payload["estimator_params"]["device"] = "cuda"
+    torch.save(payload, broken)
+    assert PSANNRegressor.load(str(broken), map_location="cpu").device.type == "cpu"
     loaded = PSANNRegressor.load(str(first))
     assert isinstance(loaded.score_reconstruction(X), float)
     loaded.save(str(second))
     assert isinstance(PSANNRegressor.load(str(second)).score_reconstruction(X), float)
+
+
+def test_custom_preprocessor_clone_and_parent_component_update_are_runtime_safe() -> None:
+    from sklearn.base import clone
+
+    X, y = _dense_data()
+    config = PreprocessorConfig(ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "flat", 4))
+    estimator = _small_estimator(config)
+    cloned = clone(estimator)
+    cloned.set_params(
+        preprocessor__component=ModulePreprocessorConfig(
+            torch.nn.Linear(3, 5), "flat", "flat", 5
+        )
+    ).fit(X, y)
+    assert cloned.preprocessor_capabilities_.output_dim == 5
+    assert cloned.predict(X[:2]).shape == (2,)
