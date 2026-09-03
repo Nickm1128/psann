@@ -2,8 +2,9 @@
 
 import numpy as np
 
-from psann import LSMExpander, PSANNRegressor, portfolio_log_return_reward
+from psann import PSANNRegressor, portfolio_log_return_reward
 from psann.hisso import hisso_evaluate_reward, hisso_infer_series
+from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
 
 def make_prices(T: int = 4096, seed: int = 7) -> np.ndarray:
@@ -29,21 +30,19 @@ if __name__ == "__main__":
     hisso_window = 64
     trans_cost = 1e-3
 
-    print("Pretraining LSM expander on inputs...")
-    lsm = LSMExpander(
-        output_dim=192,
-        hidden_layers=6,
-        hidden_width=192,
-        sparsity=0.9,
-        nonlinearity="sine",
-        epochs=50,
-        lr=8e-4,
-        ridge=1e-4,
-        random_state=1,
+    preprocessor = PreprocessorConfig(
+        LSMConfig.dense(
+            output_dim=192,
+            hidden_layers=6,
+            hidden_units=192,
+            sparsity=0.9,
+            nonlinearity="sine",
+            pretraining=LSMPretrainingConfig(epochs=50, lr=8e-4, ridge=1e-4),
+            random_state=1,
+        )
     )
-    lsm.fit(train)
 
-    print("First HISSO run with frozen LSM features...")
+    print("First HISSO run with frozen LSM preprocessing...")
     est = PSANNRegressor(
         hidden_layers=2,
         hidden_width=72,
@@ -52,8 +51,7 @@ if __name__ == "__main__":
         lr=6e-4,
         batch_size=128,
         random_state=1,
-        lsm=lsm,
-        lsm_train=False,
+        preprocessor=preprocessor,
     )
     est.fit(
         train,

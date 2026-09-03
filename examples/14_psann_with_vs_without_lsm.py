@@ -1,6 +1,7 @@
 import numpy as np
 
-from psann import LSMExpander, PSANNRegressor
+from psann import PSANNRegressor
+from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
 
 def make_data(n=5000, d=4, seed=0):
@@ -43,22 +44,21 @@ if __name__ == "__main__":
     base.fit(X_train, y_train, validation_data=(X_val, y_val), verbose=1)
     r2_base = base.score(X_test, y_test)
 
-    # Pre-fit LSM expander to increase feature dimensionality
-    lsm = LSMExpander(
-        output_dim=256,
-        hidden_layers=12,
-        hidden_width=256,
-        sparsity=0.9,
-        nonlinearity="sine",
-        epochs=100,
-        lr=1e-3,
-        ridge=1e-4,
-        random_state=0,
+    # The canonical preprocessing boundary owns deterministic construction and
+    # reconstruction pretraining before the predictive core is built.
+    preprocessor = PreprocessorConfig(
+        LSMConfig.dense(
+            output_dim=256,
+            hidden_layers=12,
+            hidden_units=256,
+            sparsity=0.9,
+            nonlinearity="sine",
+            pretraining=LSMPretrainingConfig(epochs=100, lr=1e-3, ridge=1e-4),
+            random_state=0,
+        )
     )
-    lsm.fit(X_train)
-    r2_lsm_recon = lsm.score_reconstruction(X_val)
 
-    # PSANN with frozen, pre-fitted LSM as a preprocessing step
+    # PSANN with a frozen LSM preprocessing step.
     with_lsm = PSANNRegressor(
         hidden_layers=2,
         hidden_width=64,
@@ -68,8 +68,7 @@ if __name__ == "__main__":
         early_stopping=True,
         patience=20,
         random_state=0,
-        lsm=lsm,
-        lsm_train=False,  # use as fixed feature map (do not jointly fine-tune)
+        preprocessor=preprocessor,
     )
     with_lsm.fit(X_train, y_train, validation_data=(X_val, y_val), verbose=1)
     r2_lsm = with_lsm.score(X_test, y_test)
@@ -77,4 +76,3 @@ if __name__ == "__main__":
     print("Results on held-out test set:")
     print(f"- Baseline PSANN R^2:        {r2_base:.4f}")
     print(f"- With pre-fitted LSM R^2:   {r2_lsm:.4f}")
-    print(f"LSM validation reconstruction R^2 (OLS): {r2_lsm_recon:.4f}")

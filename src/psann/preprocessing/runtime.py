@@ -43,12 +43,42 @@ class PreprocessorBuildResult:
     diagnostics: Mapping[str, object]
 
 
+def declared_preprocessor_capabilities(config: PreprocessorConfig) -> PreprocessorCapabilities:
+    """Return boundary metadata without constructing or pretraining a module.
+
+    This preflight is deliberately separate from :func:`prepare_preprocessor`:
+    invalid architecture compositions must fail before an expensive LSM
+    reconstruction run can mutate its controller or consume accelerator time.
+    """
+
+    component = config.component
+    if isinstance(component, ModulePreprocessorConfig):
+        return PreprocessorCapabilities(
+            component.input_topology,
+            component.output_topology,
+            component.output_dim,
+            False,
+            True,
+            "module",
+        )
+    topology = "flat" if component.topology == "dense" else "spatial-2d"
+    return PreprocessorCapabilities(
+        topology,
+        topology,
+        component.output_dim,
+        True,
+        True,
+        "lsm",
+    )
+
+
 def _lsm_expander(config: LSMConfig, device: torch.device) -> nn.Module:
     training = config.pretraining
     common = {
         "hidden_layers": config.hidden_layers,
         "sparsity": config.sparsity,
         "nonlinearity": config.nonlinearity,
+        "bias": config.bias,
         "epochs": training.epochs,
         "lr": training.lr,
         "ridge": training.ridge,
@@ -95,14 +125,7 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
     component = request.config.component
     if isinstance(component, ModulePreprocessorConfig):
         module = deepcopy(component.module).to(device=request.device, dtype=request.dtype)
-        capabilities = PreprocessorCapabilities(
-            component.input_topology,
-            component.output_topology,
-            component.output_dim,
-            False,
-            True,
-            "module",
-        )
+        capabilities = declared_preprocessor_capabilities(request.config)
         return PreprocessorBuildResult(module, capabilities, {})
 
     expected = "flat" if component.topology == "dense" else "spatial-2d"
@@ -123,14 +146,7 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
     diagnostics: dict[str, object] = {}
     if getattr(expander, "W_", None) is not None:
         diagnostics["ols_readout"] = expander.W_.detach().cpu().clone()
-    capabilities = PreprocessorCapabilities(
-        expected,
-        expected,
-        component.output_dim,
-        True,
-        True,
-        "lsm",
-    )
+    capabilities = declared_preprocessor_capabilities(request.config)
     return PreprocessorBuildResult(module, capabilities, diagnostics)
 
 
@@ -174,6 +190,7 @@ __all__ = [
     "PreprocessorBuildRequest",
     "PreprocessorBuildResult",
     "PreprocessorCapabilities",
+    "declared_preprocessor_capabilities",
     "prepare_preprocessor",
     "validate_preprocessor_capability",
 ]

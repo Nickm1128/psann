@@ -367,6 +367,73 @@ def normalize_preprocessor(value: PreprocessorLike) -> PreprocessorConfig | None
     return PreprocessorConfig(component=LSMConfig(**cast(Any, lsm_raw)), training=training)
 
 
+def normalize_legacy_lsm(
+    value: object,
+    *,
+    trainable: bool = False,
+    pretrain_epochs: int = 0,
+    training_lr: float | None = None,
+) -> PreprocessorConfig | None:
+    """Adapt lossless legacy mapping/spec inputs at the compatibility boundary.
+
+    Existing module and expander objects intentionally return ``None`` here: their
+    fitted graph is preserved by the retained module adapter rather than guessed
+    from mutable implementation attributes.
+    """
+
+    if value is None or isinstance(value, nn.Module):
+        return None
+    if isinstance(value, PreprocessorConfig):
+        return value
+    if hasattr(value, "name") and hasattr(value, "params"):
+        value = {
+            "name": getattr(value, "name"),
+            **dict(cast(Mapping[str, object], getattr(value, "params"))),
+        }
+    if not isinstance(value, Mapping):
+        return None
+    raw = dict(value)
+    tag = _name(raw.pop("type", raw.pop("name", raw.pop("kind", "lsm"))), "lsm.kind")
+    conv = bool(raw.pop("conv", False))
+    if tag in {"lsmconv2d", "lsmconv2dexpander"}:
+        conv = True
+    elif tag not in {"lsm", "lsmexpander"}:
+        raise ValueError(f"lsm.kind {tag!r} is unknown.")
+    aliases = {
+        "out_channels": "output_dim",
+        "hidden_width": "hidden_units",
+        "hidden_channels": "hidden_units",
+    }
+    if conv:
+        aliases["conv_channels"] = "hidden_units"
+    for old, new in aliases.items():
+        if old in raw:
+            if raw[old] is None:
+                raw.pop(old)
+                continue
+            if new in raw and raw[old] != raw[new]:
+                raise ValueError(f"lsm has conflicting keys {old!r} and {new!r}.")
+            raw[new] = raw.pop(old)
+    pretraining_raw = dict(cast(Mapping[str, object], raw.pop("pretraining", {})))
+    for field in fields(LSMPretrainingConfig):
+        if field.name in raw:
+            if field.name in pretraining_raw and raw[field.name] != pretraining_raw[field.name]:
+                raise ValueError(f"lsm has conflicting {field.name!r} pretraining values.")
+            pretraining_raw[field.name] = raw.pop(field.name)
+    if "epochs" not in pretraining_raw:
+        pretraining_raw["epochs"] = pretrain_epochs
+    lsm_names = {field.name for field in fields(LSMConfig)} - {"topology", "pretraining"}
+    unknown = set(raw) - lsm_names
+    if unknown:
+        raise ValueError(f"lsm.{min(unknown)} is unknown.")
+    raw["topology"] = "conv2d" if conv else "dense"
+    raw["pretraining"] = LSMPretrainingConfig(**cast(Any, pretraining_raw))
+    return PreprocessorConfig(
+        LSMConfig(**cast(Any, raw)),
+        PreprocessorTrainingConfig(trainable=trainable, lr=training_lr),
+    )
+
+
 def preprocessor_to_mapping(value: PreprocessorConfig) -> dict[str, object]:
     """Return a portable canonical mapping for an LSM component."""
 
@@ -405,5 +472,6 @@ __all__ = [
     "PreprocessorLike",
     "PreprocessorTrainingConfig",
     "normalize_preprocessor",
+    "normalize_legacy_lsm",
     "preprocessor_to_mapping",
 ]

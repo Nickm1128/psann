@@ -131,6 +131,7 @@ class LSMConv2dExpander(nn.Module):
         kernel_size: int = 1,
         sparsity: float = 0.8,
         nonlinearity: str = "sine",
+        bias: bool = True,
         epochs: int = 50,
         lr: float = 1e-3,
         ridge: float = 1e-4,
@@ -160,6 +161,7 @@ class LSMConv2dExpander(nn.Module):
         self.kernel_size = int(kernel_size)
         self.sparsity = sparsity
         self.nonlinearity = nonlinearity
+        self.bias = bool(bias)
         self.epochs = epochs
         self.lr = lr
         self.ridge = ridge
@@ -219,6 +221,7 @@ class LSMConv2dExpander(nn.Module):
             kernel_size=self.kernel_size,
             sparsity=self.sparsity,
             nonlinearity=self.nonlinearity,
+            bias=self.bias,
             random_state=self.random_state,
         ).to(device)
         opt = torch.optim.Adam(self.model.parameters(), lr=self.lr)

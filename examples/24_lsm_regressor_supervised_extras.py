@@ -1,12 +1,9 @@
-"""Joint PSANN + LSM supervised extras quickstart.
-
-This script shows how to attach an LSMExpander to a PSANNRegressor while
-training supervised extras alongside the primary regression target.
-"""
+"""Joint PSANN + LSM supervised extras quickstart using canonical preprocessing."""
 
 import numpy as np
 
-from psann import LSMExpander, PSANNRegressor
+from psann import PSANNRegressor
+from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
 
 def make_supervised_extras_data(n: int = 6000, seed: int = 0):
@@ -84,21 +81,19 @@ if __name__ == "__main__":
     print(f"Baseline primary RMSE: {base_primary_rmse:.4f}")
     print(f"Baseline extras RMSE:   {base_extras_rmse:.4f}")
 
-    print("\nPretraining LSM expander on inputs...")
-    lsm = LSMExpander(
-        output_dim=256,
-        hidden_layers=10,
-        hidden_width=256,
-        sparsity=0.9,
-        nonlinearity="sine",
-        epochs=60,
-        lr=1e-3,
-        ridge=1e-4,
-        random_state=0,
+    preprocessor = PreprocessorConfig(
+        LSMConfig.dense(
+            output_dim=256,
+            hidden_layers=10,
+            hidden_units=256,
+            sparsity=0.9,
+            nonlinearity="sine",
+            pretraining=LSMPretrainingConfig(epochs=60, lr=1e-3, ridge=1e-4),
+            random_state=0,
+        )
     )
-    lsm.fit(X_tr)
 
-    print("Training PSANN with frozen LSM features and supervised extras...")
+    print("Training PSANN with frozen LSM preprocessing and supervised extras...")
     with_lsm = PSANNRegressor(
         hidden_layers=2,
         hidden_width=64,
@@ -109,8 +104,7 @@ if __name__ == "__main__":
         early_stopping=True,
         patience=12,
         random_state=0,
-        lsm=lsm,
-        lsm_train=False,
+        preprocessor=preprocessor,
     )
     with_lsm.set_extras_warm_start_epochs(10, freeze_until_plateau=False)
     with_lsm.fit(

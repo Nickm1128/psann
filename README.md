@@ -454,7 +454,10 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 ## Core components
 
 - **Sine activations** (`psann.SineParam`) expose learnable amplitude, frequency, and decay with optional bounds and SIREN-friendly initialisation.
-- **LSM expanders** (`psann.LSM`, `psann.LSMExpander`, `psann.LSMConv2d`, `psann.LSMConv2dExpander`) provide sparse learned feature maps; `build_preprocessor` wires dict specs or modules into estimators with optional pretraining and separate learning rates.
+- **Preprocessing** (`psann.preprocessing`) provides immutable `PreprocessorConfig`,
+  `LSMConfig`, and `PreprocessorTrainingConfig` values for sparse learned feature maps,
+  reconstruction pretraining, and separate joint-training rates.  The low-level LSM
+  classes remain available for research, but new estimators use `preprocessor=`.
 - **State controllers** (`psann.StateController`) keep per-feature persistent gains for streaming/online workflows. Configurable via `StateConfig`.
 - **Shared fit helpers** (`psann.estimators._fit_utils`) normalise arguments, materialise scalers, route through residual and convolutional builders, and orchestrate HISSO plans.
 - **Wave backbones** (`psann.WaveResNet`, `psann.WaveEncoder`, `psann.WaveRNNCell`, `psann.scan_regimes`) surface the standalone components for experiments and spectral diagnostics outside the sklearn wrappers.

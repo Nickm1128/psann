@@ -8,10 +8,10 @@ import numpy as np
 
 from psann import (
     EpisodeConfig,
-    LSMExpander,
     PSANNRegressor,
     make_episode_trainer_from_estimator,
 )
+from psann.preprocessing import LSMConfig, PreprocessorConfig
 
 
 def make_prices(T=6000, seed=0):
@@ -44,9 +44,15 @@ if __name__ == "__main__":
     print("[Base] After:", tr_base.evaluate(X, n_batches=8))
 
     # LSM + PSANN
-    lsm = LSMExpander(output_dim=64, hidden_layers=2, hidden_width=64, sparsity=0.9, epochs=0)
+    preprocessor = PreprocessorConfig(
+        LSMConfig.dense(output_dim=64, hidden_layers=2, hidden_units=64, sparsity=0.9)
+    )
     with_lsm = PSANNRegressor(
-        hidden_layers=2, hidden_width=64, epochs=1, output_shape=(M,), lsm=lsm, lsm_train=False
+        hidden_layers=2,
+        hidden_width=64,
+        epochs=1,
+        output_shape=(M,),
+        preprocessor=preprocessor,
     )
     with_lsm.fit(X, y_dummy)
 

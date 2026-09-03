@@ -60,6 +60,51 @@ def test_schema_v1_round_trip_reconstructs_lsm_preprocessor(tmp_path):
     np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
 
 
+def test_schema_v1_legacy_lsm_mapping_migrates_to_v2(tmp_path):
+    """A schema-v1 mapping rebuilds its module before strict state loading."""
+
+    X = np.arange(24, dtype=np.float32).reshape(8, 3) / 10
+    y = X.mean(axis=1)
+    estimator = PSANNRegressor(
+        preprocessor={
+            "kind": "lsm",
+            "lsm": {
+                "topology": "dense",
+                "output_dim": 4,
+                "hidden_layers": 1,
+                "hidden_units": 5,
+                "random_state": 0,
+            },
+        },
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+    ).fit(X, y)
+    current = tmp_path / "current.pt"
+    legacy = tmp_path / "legacy-v1.pt"
+    migrated = tmp_path / "migrated.pt"
+    estimator.save(str(current))
+    payload = torch.load(current, weights_only=False)
+    payload["schema_version"] = 1
+    params = payload["estimator_params"]
+    params.pop("preprocessor")
+    params["lsm"] = {
+        "type": "lsmexpander",
+        "output_dim": 4,
+        "hidden_layers": 1,
+        "hidden_units": 5,
+        "random_state": 0,
+    }
+    payload["fitted"].pop("preprocessing")
+    torch.save(payload, legacy)
+    restored = PSANNRegressor.load(str(legacy), map_location="cpu")
+    restored.save(str(migrated))
+    assert torch.load(migrated, weights_only=False)["schema_version"] == 2
+    np.testing.assert_allclose(restored.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
+
+
 @pytest.mark.parametrize("lsm_train", [False, True])
 def test_schema_v1_round_trip_reconstructs_convolutional_lsm_preprocessor(tmp_path, lsm_train):
     X = np.ones((8, 1, 2, 2), dtype=np.float32)

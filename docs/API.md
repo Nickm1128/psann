@@ -17,7 +17,7 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `w0: float = 30.0` - SIREN-style initialisation scale.
 - `activation: ActivationConfig | None` - forwarded to `SineParam`.
 - `activation_type: str = "psann" | "relu" | "tanh" | "relu_sigmoid_psann"` - nonlinearity per block.
-- `attention: dict | AttentionConfig | None` - optional token attention module (e.g. `{"kind": "mha", "num_heads": 4}`) that activates when inputs are sequences shaped `(batch, timesteps, features)` or preserved spatial tensors. Flattened inputs currently require `lsm=None`, while preserve-shape paths (including `per_element=True`) treat each spatial location as a token. Defaults to `"none"` which preserves historical behaviour.
+- `attention: dict | AttentionConfig | None` - optional token attention module (e.g. `{"kind": "mha", "num_heads": 4}`). Canonical preprocessing for attention must be a typed custom `tokens→tokens` module; dense LSM preprocessing is rejected rather than ignored.
 
 **Training**
 - `epochs: int = 200`, `batch_size: int = 128`, `lr: float = 1e-3`.
@@ -48,10 +48,8 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `stream_lr: float | None` - learning rate for `step(..., update=True)` or teacher-forced streaming updates.
 
 **Preprocessors**
-- `lsm: dict | LSMExpander | LSMConv2dExpander | LSM | LSMConv2d | nn.Module | None` - attach a learned sparse expander or custom module.
-- `lsm_train: bool = False` - jointly train the attached expander (dense or convolutional) inside the estimator.
-- `lsm_pretrain_epochs: int = 0` - optional pretraining epochs for expanders when `allow_train=True`.
-- `lsm_lr: float | None` - separate learning rate for expander parameters.
+- `preprocessor: PreprocessorConfig | Mapping | None` - the canonical preprocessing boundary. Use `PreprocessorConfig(LSMConfig.dense(...))` for flat LSM input or `LSMConfig.convolutional(...)` for 2D spatial input. The training policy is explicit in `PreprocessorTrainingConfig(trainable=..., lr=...)`.
+- `lsm`, `lsm_train`, `lsm_pretrain_epochs`, and `lsm_lr` remain deprecated 0.x compatibility arguments. They emit one `DeprecationWarning`; do not combine them with `preprocessor`.
 - `scaler: str | object | None` - string alias (`"standard"`/`"minmax"`) or any transformer exposing `fit`/`transform`.
 - `scaler_params: dict | None` - keyword arguments forwarded to the built-in scalers.
 
@@ -145,7 +143,7 @@ deprecated compatibility wrapper.
 **Notes**
 - Expects `(N, T, F)` inputs (sequence length `T`, feature width `F`).
 - Does not support `preserve_shape=True` or `per_element=True`.
-- LSM preprocessors and stateful settings are ignored with warnings.
+- Canonical sequence preprocessing accepts only typed custom `tokens→tokens` modules. Legacy SGR LSM compatibility remains warned/ignored through 0.x.
 - Attention configs are ignored; the spectral gate operates on the inferred sequence axis.
 
 ## psann.SineParam
@@ -164,10 +162,24 @@ Forward applies `A * exp(-d * g(z)) * sin(f * z)` with broadcast parameters.
 
 ## LSM expanders and preprocessors
 
-- `LSM(...)` - Torch module that expands inputs with sparse random weights; callable from PyTorch graphs.
-- `LSMExpander(...)` - learns an OLS readout; exposes `fit/transform/fit_transform/score_reconstruction`, behaves like a standard `nn.Module` (`forward`, `to`, `train`, `eval`), and accepts either NumPy arrays or torch tensors (returning the same type).
-- `LSMConv2d(...)` / `LSMConv2dExpander(...)` - channel-preserving 2D equivalents for spatial data; the expander mirrors the dense API (tensor-aware transforms, module wrappers) and offers `score_reconstruction` for per-pixel diagnostics.
-- `build_preprocessor(value, *, allow_train=False, pretrain_epochs=0, data=None)` - normalises user input (dict/spec/module) into `(preprocessor_module, base_model)` tuples. Provides optional pretraining when `allow_train=True` and data is supplied.
+Use the canonical boundary for estimators:
+
+```python
+from psann import PSANNRegressor
+from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
+
+estimator = PSANNRegressor(
+    preprocessor=PreprocessorConfig(
+        LSMConfig.dense(output_dim=64, pretraining=LSMPretrainingConfig(epochs=5))
+    )
+)
+```
+
+`ModulePreprocessorConfig(module, input_topology, output_topology, output_dim)` is the
+typed route for custom modules. `LSM`, `LSMExpander`, `LSMConv2d`, and
+`LSMConv2dExpander` remain low-level research tools; import them from
+`psann.preprocessing` or top-level `psann`. `psann.lsm`, `psann.preproc`,
+`PreprocessorSpec`, and `build_preprocessor` are 0.x compatibility paths.
 
 ## Token and embedding helpers
 

@@ -27,6 +27,7 @@ import numpy as np
 from psann import PSANNRegressor
 from psann.hisso import hisso_infer_series
 from psann.metrics import portfolio_metrics
+from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
 
 def make_prices(T=8000, seed=0):
@@ -41,6 +42,27 @@ def eval_series_log_reward(alloc: np.ndarray, prices: np.ndarray, *, trans_cost:
     """Compute cumulative log return over a full series as a scalar score."""
     m = portfolio_metrics(alloc, prices, trans_cost=trans_cost)
     return float(m["log_return"])  # consistent scalar to compare
+
+
+def preprocessor_from_benchmark_config(lsm_cfg: Optional[dict]) -> PreprocessorConfig | None:
+    """Translate this benchmark's retained compact settings once at its boundary."""
+
+    if lsm_cfg is None:
+        return None
+    return PreprocessorConfig(
+        LSMConfig.dense(
+            output_dim=int(lsm_cfg["output_dim"]),
+            hidden_layers=int(lsm_cfg.get("hidden_layers", 2)),
+            hidden_units=int(lsm_cfg.get("hidden_units", lsm_cfg.get("hidden_width", 128))),
+            sparsity=float(lsm_cfg.get("sparsity", 0.8)),
+            nonlinearity=str(lsm_cfg.get("nonlinearity", "sine")),
+            pretraining=LSMPretrainingConfig(
+                epochs=int(lsm_cfg.get("epochs", 0)),
+                lr=float(lsm_cfg.get("lr", 1e-3)),
+                ridge=float(lsm_cfg.get("ridge", 1e-4)),
+            ),
+        )
+    )
 
 
 def run_config(
@@ -70,8 +92,7 @@ def run_config(
         epochs=int(epochs),
         lr=1e-3,
         random_state=int(seed),
-        lsm=(dict(lsm_cfg) if lsm_cfg is not None else None),
-        lsm_pretrain_epochs=int(lsm_cfg.get("epochs", 0) if isinstance(lsm_cfg, dict) else 0),
+        preprocessor=preprocessor_from_benchmark_config(lsm_cfg),
     )
 
     t0 = time.perf_counter()
@@ -140,7 +161,7 @@ def main():
     hidden_widths = [64]
     hisso_windows = [64]
     trans_cost = 1e-3
-    # LSM: none vs small expander (dict-based)
+    # LSM: none vs small canonical preprocessor configuration.
     lsm_options = [
         None,
         {

@@ -1,5 +1,25 @@
 # Deprecation and Alias Policy
 
+## Preprocessing boundary (0.x)
+
+New estimator code uses `preprocessor=PreprocessorConfig(...)` from
+`psann.preprocessing`. The following compatibility surfaces remain available for the
+rest of the 0.x line, emit `DeprecationWarning` at the user call site, and are planned
+for removal in the next major release:
+
+| Legacy surface | Canonical replacement |
+| --- | --- |
+| `lsm` | `PreprocessorConfig(component=...)` |
+| `lsm_train` | `PreprocessorTrainingConfig(trainable=...)` |
+| `lsm_pretrain_epochs` | `LSMPretrainingConfig(epochs=...)` |
+| `lsm_lr` | `PreprocessorTrainingConfig(lr=...)` |
+| `PreprocessorSpec` / `build_preprocessor` | `normalize_preprocessor()` and `preprocessor=` |
+| `psann.preproc` / `psann.lsm` | `psann.preprocessing` |
+
+Legacy mappings and existing LSM modules remain loadable for checkpoint migration.
+They are compatibility adapters, not canonical estimator parameters; do not combine
+them with `preprocessor=`.
+
 This document defines the canonical parameter names, the legacy aliases that still exist for compatibility, and the removal policy for those aliases.
 
 ## Canonical names

@@ -10,12 +10,14 @@ from .config import (
     PreprocessorLike,
     PreprocessorTrainingConfig,
     normalize_preprocessor,
+    normalize_legacy_lsm,
     preprocessor_to_mapping,
 )
 from .runtime import (
     PreprocessorBuildRequest,
     PreprocessorBuildResult,
     PreprocessorCapabilities,
+    declared_preprocessor_capabilities,
     prepare_preprocessor,
     validate_preprocessor_capability,
 )
@@ -32,9 +34,11 @@ __all__ = [
     "PreprocessorBuildRequest",
     "PreprocessorBuildResult",
     "PreprocessorCapabilities",
+    "declared_preprocessor_capabilities",
     "PreprocessorLike",
     "PreprocessorTrainingConfig",
     "normalize_preprocessor",
+    "normalize_legacy_lsm",
     "preprocessor_to_mapping",
     "prepare_preprocessor",
     "validate_preprocessor_capability",

@@ -70,6 +70,7 @@ class LSM(nn.Module):
         self.hidden_width = width
         self.sparsity = float(sparsity)
         self.nonlinearity = nonlinearity
+        self.bias = bool(bias)
 
         act = {"sine": torch.sin, "tanh": torch.tanh, "relu": F.relu}.get(nonlinearity)
         if act is None:
@@ -117,6 +118,7 @@ class LSMExpander(nn.Module):
         hidden_width: Optional[int] = 128,
         sparsity: float = 0.8,
         nonlinearity: str = "sine",
+        bias: bool = True,
         epochs: int = 100,
         lr: float = 1e-3,
         ridge: float = 1e-4,
@@ -152,6 +154,7 @@ class LSMExpander(nn.Module):
         self.hidden_width = width
         self.sparsity = sparsity
         self.nonlinearity = nonlinearity
+        self.bias = bool(bias)
         self.epochs = epochs
         self.lr = lr
         self.ridge = ridge
@@ -224,6 +227,7 @@ class LSMExpander(nn.Module):
             hidden_width=None,
             sparsity=self.sparsity,
             nonlinearity=self.nonlinearity,
+            bias=self.bias,
             random_state=self.random_state,
         ).to(device)
         opt = torch.optim.Adam(self.model.parameters(), lr=self.lr)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
+import warnings
 
 import numpy as np
 import torch
@@ -15,6 +16,13 @@ from .lsm import LSM, LSMConv2d, LSMConv2dExpander, LSMExpander
 class PreprocessorSpec:
     name: str
     params: Dict[str, Any]
+
+    def __post_init__(self) -> None:
+        warnings.warn(
+            "PreprocessorSpec is deprecated; use PreprocessorConfig from psann.preprocessing.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
 
 PreprocessorLike = Union[nn.Module, PreprocessorSpec, Mapping[str, Any]]
@@ -175,6 +183,11 @@ def build_preprocessor(
         Expanders are fitted in place when `allow_train` is true; provide data with the same shape you plan to
         feed into the estimator to avoid shape mismatches.
     """
+    warnings.warn(
+        "build_preprocessor is deprecated; use preprocessor=PreprocessorConfig(...).",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     resolved = _resolve_spec(value)
     if resolved is None:
         return None, None

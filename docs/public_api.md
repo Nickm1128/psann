@@ -22,6 +22,9 @@ These are the identifiers exported from `psann.__init__` and are safe to import 
 - `make_episode_trainer_from_estimator`
 
 ### Expanders and activation config
+- `PreprocessorConfig`, `LSMConfig`, `LSMPretrainingConfig`,
+  `PreprocessorTrainingConfig`, `ModulePreprocessorConfig` from
+  `psann.preprocessing` (also convenient top-level imports)
 - `LSM`, `LSMExpander`
 - `LSMConv2d`, `LSMConv2dExpander`
 - `SineParam`, `ActivationConfig`

@@ -55,7 +55,9 @@ from ..preprocessing import (
     PreprocessorConfig,
     PreprocessorLike,
     PreprocessorTrainingConfig,
+    declared_preprocessor_capabilities,
     normalize_preprocessor,
+    normalize_legacy_lsm,
     prepare_preprocessor,
     preprocessor_to_mapping,
     validate_preprocessor_capability,
@@ -426,11 +428,21 @@ class PSANNRegressor(_Phase2Regressor):
                 DeprecationWarning,
                 stacklevel=2,
             )
-        canonical_preprocessor = normalize_preprocessor(preprocessor)
         legacy_lsm = legacy_preprocessor.get("lsm")
         legacy_lsm_train = bool(legacy_preprocessor.get("lsm_train", False))
         legacy_lsm_epochs = int(legacy_preprocessor.get("lsm_pretrain_epochs", 0))
         legacy_lsm_lr = legacy_preprocessor.get("lsm_lr")
+        canonical_preprocessor = normalize_preprocessor(preprocessor)
+        if canonical_preprocessor is None and "lsm" in legacy_preprocessor:
+            adapted = normalize_legacy_lsm(
+                legacy_lsm,
+                trainable=legacy_lsm_train,
+                pretrain_epochs=legacy_lsm_epochs,
+                training_lr=cast(float | None, legacy_lsm_lr),
+            )
+            if adapted is not None:
+                canonical_preprocessor = adapted
+                legacy_lsm = None
         flat_supplied = {
             name: value
             for name, value in {
@@ -791,10 +803,10 @@ class PSANNRegressor(_Phase2Regressor):
             bool(self.per_element),
             self._device(),
             torch.float32,
-            self._prepared_preprocessor_,
+            getattr(self, "_prepared_preprocessor_", None),
             (
-                self.preprocessor_capabilities_.output_dim
-                if self.preprocessor_capabilities_ is not None
+                getattr(self, "preprocessor_capabilities_", None).output_dim
+                if getattr(self, "preprocessor_capabilities_", None) is not None
                 else None
             ),
             getattr(self, "_architecture_structure_", None),
@@ -820,7 +832,9 @@ class PSANNRegressor(_Phase2Regressor):
             # Return that core here so those hooks create exactly one runtime
             # ``WithPreprocessor`` rather than nesting two identical wrappers.
             if not isinstance(result.model, WithPreprocessor):
-                raise RuntimeError("architecture builder did not compose the requested preprocessor.")
+                raise RuntimeError(
+                    "architecture builder did not compose the requested preprocessor."
+                )
             return result.model.core
         return result.model
 
@@ -845,6 +859,18 @@ class PSANNRegressor(_Phase2Regressor):
         if input_topology is None:
             raise ValueError("preprocessor input must have a supported batch topology.")
         spatial_ndim = array.ndim - 2 if input_topology.startswith("spatial-") else None
+        declared = declared_preprocessor_capabilities(self.preprocessor)
+        geometry_size = None
+        if self.architecture.geometry is not None and self.architecture.geometry.shape is not None:
+            geometry_size = int(np.prod(self.architecture.geometry.shape))
+        validate_preprocessor_capability(
+            architecture_kind=self.architecture.kind,
+            attention=self.architecture.attention is not None,
+            convolutional=self.architecture.convolution is not None,
+            spatial_ndim=spatial_ndim,
+            capabilities=declared,
+            geometry_size=geometry_size,
+        )
         result = prepare_preprocessor(
             PreprocessorBuildRequest(
                 self.preprocessor,
@@ -854,17 +880,6 @@ class PSANNRegressor(_Phase2Regressor):
                 self._device(),
                 torch.float32,
             )
-        )
-        geometry_size = None
-        if self.architecture.geometry is not None and self.architecture.geometry.shape is not None:
-            geometry_size = int(np.prod(self.architecture.geometry.shape))
-        validate_preprocessor_capability(
-            architecture_kind=self.architecture.kind,
-            attention=self.architecture.attention is not None,
-            convolutional=self.architecture.convolution is not None,
-            spatial_ndim=spatial_ndim,
-            capabilities=result.capabilities,
-            geometry_size=geometry_size,
         )
         for parameter in result.module.parameters():
             parameter.requires_grad = self.preprocessor.training.trainable
@@ -1267,9 +1282,7 @@ class PSANNRegressor(_Phase2Regressor):
             # prepared module as a module-boundary artifact so that a new v2
             # save does not discard its graph structure or fitted weights.
             input_topology = (
-                "spatial-2d"
-                if hasattr(attached_preprocessor, "out_channels")
-                else "flat"
+                "spatial-2d" if hasattr(attached_preprocessor, "out_channels") else "flat"
             )
             output_dim = int(
                 getattr(
@@ -1344,19 +1357,25 @@ class PSANNRegressor(_Phase2Regressor):
         structure = dict(getattr(self, "_architecture_structure_", {}) or {})
         if self._architecture_lifecycle_:
             structure.update(self._architecture_lifecycle_.structure_metadata())
-        torch.save(
-            {
-                "schema": "psann.regressor",
-                "schema_version": 2,
-                "package_version": "0.12.4",
-                "estimator_params": params,
-                "fitted": fitted,
-                "structure": structure,
-                "model_state_dict": state_dict,
-                "artifacts": artifacts,
-            },
-            path,
-        )
+        payload = {
+            "schema": "psann.regressor",
+            "schema_version": 2,
+            "package_version": "0.12.4",
+            "estimator_params": params,
+            "fitted": fitted,
+            "structure": structure,
+            "model_state_dict": state_dict,
+            "artifacts": artifacts,
+        }
+        try:
+            torch.save(payload, path)
+        except (AttributeError, TypeError) as exc:
+            if "preprocessor_module" in artifacts:
+                raise TypeError(
+                    "Schema-v2 artifacts.preprocessor_module could not be serialized; "
+                    "use an importable torch.nn.Module class."
+                ) from exc
+            raise
 
     @classmethod
     def load(
@@ -1731,12 +1750,14 @@ class PSANNRegressor(_Phase2Regressor):
             raise ValueError("Schema-v1 checkpoint is missing fitted input/output metadata.")
         state_dict = payload["model_state_dict"]
         has_preprocessor = state_dict and any(str(key).startswith("preproc.") for key in state_dict)
-        if version == 2 and estimator.preprocessor is not None:
+        if estimator.preprocessor is not None:
             preprocessing = fitted.get("preprocessing")
-            if not isinstance(preprocessing, Mapping):
+            if version == 2 and not isinstance(preprocessing, Mapping):
                 raise ValueError("Schema-v2 checkpoint is missing fitted.preprocessing metadata.")
+            if not isinstance(preprocessing, Mapping):
+                preprocessing = {}
             expected_output = preprocessing.get("output_dim")
-            if expected_output != estimator.preprocessor.component.output_dim:
+            if version == 2 and expected_output != estimator.preprocessor.component.output_dim:
                 raise ValueError(
                     "Schema-v2 fitted.preprocessing.output_dim conflicts with preprocessor."
                 )

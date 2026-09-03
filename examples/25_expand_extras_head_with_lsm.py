@@ -2,7 +2,8 @@
 
 import numpy as np
 
-from psann import LSMExpander, PSANNRegressor, expand_extras_head
+from psann import PSANNRegressor, expand_extras_head
+from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
 
 def make_dataset(n: int = 6000, seed: int = 0):
@@ -48,19 +49,17 @@ if __name__ == "__main__":
     X, y, extras = make_dataset()
     (X_tr, y_tr, e_tr), (X_va, y_va, e_va), (X_te, y_te, e_te) = split(X, y, extras)
 
-    print("Pretraining LSM expander on inputs...")
-    lsm = LSMExpander(
-        output_dim=256,
-        hidden_layers=10,
-        hidden_width=256,
-        sparsity=0.9,
-        nonlinearity="sine",
-        epochs=60,
-        lr=1e-3,
-        ridge=1e-4,
-        random_state=0,
+    preprocessor = PreprocessorConfig(
+        LSMConfig.dense(
+            output_dim=256,
+            hidden_layers=10,
+            hidden_units=256,
+            sparsity=0.9,
+            nonlinearity="sine",
+            pretraining=LSMPretrainingConfig(epochs=60, lr=1e-3, ridge=1e-4),
+            random_state=0,
+        )
     )
-    lsm.fit(X_tr)
 
     print("Fitting base PSANN on primary target only...")
     base = PSANNRegressor(
@@ -73,8 +72,7 @@ if __name__ == "__main__":
         early_stopping=True,
         patience=12,
         random_state=0,
-        lsm=lsm,
-        lsm_train=False,
+        preprocessor=preprocessor,
     )
     base.fit(
         X_tr,
