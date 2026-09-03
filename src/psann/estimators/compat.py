@@ -133,11 +133,12 @@ class _LegacyFacade(PSANNRegressor):
         for name, parameter in signature(self._signature_source.__init__).parameters.items():
             if name == "self" or parameter.kind.name in {"VAR_KEYWORD", "VAR_POSITIONAL"}:
                 continue
-            value = getattr(self, name, supplied.get(name, parameter.default))
+            value = supplied.get(name, parameter.default)
             values[name] = value
             # These compatibility attributes intentionally retain their original
             # objects; sklearn.clone verifies constructor identity.
-            setattr(self, name, value)
+            if not hasattr(self, name):
+                setattr(self, name, value)
         self._legacy_params_ = values
 
     def get_params(self, deep: bool = True) -> dict[str, object]:
@@ -289,7 +290,7 @@ class WaveResNetRegressor(_LegacyFacade):
             context_params = kwargs.pop("context_builder_params", None)
             context = (
                 None
-                if context_dim is None and context_builder is None and "context_dim" not in supplied
+                if context_dim is None and context_builder is None
                 else ContextConfig(
                     context_dim,
                     context_builder,
@@ -335,6 +336,7 @@ class WaveResNetRegressor(_LegacyFacade):
             )
         kwargs.setdefault("hidden_layers", 6)
         super().__init__(architecture=architecture, **_common(kwargs))
+        self._legacy_context_requested_ = "context_dim" in supplied
         if self.architecture.convolution is not None and self.lsm is not None:
             raise ValueError(
                 "WaveResNetRegressor does not support lsm preprocessors when preserve_shape=True."

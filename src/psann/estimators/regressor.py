@@ -23,6 +23,7 @@ from ..architectures import (
     ArchitectureLike,
     AttentionConfig,
     ConvolutionConfig,
+    ContextConfig,
     GeometryConfig,
     ResidualConfig,
     SequenceConfig,
@@ -524,10 +525,18 @@ class PSANNRegressor(_Phase2Regressor):
             raise ValueError(
                 "WaveResNetRegressor does not support LSM preprocessors for preserve_shape inputs."
             )
-        if self.architecture.kind == "wave" and self.architecture.context is not None:
+        if self.architecture.kind == "wave" and (
+            self.architecture.context is not None
+            or getattr(self, "_legacy_context_requested_", False)
+        ):
             context = kwargs.get("context")
             policy = self.architecture.context
-            if context is None and policy.builder is None:
+            if policy is None and context is not None:
+                array = np.asarray(context)
+                dim = int(array.reshape(array.shape[0], -1).shape[1]) if array.ndim > 1 else 1
+                policy = ContextConfig(dim=dim)
+                self.architecture = replace(self.architecture, context=policy)
+            if context is None and (policy is None or policy.builder is None):
                 raise ValueError(
                     f"WaveResNetRegressor expects a context array matching context_dim={policy.dim}; received context=None."
                 )
