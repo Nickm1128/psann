@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Any, Mapping, cast
 
 import numpy as np
 import torch
@@ -72,9 +72,9 @@ def declared_preprocessor_capabilities(config: PreprocessorConfig) -> Preprocess
     )
 
 
-def _lsm_expander(config: LSMConfig, device: torch.device) -> nn.Module:
+def _lsm_expander(config: LSMConfig, device: torch.device) -> LSMExpander | LSMConv2dExpander:
     training = config.pretraining
-    common = {
+    common: dict[str, Any] = {
         "hidden_layers": config.hidden_layers,
         "sparsity": config.sparsity,
         "nonlinearity": config.nonlinearity,
@@ -108,14 +108,14 @@ def _lsm_expander(config: LSMConfig, device: torch.device) -> nn.Module:
             val_split=training.val_split,
             verbose=training.verbose if training.verbose is not None else 0,
             objective=training.objective if training.objective is not None else "r2",
-            **common,
+            **cast(Any, common),
         )
     return LSMConv2dExpander(
         config.output_dim,
         conv_channels=config.hidden_units,
         hidden_channels=None,
         kernel_size=config.kernel_size or 1,
-        **common,
+        **cast(Any, common),
     )
 
 
@@ -139,13 +139,14 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
         request.data,
         epochs=0 if request.reconstruction_only else component.pretraining.epochs,
     )
-    module = expander.model
+    module = cast(Any, expander).model
     if not isinstance(module, (LSM, LSMConv2d)):
         raise RuntimeError("preprocessor component did not create a graph module.")
     module = module.to(device=request.device, dtype=request.dtype)
     diagnostics: dict[str, object] = {}
-    if getattr(expander, "W_", None) is not None:
-        diagnostics["ols_readout"] = expander.W_.detach().cpu().clone()
+    readout = getattr(cast(Any, expander), "W_", None)
+    if isinstance(readout, torch.Tensor):
+        diagnostics["ols_readout"] = readout.detach().cpu().clone()
     capabilities = declared_preprocessor_capabilities(request.config)
     return PreprocessorBuildResult(module, capabilities, diagnostics)
 

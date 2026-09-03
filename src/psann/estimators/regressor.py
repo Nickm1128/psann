@@ -52,6 +52,7 @@ from ..nn import WithPreprocessor
 from ..preprocessing import (
     ModulePreprocessorConfig,
     PreprocessorBuildRequest,
+    PreprocessorCapabilities,
     PreprocessorConfig,
     PreprocessorLike,
     PreprocessorTrainingConfig,
@@ -430,7 +431,7 @@ class PSANNRegressor(_Phase2Regressor):
             )
         legacy_lsm = legacy_preprocessor.get("lsm")
         legacy_lsm_train = bool(legacy_preprocessor.get("lsm_train", False))
-        legacy_lsm_epochs = int(legacy_preprocessor.get("lsm_pretrain_epochs", 0))
+        legacy_lsm_epochs = int(cast(int, legacy_preprocessor.get("lsm_pretrain_epochs", 0)))
         legacy_lsm_lr = legacy_preprocessor.get("lsm_lr")
         canonical_preprocessor = normalize_preprocessor(preprocessor)
         if canonical_preprocessor is None and "lsm" in legacy_preprocessor:
@@ -764,8 +765,8 @@ class PSANNRegressor(_Phase2Regressor):
         self._architecture_lifecycle_: Any = None
         self._architecture_structure_: dict[str, object] | None = None
         self._prepared_preprocessor_: nn.Module | None = None
-        self.preprocessor_ = None
-        self.preprocessor_capabilities_ = None
+        self.preprocessor_: nn.Module | None = None
+        self.preprocessor_capabilities_: PreprocessorCapabilities | None = None
         self.preprocessor_diagnostics_: dict[str, object] | None = None
 
     def _request(
@@ -788,6 +789,7 @@ class PSANNRegressor(_Phase2Regressor):
             if self.architecture.kind == "sequence" and input_shape
             else int(input_dim)
         )
+        capabilities = getattr(self, "preprocessor_capabilities_", None)
         return ArchitectureBuildRequest(
             self.architecture,
             self.hidden_layers,
@@ -804,11 +806,7 @@ class PSANNRegressor(_Phase2Regressor):
             self._device(),
             torch.float32,
             getattr(self, "_prepared_preprocessor_", None),
-            (
-                getattr(self, "preprocessor_capabilities_", None).output_dim
-                if getattr(self, "preprocessor_capabilities_", None) is not None
-                else None
-            ),
+            capabilities.output_dim if capabilities is not None else None,
             getattr(self, "_architecture_structure_", None),
             self.w0,
         )
