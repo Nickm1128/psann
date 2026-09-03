@@ -1334,12 +1334,13 @@ class PSANNRegressor(_Phase2Regressor):
                 self, "_legacy_flattened_preserve_shape_", False
             ),
         }
-        if self.preprocessor_capabilities_ is not None:
+        capabilities = getattr(self, "preprocessor_capabilities_", None)
+        if capabilities is not None:
             fitted["preprocessing"] = {
-                "input_topology": self.preprocessor_capabilities_.input_topology,
-                "output_topology": self.preprocessor_capabilities_.output_topology,
-                "output_dim": self.preprocessor_capabilities_.output_dim,
-                "diagnostics": self.preprocessor_diagnostics_ or {},
+                "input_topology": capabilities.input_topology,
+                "output_topology": capabilities.output_topology,
+                "output_dim": capabilities.output_dim,
+                "diagnostics": getattr(self, "preprocessor_diagnostics_", None) or {},
             }
         elif attached_preprocessor is not None:
             metadata = cast(Mapping[str, object], params["preprocessor"])
