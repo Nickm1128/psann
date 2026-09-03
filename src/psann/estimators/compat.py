@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from inspect import signature
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from ..architectures import (
     ActivationConfig,
@@ -219,7 +219,7 @@ class _LegacyFacade(PSANNRegressor):
                 f"Invalid parameter {sorted(unknown)[0]!r} for {self.__class__.__name__}."
             )
         candidate.update(params)
-        rebuilt = self.__class__(**candidate)
+        rebuilt = cast(Any, self.__class__)(**candidate)
         self.__dict__.clear()
         self.__dict__.update(rebuilt.__dict__)
         return self
@@ -561,7 +561,7 @@ class SGRPSANNRegressor(_LegacyFacade):
                 RuntimeWarning,
                 stacklevel=2,
             )
-            self.lsm = None
+            self.lsm = cast(Any, None)
 
 
 class GeoSparseRegressor(_LegacyFacade):
@@ -644,4 +644,8 @@ for _facade in (
     SGRPSANNRegressor,
     GeoSparseRegressor,
 ):
-    _facade.__init__.__signature__ = signature(_facade._signature_source.__init__)
+    setattr(
+        cast(Any, _facade.__init__),
+        "__signature__",
+        signature(_facade._signature_source.__init__),
+    )

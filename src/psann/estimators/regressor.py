@@ -11,7 +11,7 @@ import warnings
 from copy import deepcopy
 from dataclasses import fields, replace
 from inspect import Parameter, Signature, signature
-from typing import Any, Mapping, Optional, Tuple, Union
+from typing import Any, Mapping, Optional, Tuple, Union, cast
 
 import numpy as np
 import torch
@@ -405,7 +405,7 @@ class PSANNRegressor(_Phase2Regressor):
             lr=lr,
             optimizer=optimizer,
             weight_decay=weight_decay,
-            activation=_activation_mapping(canonical),
+            activation=_activation_mapping(canonical),  # type: ignore[arg-type]
             device=device,
             random_state=random_state,
             early_stopping=early_stopping,
@@ -427,7 +427,7 @@ class PSANNRegressor(_Phase2Regressor):
             state_reset=canonical.state.reset if canonical.state else state_reset,
             stream_lr=canonical.state.stream_lr if canonical.state else stream_lr,
             output_shape=output_shape,
-            lsm=lsm,
+            lsm=lsm,  # type: ignore[arg-type]
             lsm_train=lsm_train,
             lsm_pretrain_epochs=lsm_pretrain_epochs,
             lsm_lr=lsm_lr,
@@ -443,11 +443,13 @@ class PSANNRegressor(_Phase2Regressor):
             compile_mode=compile_mode,
             compile_fullgraph=compile_fullgraph,
             compile_dynamic=compile_dynamic,
-            context_builder=canonical.context.builder if canonical.context else context_builder,
+            context_builder=cast(
+                Any, canonical.context.builder if canonical.context else context_builder
+            ),
             context_builder_params=(
                 dict(canonical.context.builder_params)
                 if canonical.context and canonical.context.builder_params
-                else context_builder_params
+                else context_builder_params  # type: ignore[arg-type]
             ),
         )
         self.architecture = canonical
@@ -461,8 +463,8 @@ class PSANNRegressor(_Phase2Regressor):
         self._legacy_flattened_preserve_shape_ = bool(
             legacy_flat_adapter and canonical.convolution is not None and not per_element
         )
-        self._architecture_capabilities_ = None
-        self._architecture_lifecycle_ = None
+        self._architecture_capabilities_: Any = None
+        self._architecture_lifecycle_: Any = None
         self._architecture_structure_ = None
 
     def _request(
@@ -567,6 +569,7 @@ class PSANNRegressor(_Phase2Regressor):
                 dim = int(array.reshape(array.shape[0], -1).shape[1]) if array.ndim > 1 else 1
                 policy = ContextConfig(dim=dim)
                 self.architecture = replace(self.architecture, context=policy)
+            assert policy is not None
             if context is None and (policy is None or policy.builder is None):
                 raise ValueError(
                     f"WaveResNetRegressor expects a context array matching context_dim={policy.dim}; received context=None."
@@ -581,7 +584,7 @@ class PSANNRegressor(_Phase2Regressor):
                     inferred = np.asarray(builder(np.asarray(X, dtype=np.float32)))
                     dim = int(inferred.reshape(inferred.shape[0], -1).shape[1])
                     self.architecture = replace(self.architecture, context=replace(policy, dim=dim))
-        return super().fit(X, y, *args, **kwargs)
+        return super().fit(X, y, *args, **kwargs)  # type: ignore[arg-type]
 
     def _build_conv_core(
         self,
@@ -722,13 +725,13 @@ class PSANNRegressor(_Phase2Regressor):
         # context builder is fit plumbing retained until Phase 4; it is not a
         # dense-architecture policy.
         original = dict(params)
-        normalised = self._normalize_param_aliases(dict(params))
+        normalised: dict[str, Any] = self._normalize_param_aliases(dict(params))
         reset_context_builder = (
             "context_builder" in normalised or "context_builder_params" in normalised
         )
         if "context_builder_params" in normalised:
             constructor_value = original.get("context_builder_params")
-            self._context_builder_params_constructor_ = constructor_value
+            self._context_builder_params_constructor_ = cast(Any, constructor_value)
             normalised["context_builder_params"] = deepcopy(
                 {} if constructor_value is None else constructor_value
             )
@@ -739,17 +742,17 @@ class PSANNRegressor(_Phase2Regressor):
             )
         candidate = self.architecture
         if "architecture" in params:
-            candidate = normalize_architecture(params.pop("architecture"))
+            candidate = normalize_architecture(cast(ArchitectureLike, params.pop("architecture")))
         for key in list(params):
             if key.startswith("architecture__"):
                 candidate = replace_architecture_path(
                     candidate,
                     key,
                     params.pop(key),
-                    hidden_layers=int(params.get("hidden_layers", self.hidden_layers)),
+                    hidden_layers=int(cast(Any, params.get("hidden_layers", self.hidden_layers))),
                 )
         validate_architecture(
-            candidate, hidden_layers=int(params.get("hidden_layers", self.hidden_layers))
+            candidate, hidden_layers=int(cast(Any, params.get("hidden_layers", self.hidden_layers)))
         )
         valid = set(self.get_params(deep=False)) | {
             "conv_channels",
@@ -778,9 +781,9 @@ class PSANNRegressor(_Phase2Regressor):
                 self.data_format = conv.data_format
                 self.conv_kernel_size = conv.kernel_size
                 self.conv_channels = conv.channels or self.hidden_units
-            self.activation = _activation_mapping(candidate)
+            self.activation = cast(Any, _activation_mapping(candidate))
             self.activation_type = candidate.activation.kind
-            self.attention = _legacy_attention(candidate)
+            self.attention = cast(Any, _legacy_attention(candidate))
             self.state = _legacy_state(candidate)
             self.stateful = candidate.state is not None
             self._clear_architecture_runtime()
@@ -880,11 +883,11 @@ class PSANNRegressor(_Phase2Regressor):
                 "GeoSparseRegressor": LegacyGeo,
             }
             old_name = payload.get("class")
-            reader = old_classes.get(old_name)
+            reader: Any = old_classes.get(old_name)
             if reader is None:
                 raise ValueError(f"Unsupported unversioned estimator class {old_name!r}.")
             legacy = reader.load(path, map_location=map_location)
-            activation = normalize_architecture("dense").activation
+            activation: Any = normalize_architecture("dense").activation
             raw_activation = getattr(legacy, "activation", None)
             if isinstance(raw_activation, Mapping):
                 activation = __import__(
@@ -1017,13 +1020,13 @@ class PSANNRegressor(_Phase2Regressor):
         if "architecture" not in raw_params:
             raise ValueError("Schema-v1 checkpoint is missing estimator_params.architecture.")
         estimator = cls(**raw_params)
-        fitted = dict(payload.get("fitted", {}))
+        fitted: dict[str, Any] = dict(payload.get("fitted", {}))
         estimator._legacy_flattened_preserve_shape_ = bool(
             fitted.get("legacy_flattened_preserve_shape", False)
         )
         if estimator._legacy_flattened_preserve_shape_:
             estimator._use_channel_first_train_inputs_ = False
-        estimator._architecture_structure_ = payload.get("structure") or {}
+        estimator._architecture_structure_ = cast(Any, payload.get("structure") or {})
         input_shape = tuple(fitted.get("input_shape") or ())
         output_dim = fitted.get("output_dim")
         primary_dim = fitted.get("primary_dim")
@@ -1105,7 +1108,11 @@ __all__ = ["PSANNRegressor"]
 # canonical constructor and therefore agrees with ``get_params(deep=False)``.
 _CANONICAL_PARAM_NAMES = tuple(PSANNRegressor().get_params(deep=False))
 _IMPLEMENTATION_SIGNATURE = signature(PSANNRegressor.__init__)
-PSANNRegressor.__init__.__signature__ = Signature(
-    [Parameter("self", Parameter.POSITIONAL_OR_KEYWORD)]
-    + [_IMPLEMENTATION_SIGNATURE.parameters[name] for name in _CANONICAL_PARAM_NAMES]
+setattr(
+    PSANNRegressor.__init__,
+    "__signature__",
+    Signature(
+        [Parameter("self", Parameter.POSITIONAL_OR_KEYWORD)]
+        + [_IMPLEMENTATION_SIGNATURE.parameters[name] for name in _CANONICAL_PARAM_NAMES]
+    ),
 )

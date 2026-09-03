@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Callable, Mapping
+from typing import Any, Callable, Mapping, cast
 
 import torch
 import torch.nn as nn
@@ -321,7 +321,7 @@ def _convolution_builder(request: ArchitectureBuildRequest) -> ArchitectureBuild
             raise ValueError("attention requires known spatial dimensions.")
         core = _AttentionConvModel(
             core,
-            build_attention_module(attention, embed_dim),
+            cast(nn.Module, build_attention_module(attention, embed_dim)),
             spatial_shape=request.spatial_shape,
             segmentation_head=request.per_element,
         )
@@ -354,17 +354,20 @@ class WaveLifecycle(ArchitectureLifecycle):
         self.hidden_layers = hidden_layers
         saved = dict(structure or {})
         self.current_depth = int(
-            saved.get(
-                "current_depth",
-                (
-                    config.wave.progressive_depth.initial_layers
-                    if config.wave and config.wave.progressive_depth
-                    else hidden_layers
+            cast(
+                Any,
+                saved.get(
+                    "current_depth",
+                    (
+                        config.wave.progressive_depth.initial_layers
+                        if config.wave and config.wave.progressive_depth
+                        else hidden_layers
+                    ),
                 ),
             )
         )
         self.next_expand_epoch = saved.get("next_expand_epoch")
-        self.warmup_step = int(saved.get("warmup_step", 0))
+        self.warmup_step = int(cast(Any, saved.get("warmup_step", 0)))
         self.warmup_active = bool(
             saved.get("warmup_active", bool(config.wave and config.wave.warmup))
         )
@@ -380,12 +383,13 @@ class WaveLifecycle(ArchitectureLifecycle):
         if wave is None or wave.warmup is None:
             return
         ratio = min(1.0, step / max(1, wave.warmup.epochs))
-        if hasattr(model, "stem_w0"):
-            model.stem_w0 = wave.warmup.first_initial + ratio * (
+        mutable_model = cast(Any, model)
+        if hasattr(mutable_model, "stem_w0"):
+            mutable_model.stem_w0 = wave.warmup.first_initial + ratio * (
                 wave.first_w0 - wave.warmup.first_initial
             )
-        if hasattr(model, "blocks"):
-            for block in model.blocks:
+        if hasattr(mutable_model, "blocks"):
+            for block in mutable_model.blocks:
                 if hasattr(block, "w0"):
                     block.w0 = wave.warmup.hidden_initial + ratio * (
                         wave.hidden_w0 - wave.warmup.hidden_initial
@@ -419,7 +423,7 @@ class WaveLifecycle(ArchitectureLifecycle):
         ):
             add = min(progressive.growth, self.hidden_layers - self.current_depth)
             if hasattr(model, "add_blocks"):
-                blocks = model.add_blocks(add)
+                blocks = cast(Any, model).add_blocks(add)
                 if blocks:
                     optimizer.add_param_group(
                         {"params": [param for block in blocks for param in block.parameters()]}
@@ -449,7 +453,7 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
     first_w0 = wave.warmup.first_initial if wave.warmup else wave.first_w0
     hidden_w0 = wave.warmup.hidden_initial if wave.warmup else wave.hidden_w0
     if cfg.convolution is None:
-        core: nn.Module = WaveResNet(
+        core: Any = WaveResNet(
             request.preprocessor_output_dim or request.input_dim,
             request.hidden_units,
             initial_depth,
@@ -457,12 +461,12 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
             first_layer_w0=first_w0,
             hidden_w0=hidden_w0,
             context_dim=context.dim if context else None,
-            norm=wave.norm,
+            norm=cast(Any, wave.norm),
             use_film=context.film if context else True,
             use_phase_shift=context.phase_shift if context else True,
             dropout=wave.dropout,
             residual_alpha_init=cfg.residual.alpha_init,
-            activation_config=activation,
+            activation_config=cast(Any, activation),
         )
         if cfg.spectral is not None and len(request.input_shape) >= 2:
             token_dim = request.input_shape[-1]
@@ -519,12 +523,12 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
             first_layer_w0=first_w0,
             hidden_w0=hidden_w0,
             context_dim=context.dim if context else None,
-            norm=wave.norm,
+            norm=cast(Any, wave.norm),
             use_film=context.film if context else True,
             use_phase_shift=context.phase_shift if context else True,
             dropout=wave.dropout,
             residual_alpha_init=cfg.residual.alpha_init,
-            activation_config=activation,
+            activation_config=cast(Any, activation),
         )
         attention = _legacy_attention(cfg)
         attn_module = build_attention_module(attention, embed_dim) if attention else None

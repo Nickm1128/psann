@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Optional, Tuple, cast
 
 import numpy as np
 import torch
@@ -206,7 +206,7 @@ def _prepare_noise_tensor(
             )
         internal_shape = prepared.internal_shape_cf
         if np.isscalar(noisy):
-            std = np.full((1, *internal_shape), float(noisy), dtype=np.float32)
+            std = np.full((1, *internal_shape), float(cast(Any, noisy)), dtype=np.float32)
         else:
             arr = np.asarray(noisy, dtype=np.float32)
             if tuple(arr.shape) == internal_shape:
@@ -229,7 +229,7 @@ def _prepare_noise_tensor(
 
     n_features = int(np.prod(estimator.input_shape_))
     if np.isscalar(noisy):
-        std = np.full((1, n_features), float(noisy), dtype=np.float32)
+        std = np.full((1, n_features), float(cast(Any, noisy)), dtype=np.float32)
     else:
         arr = np.asarray(noisy, dtype=np.float32)
         if arr.ndim == 1 and arr.size == n_features:

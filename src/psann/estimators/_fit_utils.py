@@ -111,6 +111,7 @@ def maybe_run_hisso(
 ) -> Optional[HISSOTrainer]:
     if not hooks.wants_hisso():
         return None
+    assert hooks.build_hisso_plan is not None
     plan = hooks.build_hisso_plan(
         request.estimator,
         request,

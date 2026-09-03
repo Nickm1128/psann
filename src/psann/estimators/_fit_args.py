@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import numpy as np
 
@@ -78,7 +78,7 @@ def normalise_fit_args(
     noise_cfg: Optional[NoiseSpec] = None
     if noisy is not None:
         if np.isscalar(noisy):
-            noise_cfg = float(noisy)
+            noise_cfg = float(cast(Any, noisy))
         else:
             noise_cfg = np.asarray(noisy, dtype=np.float32)
 
