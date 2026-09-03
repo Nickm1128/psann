@@ -3,7 +3,54 @@ from __future__ import annotations
 
 from .data import resolve_geo_shape
 from .shared import *
-from psann.architectures import ActivationConfig, ArchitectureConfig, GeometryConfig
+from psann.architectures import (
+    ActivationConfig,
+    ArchitectureConfig,
+    GeometryConfig,
+    normalize_activation_config,
+)
+
+
+def _normalize_geo_activation(
+    activation_type: str, activation_config: Optional[Dict[str, Any]]
+) -> ActivationConfig:
+    """Apply the shared immutable activation normalizer to benchmark JSON."""
+
+    values = dict(activation_config or {})
+    if "kind" in values:
+        requested = normalize_activation_config({"kind": activation_type}).kind
+        configured = normalize_activation_config({"kind": values["kind"]}).kind
+        if requested != configured:
+            raise ValueError("activation_type conflicts with activation_config.kind.")
+    else:
+        values["kind"] = activation_type
+    return normalize_activation_config(values)
+
+
+def _geo_activation_kwargs(activation: ActivationConfig) -> Dict[str, Any]:
+    return {
+        "amplitude_init": activation.amplitude_init,
+        "frequency_init": activation.frequency_init,
+        "decay_init": activation.decay_init,
+        "learnable": activation.learnable,
+        "decay_mode": activation.decay_mode,
+        "bounds": dict(activation.bounds) if activation.bounds else None,
+        "slope_init": activation.slope_init,
+        "slope_trainable": activation.slope_trainable,
+        "clip_max": activation.clip_max,
+        "activation_types": (
+            tuple(item.replace("-", "_") for item in activation.activation_types)
+            if activation.activation_types is not None
+            else None
+        ),
+        "activation_ratios": activation.activation_ratios,
+        "phase_init": activation.phase_init,
+        "phase_trainable": activation.phase_trainable,
+        "ratio_sum_tol": activation.ratio_sum_tol,
+        "mix_layout": activation.mix_layout,
+        "mix_seed": activation.mix_seed,
+        "feature_dim": activation.feature_dim,
+    }
 
 
 def count_geosparse_params(
@@ -19,14 +66,15 @@ def count_geosparse_params(
     activation_config = (
         json.loads(str(activation_config_json)) if activation_config_json is not None else None
     )
+    activation = _normalize_geo_activation(activation_type, activation_config)
     model = GeoSparseNet(
         int(input_dim),
         int(output_dim),
         shape=resolve_geo_shape(input_dim, shape),
         depth=int(depth),
         k=int(k),
-        activation_type=activation_type,
-        activation_config=activation_config,
+        activation_type=activation.kind.replace("-", "_"),
+        activation_config=_geo_activation_kwargs(activation),
         norm="rms",
         drop_path_max=0.0,
         residual_alpha_init=0.0,
@@ -235,11 +283,10 @@ def build_geosparse_estimator(
     batch_size: int,
     lr: float,
 ) -> PSANNRegressor:
-    activation = dict(activation_config or {})
-    activation["kind"] = activation_type
+    activation = _normalize_geo_activation(activation_type, activation_config)
     return PSANNRegressor(
         architecture=ArchitectureConfig.geometric_sparse(
-            activation=ActivationConfig(**activation),
+            activation=activation,
             geometry=GeometryConfig(
                 shape=resolve_geo_shape(input_dim, shape),
                 k=geo_k,

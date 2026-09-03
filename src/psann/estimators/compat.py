@@ -19,6 +19,7 @@ from ..architectures import (
     SpectralConfig,
     W0WarmupConfig,
     WaveConfig,
+    normalize_activation_config,
 )
 from .regressor import PSANNRegressor
 
@@ -88,15 +89,14 @@ def _activation(kwargs: dict[str, Any]) -> ActivationConfig:
     raw = kwargs.pop("activation", None)
     kind = kwargs.pop("activation_type", "psann")
     values = dict(raw) if isinstance(raw, Mapping) else {}
-    for old_name, new_name in {
-        "amp_init": "amplitude_init",
-        "freq_init": "frequency_init",
-        "damping_init": "decay_init",
-    }.items():
-        if old_name in values:
-            values.setdefault(new_name, values.pop(old_name))
-    values.setdefault("kind", kind)
-    return ActivationConfig(**values)
+    if "kind" in values:
+        requested = normalize_activation_config({"kind": kind}).kind
+        configured = normalize_activation_config({"kind": values["kind"]}).kind
+        if requested != configured:
+            raise ValueError("activation_type conflicts with activation.kind.")
+    else:
+        values["kind"] = kind
+    return normalize_activation_config(values)
 
 
 def _attention(kwargs: dict[str, Any]) -> AttentionConfig | None:

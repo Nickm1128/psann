@@ -31,7 +31,7 @@ fields are defensively copied/frozen during normalization. The target objects ar
 
 | Policy | Target fields and defaults |
 | --- | --- |
-| `ActivationConfig` | `kind="psann"`, amplitude/frequency/decay initializers `1.0/1.0/0.1`, `learnable=("amplitude", "frequency", "decay")`, `decay_mode="abs"`, optional bounds/types/ratios, `slope_init=1.0`, `slope_trainable=True`, `clip_max=1.0` |
+| `ActivationConfig` | `kind="psann"`, amplitude/frequency/decay initializers `1.0/1.0/0.1`, `learnable=("amplitude", "frequency", "decay")`, `decay_mode="abs"`, optional bounds/types/ratios, `slope_init=1.0`, `slope_trainable=True`, `clip_max=1.0`, `phase_init=0.0`, `phase_trainable=True`, `ratio_sum_tol=1e-3`, `mix_layout="random"`, `mix_seed=None`, `feature_dim=-1` |
 | `ResidualConfig` | `norm="rms"`, `alpha_init=0.0`, `drop_path=0.0`, `first_w0=12.0`, `hidden_w0=1.0` |
 | `ConvolutionConfig` | `channels=None`, `kernel_size=1`, `data_format="channels_first"`, `per_element=False` |
 | `AttentionConfig` | `kind="mha"`, `num_heads=4`, `dropout=0.0`, `bias=True`, `batch_first=True`, `add_bias_kv=False`, `add_zero_attn=False` |
@@ -47,8 +47,10 @@ fields are defensively copied/frozen during normalization. The target objects ar
 `ArchitectureConfig(kind, activation=ActivationConfig(), residual=None,
 convolution=None, attention=None, state=None, context=None, wave=None,
 spectral=None, sequence=None, geometry=None)` has `dense`, `convolutional`, `wave`,
-`sequence`, and `geometric_sparse` constructors. Activation kinds initially are
-`psann`, `relu`, `tanh`, and `relu-sigmoid-psann`; mixed/phase variants remain gated.
+`sequence`, and `geometric_sparse` constructors. Activation kinds are `psann`, `relu`,
+`tanh`, `relu-sigmoid-psann`, `phase-psann`, and `mixed`. The two phase/mixed kinds
+are deliberately limited to `geometric-sparse` in Phase 3; every other architecture
+rejects them before build rather than silently ignoring their policy fields.
 Presence enables residuals, convolution, attention, state, context, wave, spectral,
 sequence, and geometry as applicable. Compatibility-only `attention.kind="none"`
 canonicalizes to absent attention.
@@ -91,6 +93,15 @@ internal whitespace is normalized.
 | Explicit architecture plus a legacy architecture-specific flat argument | Rejected and names both conflicting paths. |
 | One invalid policy combination for each kind (for example sequence plus attention) | Rejected before fit. |
 
+GeoSparse activation mappings share the architecture normalizer used by tagged
+architectures, the deprecated `GeoSparseRegressor` facade, and benchmark JSON. It
+accepts the documented compatibility aliases `sine`/`respsann`, `phasepsann`, and
+`rspsann`/`rsp`/`clipped_psann`; `amp_init`/`freq_init`/`damp_init` (or
+`damping_init`); `trainable`; `types`/`ratios`; `layout`/activation-local `seed`; and
+the retained slope/clip/bounds aliases. An old/new spelling pair or an unknown key is
+an error. `mixed` requires unique supported members and either equal default weighting
+or finite non-negative ratios that sum to one within `ratio_sum_tol`.
+
 A tagged mapping uses `ArchitectureConfig` field names, for example
 `{kind: dense, residual: {norm: rms, alpha_init: 0.0, drop_path: 0.1}}`. Typed,
 mapping, and string inputs share one normalizer. Unknown top-level/nested keys raise a
@@ -105,9 +116,9 @@ extra mapping key reaches a builder; equal representations compare equal.
 | `sequence` | invalid | invalid | invalid | invalid | invalid | optional | `SequenceConfig` |
 | `geometric-sparse` | required | invalid | invalid | invalid | invalid | invalid | `GeometryConfig` |
 
-Every kind accepts `ActivationConfig` subject to builder validation; sequence initially
-requires PSANN activation. Preprocessor and episodic compatibility are Phase 4/5
-capability work, not class checks.
+Every kind accepts `ActivationConfig` subject to builder validation; sequence requires
+PSANN activation, and only GeoSparse accepts phase/mixed activation. Preprocessor and
+episodic compatibility are Phase 4/5 capability work, not class checks.
 
 The Phase 3 executable matrix must accept canonical case/separator variants and every
 legacy alias family, plus one valid combination per kind. It must reject an unknown

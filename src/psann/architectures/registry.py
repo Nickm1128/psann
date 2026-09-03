@@ -673,7 +673,7 @@ def _sequence_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         hidden_units=request.hidden_units,
         hidden_width=request.hidden_units,
         act_kw=_activation_kwargs(cfg),
-        activation_type=cfg.activation.kind.replace("-", "_"),
+        activation_type=_backbone_activation_type(cfg),
         w0=request.w0,
         phase_init=sequence.phase_init,
         phase_trainable=sequence.phase_trainable,
@@ -715,14 +715,24 @@ def _geometry_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         radius=geometry.radius,
         offsets=geometry.offsets,
         wrap_mode=geometry.wrap_mode,
-        activation_type=cfg.activation.kind.replace("-", "_"),
+        activation_type=_backbone_activation_type(cfg),
         activation_config={
             **_activation_kwargs(cfg),
             "slope_init": cfg.activation.slope_init,
             "slope_trainable": cfg.activation.slope_trainable,
             "clip_max": cfg.activation.clip_max,
-            "activation_types": cfg.activation.activation_types,
+            "activation_types": (
+                tuple(item.replace("-", "_") for item in cfg.activation.activation_types)
+                if cfg.activation.activation_types is not None
+                else None
+            ),
             "activation_ratios": cfg.activation.activation_ratios,
+            "phase_init": cfg.activation.phase_init,
+            "phase_trainable": cfg.activation.phase_trainable,
+            "ratio_sum_tol": cfg.activation.ratio_sum_tol,
+            "mix_layout": cfg.activation.mix_layout,
+            "mix_seed": cfg.activation.mix_seed,
+            "feature_dim": cfg.activation.feature_dim,
         },
         norm=residual.norm,
         drop_path_max=residual.drop_path,

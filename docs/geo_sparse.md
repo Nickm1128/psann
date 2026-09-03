@@ -20,8 +20,13 @@ This module implements a geometric-connectivity network where each neuron connec
   - Autograd-friendly, no custom backward.
 - `GeoSparseResidualBlock` and `GeoSparseNet` in `src/psann/nn_geo_sparse.py`:
   - Pre-norm residual blocks with `DropPath` and learnable residual scale `alpha`.
-  - Activation options: `psann`, `phase_psann`, `relu`, `tanh`.
-  - Activation config accepts both `ActivationConfig` and LM-style keys like `amp_init`, `freq_init`, `damp_init`, `trainable`, and bounds.
+  - Canonical activation options: `psann`, `phase-psann`, `mixed`, `relu`, `tanh`, and
+    `relu-sigmoid-psann`. Phase and mixed policies are GeoSparse-only architecture
+    capabilities in the 0.x compatibility line.
+  - Activation config is normalized to immutable `ActivationConfig`. It accepts the
+    documented LM-style aliases `amp_init`, `freq_init`, `damp_init`, `trainable`,
+    `types`, `ratios`, `layout`, and `seed`, but rejects unknown or conflicting old/new
+    keys.
 
 ## Parameter scaling
 
@@ -80,6 +85,30 @@ est.fit(X, y, verbose=0)
 preds = est.predict(X[:10])
 print(preds.shape)  # (10, 1)
 ```
+
+## Phase and mixed policies
+
+Use canonical policy spellings with `ArchitectureConfig`; tagged mappings and the
+deprecated `GeoSparseRegressor` facade normalize the documented legacy aliases at the
+same strict boundary.
+
+```python
+from psann.architectures import ActivationConfig, ArchitectureConfig, GeometryConfig
+
+architecture = ArchitectureConfig.geometric_sparse(
+    geometry=GeometryConfig(shape=(4, 4), k=8),
+    activation=ActivationConfig(
+        kind="mixed",
+        activation_types=("phase-psann", "relu"),
+        activation_ratios=(0.5, 0.5),
+        phase_init=0.25,
+        mix_layout="contiguous",
+    ),
+)
+```
+
+`phase-psann` and `mixed` are rejected for dense, convolutional, Wave, and sequence
+architectures. No arbitrary activation mapping bypasses this typed validation.
 
 ## Benchmark script (matched parameters)
 

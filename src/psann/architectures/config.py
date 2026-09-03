@@ -46,6 +46,23 @@ def _canonical_name(value: str) -> str:
     return value.strip().lower().replace("_", "-")
 
 
+_ACTIVATION_ALIASES = {
+    "sine": "psann",
+    "respsann": "psann",
+    "phasepsann": "phase-psann",
+    "rspsann": "relu-sigmoid-psann",
+    "rsp": "relu-sigmoid-psann",
+    "clipped-psann": "relu-sigmoid-psann",
+}
+
+
+def _canonical_activation_name(value: str) -> str:
+    """Return the public spelling for a documented activation-name alias."""
+
+    name = _canonical_name(value)
+    return _ACTIVATION_ALIASES.get(name, name)
+
+
 def _finite(value: float, path: str) -> float:
     result = float(value)
     if not math.isfinite(result):
@@ -114,11 +131,21 @@ class ActivationConfig:
     clip_max: float = 1.0
     activation_types: tuple[str, ...] | None = None
     activation_ratios: tuple[float, ...] | None = None
+    phase_init: float = 0.0
+    phase_trainable: bool = True
+    ratio_sum_tol: float = 1e-3
+    mix_layout: str = "random"
+    mix_seed: int | None = None
+    feature_dim: int = -1
 
     def __post_init__(self) -> None:
-        kind = _canonical_name(self.kind)
-        if kind not in {"psann", "relu", "tanh", "relu-sigmoid-psann"}:
-            raise ValueError("activation.kind must be psann, relu, tanh, or relu-sigmoid-psann.")
+        kind = _canonical_activation_name(self.kind)
+        allowed_kinds = {"psann", "phase-psann", "mixed", "relu", "tanh", "relu-sigmoid-psann"}
+        if kind not in allowed_kinds:
+            raise ValueError(
+                "activation.kind must be psann, phase-psann, mixed, relu, tanh, or "
+                "relu-sigmoid-psann."
+            )
         object.__setattr__(self, "kind", kind)
         if _positive(self.amplitude_init, "activation.amplitude_init") <= 0:
             raise ValueError("activation.amplitude_init must be positive.")
@@ -152,17 +179,136 @@ class ActivationConfig:
         _finite(self.slope_init, "activation.slope_init")
         _boolean(self.slope_trainable, "activation.slope_trainable")
         _positive(self.clip_max, "activation.clip_max")
-        if self.activation_types is not None:
-            types = tuple(_canonical_name(item) for item in self.activation_types)
-            ratios = tuple(float(item) for item in self.activation_ratios or ())
-            if not types or len(types) != len(ratios) or any(item < 0 for item in ratios):
+        phase_init = _finite(self.phase_init, "activation.phase_init")
+        phase_trainable = _boolean(self.phase_trainable, "activation.phase_trainable")
+        ratio_sum_tol = _positive(self.ratio_sum_tol, "activation.ratio_sum_tol")
+        mix_layout = _canonical_name(self.mix_layout)
+        if mix_layout not in {"random", "contiguous"}:
+            raise ValueError("activation.mix_layout must be random or contiguous.")
+        mix_seed = None if self.mix_seed is None else _integer(self.mix_seed, "activation.mix_seed")
+        feature_dim = _integer(self.feature_dim, "activation.feature_dim")
+        object.__setattr__(self, "phase_init", phase_init)
+        object.__setattr__(self, "phase_trainable", phase_trainable)
+        object.__setattr__(self, "ratio_sum_tol", ratio_sum_tol)
+        object.__setattr__(self, "mix_layout", mix_layout)
+        object.__setattr__(self, "mix_seed", mix_seed)
+        object.__setattr__(self, "feature_dim", feature_dim)
+
+        if kind == "mixed":
+            if self.activation_types is None:
+                raise ValueError("activation.kind='mixed' requires activation.activation_types.")
+            types = tuple(_canonical_activation_name(item) for item in self.activation_types)
+            supported = {"psann", "phase-psann", "relu-sigmoid-psann", "relu", "tanh"}
+            if (
+                not types
+                or len(set(types)) != len(types)
+                or any(item not in supported for item in types)
+            ):
                 raise ValueError(
-                    "activation.activation_types and activation_ratios must be matching non-empty tuples."
+                    "activation.activation_types contains an unsupported or duplicate value."
+                )
+            if self.activation_ratios is None:
+                ratios = None
+            else:
+                ratios = tuple(float(item) for item in self.activation_ratios)
+                if (
+                    len(types) != len(ratios)
+                    or any(not math.isfinite(item) or item < 0 for item in ratios)
+                    or not any(item > 0 for item in ratios)
+                    or abs(sum(ratios) - 1.0) > ratio_sum_tol
+                ):
+                    raise ValueError(
+                        "activation.activation_ratios must match types, be finite and non-negative, "
+                        "contain a positive value, and sum to one within activation.ratio_sum_tol."
+                    )
+            if (phase_init != 0.0 or not phase_trainable) and "phase-psann" not in types:
+                raise ValueError(
+                    "non-default activation phase fields require phase-psann in activation.activation_types."
                 )
             object.__setattr__(self, "activation_types", types)
             object.__setattr__(self, "activation_ratios", ratios)
-        elif self.activation_ratios is not None:
-            raise ValueError("activation.activation_ratios requires activation_types.")
+        else:
+            if self.activation_types is not None or self.activation_ratios is not None:
+                raise ValueError(
+                    "activation.activation_types and activation_ratios require kind='mixed'."
+                )
+            if (
+                ratio_sum_tol != 1e-3
+                or mix_layout != "random"
+                or mix_seed is not None
+                or feature_dim != -1
+            ):
+                raise ValueError("non-default mixed activation fields require kind='mixed'.")
+            if kind != "phase-psann" and (phase_init != 0.0 or not phase_trainable):
+                raise ValueError("non-default activation phase fields require kind='phase-psann'.")
+
+
+def normalize_activation_config(value: ActivationConfig | Mapping[str, object]) -> ActivationConfig:
+    """Normalize documented activation aliases into one immutable typed policy."""
+
+    if isinstance(value, ActivationConfig):
+        return value
+    if not isinstance(value, Mapping):
+        raise TypeError("activation must be an ActivationConfig or mapping.")
+    raw = dict(value)
+    aliases = {
+        "amp_init": "amplitude_init",
+        "freq_init": "frequency_init",
+        "damp_init": "decay_init",
+        "damping_init": "decay_init",
+        "types": "activation_types",
+        "ratios": "activation_ratios",
+        "layout": "mix_layout",
+        "seed": "mix_seed",
+        "relu_slope_init": "slope_init",
+        "slope_learnable": "slope_trainable",
+        "clip_at": "clip_max",
+    }
+    for old_name, new_name in aliases.items():
+        if old_name in raw:
+            if new_name in raw:
+                raise ValueError(f"activation has conflicting keys {old_name!r} and {new_name!r}.")
+            raw[new_name] = raw.pop(old_name)
+    if "trainable" in raw:
+        if "learnable" in raw:
+            raise ValueError("activation has conflicting keys 'trainable' and 'learnable'.")
+        trainable = raw.pop("trainable")
+        if not isinstance(trainable, bool):
+            raise TypeError("activation.trainable must be a boolean.")
+        raw["learnable"] = ("amplitude", "frequency", "decay") if trainable else ()
+
+    bounds = raw.get("bounds")
+    if bounds is not None and not isinstance(bounds, Mapping):
+        raise TypeError("activation.bounds must be a mapping.")
+    normalized_bounds = dict(bounds or {})
+    for old_name, field_name in {
+        "amp_bounds": "amplitude",
+        "freq_bounds": "frequency",
+        "damp_bounds": "decay",
+    }.items():
+        if old_name in raw:
+            if field_name in normalized_bounds:
+                raise ValueError(
+                    f"activation has conflicting keys {old_name!r} and 'bounds.{field_name}'."
+                )
+            normalized_bounds[field_name] = raw.pop(old_name)
+    if bounds is not None or normalized_bounds:
+        raw["bounds"] = normalized_bounds
+    if "kind" in raw:
+        raw["kind"] = _canonical_activation_name(cast(str, raw["kind"]))
+    known = {field.name for field in fields(ActivationConfig)}
+    unknown = set(raw) - known
+    if unknown:
+        raise ValueError(f"activation.{sorted(unknown)[0]} is unknown.")
+    for name in ("learnable", "activation_types", "activation_ratios"):
+        if isinstance(raw.get(name), list):
+            raw[name] = tuple(cast(list[object], raw[name]))
+    if raw.get("bounds") is not None:
+        raw["bounds"] = {
+            key: tuple(item) if isinstance(item, (list, tuple)) else item
+            for key, item in cast(Mapping[str, object], raw["bounds"]).items()
+        }
+    return ActivationConfig(**cast(Any, raw))
 
 
 @dataclass(frozen=True)
@@ -499,6 +645,8 @@ def _policy_from_mapping(name: str, value: object) -> object | None:
     cls = _POLICIES[name]
     if isinstance(value, cls):
         return value
+    if name == "activation":
+        return normalize_activation_config(cast(Mapping[str, object], value))
     if name == "attention" and getattr(value, "kind", None) in {"none", "off", ""}:
         return None
     if not isinstance(value, Mapping):
@@ -546,7 +694,13 @@ def _from_mapping(value: Mapping[str, object]) -> ArchitectureConfig:
     if "kind" not in raw:
         raise ValueError("architecture.kind is required.")
     policies = {name: _policy_from_mapping(name, raw.get(name)) for name in _POLICIES}
-    return ArchitectureConfig(kind=str(raw["kind"]), **policies)  # type: ignore[arg-type]
+    if policies["activation"] is None:
+        policies["activation"] = ActivationConfig()
+    kind = _canonical_name(str(raw["kind"]))
+    preset = _PRESETS.get(kind)
+    if preset is not None:
+        kind = preset[0]
+    return ArchitectureConfig(kind=kind, **policies)  # type: ignore[arg-type]
 
 
 _PRESETS: dict[str, tuple[str, bool]] = {
@@ -611,6 +765,11 @@ def validate_architecture(value: ArchitectureConfig, *, hidden_layers: int | Non
     if kind not in {"dense", "convolutional", "wave", "sequence", "geometric-sparse"}:
         raise ValueError(
             "architecture.kind must be dense, convolutional, wave, sequence, or geometric-sparse."
+        )
+    if kind != "geometric-sparse" and value.activation.kind in {"phase-psann", "mixed"}:
+        raise ValueError(
+            "activation.kind='phase-psann' and activation.kind='mixed' are supported only by "
+            "architecture.geometric-sparse."
         )
     if kind == "dense":
         if (
