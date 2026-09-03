@@ -743,3 +743,38 @@ def replace_architecture_path(
         )
     validate_architecture(candidate, hidden_layers=hidden_layers)
     return candidate
+
+
+def replace_architecture_paths(
+    value: ArchitectureConfig, replacements: Mapping[str, object], *, hidden_layers: int
+) -> ArchitectureConfig:
+    """Atomically apply nested sklearn paths before validating their final state."""
+
+    candidate = value
+    grouped: dict[str, dict[str, object]] = {}
+    direct: dict[str, object] = {}
+    for path, replacement in replacements.items():
+        pieces = path.split("__")
+        if len(pieces) < 2 or pieces[0] != "architecture" or pieces[1] not in _POLICIES:
+            raise ValueError(f"Unknown architecture parameter path {path!r}.")
+        if len(pieces) == 2:
+            direct[pieces[1]] = replacement
+        elif len(pieces) == 3:
+            grouped.setdefault(pieces[1], {})[pieces[2]] = replacement
+        else:
+            raise ValueError(f"Unknown architecture parameter path {path!r}.")
+    changes: dict[str, object] = {
+        name: _policy_from_mapping(name, item) for name, item in direct.items()
+    }
+    for name, fields_to_replace in grouped.items():
+        policy = changes.get(name, getattr(candidate, name))
+        if policy is None:
+            raise ValueError(f"architecture.{name} is absent; set that policy object first.")
+        known = {field.name for field in fields(policy)}
+        unknown = set(fields_to_replace) - known
+        if unknown:
+            raise ValueError(f"architecture.{name}.{sorted(unknown)[0]} is unknown.")
+        changes[name] = replace(policy, **cast(Any, fields_to_replace))
+    candidate = replace(candidate, **cast(Any, changes))
+    validate_architecture(candidate, hidden_layers=hidden_layers)
+    return candidate

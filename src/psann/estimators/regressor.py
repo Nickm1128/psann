@@ -35,7 +35,7 @@ from ..architectures import (
     architecture_to_mapping,
     normalize_architecture,
 )
-from ..architectures.config import _thaw, replace_architecture_path, validate_architecture
+from ..architectures.config import _thaw, replace_architecture_paths, validate_architecture
 from ..attention import AttentionConfig as LegacyAttentionConfig
 from ..state import StateConfig as LegacyStateConfig
 from ..nn import WithPreprocessor
@@ -965,14 +965,13 @@ class PSANNRegressor(_Phase2Regressor):
         candidate = self.architecture
         if "architecture" in params:
             candidate = normalize_architecture(cast(ArchitectureLike, params.pop("architecture")))
-        for key in list(params):
-            if key.startswith("architecture__"):
-                candidate = replace_architecture_path(
-                    candidate,
-                    key,
-                    params.pop(key),
-                    hidden_layers=int(cast(Any, params.get("hidden_layers", self.hidden_layers))),
-                )
+        nested = {key: params.pop(key) for key in list(params) if key.startswith("architecture__")}
+        if nested:
+            candidate = replace_architecture_paths(
+                candidate,
+                nested,
+                hidden_layers=int(cast(Any, params.get("hidden_layers", self.hidden_layers))),
+            )
         validate_architecture(
             candidate, hidden_layers=int(cast(Any, params.get("hidden_layers", self.hidden_layers)))
         )

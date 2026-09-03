@@ -7,12 +7,14 @@ import warnings
 import pytest
 
 from psann.architectures import (
+    AttentionConfig,
     ArchitectureConfig,
     ConvolutionConfig,
     ResidualConfig,
     architecture_to_mapping,
     normalize_architecture,
 )
+from psann import PSANNRegressor
 
 
 @pytest.mark.parametrize(
@@ -55,3 +57,13 @@ def test_invalid_policy_combinations_are_rejected_before_build():
         ArchitectureConfig(kind="wave")
     with pytest.raises(ValueError, match="unsupported policy"):
         ArchitectureConfig.convolutional(state={"rho": 0.8})
+
+
+def test_nested_policy_updates_are_transactional_and_validate_only_final_state():
+    estimator = PSANNRegressor(architecture=ArchitectureConfig.for_wave())
+    estimator.set_params(
+        architecture__spectral=None,
+        architecture__attention=AttentionConfig(num_heads=2),
+    )
+    assert estimator.architecture.spectral is None
+    assert estimator.architecture.attention == AttentionConfig(num_heads=2)
