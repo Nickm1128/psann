@@ -89,6 +89,34 @@ for cls in (
     assert result.returncode == 0, result.stderr
 
 
+def test_public_facades_do_not_activate_legacy_estimator_hierarchy() -> None:
+    """Wrapper construction must not import the retained checkpoint readers."""
+
+    code = r"""
+import sys
+from psann import (
+    GeoSparseRegressor, ResConvPSANNRegressor, ResPSANNRegressor,
+    SGRPSANNRegressor, WaveResNetRegressor,
+)
+
+for cls in (
+    ResPSANNRegressor, ResConvPSANNRegressor, WaveResNetRegressor,
+    SGRPSANNRegressor, GeoSparseRegressor,
+):
+    cls()
+
+for module in (
+    'psann._sklearn.residual', 'psann._sklearn.wave',
+    'psann._sklearn.sgr', 'psann._sklearn.geosparse',
+):
+    assert module not in sys.modules, module
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+
+
 @pytest.mark.parametrize(
     ("estimator_cls", "drift"),
     [

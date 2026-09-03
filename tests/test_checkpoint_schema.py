@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import numpy as np
+import os
+import subprocess
+import sys
 import torch
 
 from psann.estimators import PSANNRegressor
@@ -91,3 +94,55 @@ def test_schema_v1_round_trip_for_every_canonical_architecture(tmp_path):
         np.testing.assert_allclose(
             PSANNRegressor.load(str(path)).predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6
         )
+
+
+def test_enriched_legacy_wave_migrates_and_survives_v1_resave(tmp_path):
+    from psann._sklearn.wave import WaveResNetRegressor as LegacyWave
+
+    X = np.ones((8, 2, 2), dtype=np.float32)
+    y = X.mean(axis=(1, 2))
+    legacy = LegacyWave(
+        hidden_layers=2,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+        first_layer_w0=31.0,
+        use_spectral_gate=True,
+        k_fft=2,
+        progressive_depth_initial=1,
+        w0_warmup_epochs=1,
+    ).fit(X, y)
+    old_path = tmp_path / "legacy-wave.pt"
+    legacy.save(str(old_path))
+    migrated = PSANNRegressor.load(str(old_path))
+    assert migrated.architecture.spectral and migrated.architecture.spectral.k_fft == 2
+    assert migrated.architecture.wave and migrated.architecture.wave.progressive_depth
+    v1_path = tmp_path / "resaved.pt"
+    migrated.save(str(v1_path))
+    np.testing.assert_allclose(
+        PSANNRegressor.load(str(v1_path)).predict(X[:2]), migrated.predict(X[:2]), rtol=1e-6
+    )
+
+
+def test_schema_v1_load_works_without_sklearn(tmp_path):
+    X = np.ones((8, 2), dtype=np.float32)
+    model = PSANNRegressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4).fit(
+        X, X.mean(axis=1)
+    )
+    path = tmp_path / "schema.pt"
+    model.save(str(path))
+    code = """import builtins, sys
+original = builtins.__import__
+def blocked(name, *args, **kwargs):
+    if name == 'sklearn' or name.startswith('sklearn.'):
+        raise ImportError('blocked')
+    return original(name, *args, **kwargs)
+builtins.__import__ = blocked
+from psann.estimators import PSANNRegressor
+assert PSANNRegressor.load(sys.argv[1]).predict(__import__('numpy').ones((2, 2), dtype='float32')).shape == (2,)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, os.fspath(path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr

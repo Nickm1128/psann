@@ -12,6 +12,7 @@ selection with immutable architecture configuration and registry requests.
 
 from __future__ import annotations
 
+import math
 import warnings
 from copy import deepcopy
 from dataclasses import fields, replace
@@ -1307,16 +1308,58 @@ class PSANNRegressor(_Phase2Regressor):
             )
             migrated.model_ = legacy.model_
             if old_name == "WaveResNetRegressor":
+                # Legacy pickle payloads retain the module's *effective* W0
+                # values but omit the schedule counters.  The schema-v1 state
+                # dict deliberately contains no mutable W0 attributes, so
+                # recover the counter from the retained module before a v1
+                # re-save.  That lets the canonical lifecycle rebuild the same
+                # values after a strict state-dict load.
+                legacy_core: Any = migrated.model_
+                while hasattr(legacy_core, "core"):
+                    legacy_core = legacy_core.core
+                legacy_core = getattr(legacy_core, "wave", legacy_core)
+                warmup_step = int(getattr(legacy, "_w0_schedule_step", 0))
+                wave = architecture.wave
+                if wave is not None and wave.warmup is not None:
+                    ratios: list[float] = []
+                    effective = (
+                        getattr(legacy_core, "stem_w0", None),
+                        (
+                            getattr(legacy_core.blocks[0], "w0", None)
+                            if getattr(legacy_core, "blocks", None)
+                            else None
+                        ),
+                    )
+                    endpoints = (
+                        (wave.warmup.first_initial, wave.first_w0),
+                        (wave.warmup.hidden_initial, wave.hidden_w0),
+                    )
+                    for observed, (initial, target) in zip(effective, endpoints):
+                        if observed is not None and not math.isclose(initial, target):
+                            ratios.append((float(observed) - initial) / (target - initial))
+                    if ratios:
+                        warmup_step = max(
+                            0,
+                            min(
+                                wave.warmup.epochs,
+                                round(sum(ratios) / len(ratios) * wave.warmup.epochs),
+                            ),
+                        )
                 migrated._architecture_structure_ = {
                     "current_depth": int(
-                        getattr(
+                        len(getattr(legacy_core, "blocks", ()))
+                        or getattr(
                             legacy,
                             "_progressive_depth_current",
                             getattr(legacy, "hidden_layers", 1),
                         )
                     ),
-                    "warmup_step": int(getattr(legacy, "_w0_schedule_step", 0)),
-                    "warmup_active": bool(getattr(legacy, "_w0_schedule_active", False)),
+                    "warmup_step": warmup_step,
+                    "warmup_active": bool(
+                        wave is not None
+                        and wave.warmup is not None
+                        and warmup_step < wave.warmup.epochs
+                    ),
                     "next_expand_epoch": getattr(legacy, "_progressive_next_expand_epoch", None),
                 }
             for name in (
