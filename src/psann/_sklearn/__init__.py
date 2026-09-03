@@ -17,13 +17,17 @@ def __getattr__(name: str):
     """
 
     if name in {
-        "ResPSANNRegressor", "ResConvPSANNRegressor", "SGRPSANNRegressor",
-        "WaveResNetRegressor", "GeoSparseRegressor",
+        "ResPSANNRegressor",
+        "ResConvPSANNRegressor",
+        "SGRPSANNRegressor",
+        "WaveResNetRegressor",
+        "GeoSparseRegressor",
     }:
         from ..estimators import compat
 
         return getattr(compat, name)
     raise AttributeError(name)
+
 
 __all__ = [
     "PSANNRegressor",
