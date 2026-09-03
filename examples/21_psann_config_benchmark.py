@@ -25,6 +25,7 @@ from typing import Optional
 import numpy as np
 
 from psann import PSANNRegressor
+from psann.architectures import ActivationConfig, ArchitectureConfig
 from psann.hisso import hisso_infer_series
 from psann.metrics import portfolio_metrics
 from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
@@ -77,22 +78,28 @@ def run_config(
     lsm_cfg: Optional[dict],
     epochs: int,
     train_verbose: int = 0,
+    n_train: int = 4000,
+    n_val: int = 1000,
 ) -> dict:
     # Chronological split: train/val/test (strict, no leakage)
-    n_train, n_val = 4000, 1000
+    if n_train <= 0 or n_val <= 0 or len(prices) <= n_train + n_val:
+        raise ValueError(
+            "prices must contain non-empty chronological train, validation, and test splits."
+        )
     train, val, test = (
         prices[:n_train],
         prices[n_train : n_train + n_val],
         prices[n_train + n_val :],
     )
     est = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(activation=ActivationConfig(kind=activation_type)),
         hidden_layers=hidden_layers,
-        hidden_width=hidden_width,
-        activation_type=activation_type,
+        hidden_units=hidden_width,
         epochs=int(epochs),
         lr=1e-3,
         random_state=int(seed),
         preprocessor=preprocessor_from_benchmark_config(lsm_cfg),
+        output_shape=(train.shape[1],),
     )
 
     t0 = time.perf_counter()

@@ -17,6 +17,22 @@ def make_data(n=5000, d=4, seed=0):
     return X.astype(np.float32), y.astype(np.float32)[:, None]
 
 
+def make_lsm_preprocessor(*, pretraining_epochs: int = 100) -> PreprocessorConfig:
+    """Return the example's canonical frozen LSM policy."""
+
+    return PreprocessorConfig(
+        LSMConfig.dense(
+            output_dim=256,
+            hidden_layers=12,
+            hidden_units=256,
+            sparsity=0.9,
+            nonlinearity="sine",
+            pretraining=LSMPretrainingConfig(epochs=pretraining_epochs, lr=1e-3, ridge=1e-4),
+            random_state=0,
+        )
+    )
+
+
 if __name__ == "__main__":
     # Prepare data
     X, y = make_data()
@@ -46,17 +62,7 @@ if __name__ == "__main__":
 
     # The canonical preprocessing boundary owns deterministic construction and
     # reconstruction pretraining before the predictive core is built.
-    preprocessor = PreprocessorConfig(
-        LSMConfig.dense(
-            output_dim=256,
-            hidden_layers=12,
-            hidden_units=256,
-            sparsity=0.9,
-            nonlinearity="sine",
-            pretraining=LSMPretrainingConfig(epochs=100, lr=1e-3, ridge=1e-4),
-            random_state=0,
-        )
-    )
+    preprocessor = make_lsm_preprocessor()
 
     # PSANN with a frozen LSM preprocessing step.
     with_lsm = PSANNRegressor(
