@@ -16,9 +16,10 @@ from ..layers import SpectralGate1D
 from ..models import WaveResNet
 from ..nn import PSANNNet, ResidualPSANNNet, SGRPSANNSequenceNet, WithPreprocessor
 from ..nn_geo_sparse import GeoSparseNet
-from .._sklearn.shared import (
+from .wrappers import (
     _AttentionConvModel,
     _AttentionDenseModel,
+    _WaveResNetAttentionDenseModel,
     _WaveResNetConvModel,
     _WaveResNetSpectralDenseModel,
 )
@@ -243,17 +244,34 @@ def _dense_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult
         seq_len = int(math.prod(request.input_shape[:-1]))
         if request.hidden_units % attention.num_heads:
             raise ValueError("attention.num_heads must divide hidden_units.")
-        token_core = PSANNNet(
-            token_dim,
-            request.hidden_units,
-            hidden_layers=request.hidden_layers,
-            hidden_units=request.hidden_units,
-            hidden_width=request.hidden_units,
-            act_kw=activation,
-            state_cfg=state_kwargs,
-            activation_type=cfg.activation.kind,
-            w0=request.w0,
-        )
+        if cfg.residual is None:
+            token_core = PSANNNet(
+                token_dim,
+                request.hidden_units,
+                hidden_layers=request.hidden_layers,
+                hidden_units=request.hidden_units,
+                hidden_width=request.hidden_units,
+                act_kw=activation,
+                state_cfg=state_kwargs,
+                activation_type=cfg.activation.kind,
+                w0=request.w0,
+            )
+        else:
+            residual = cfg.residual
+            token_core = ResidualPSANNNet(
+                token_dim,
+                request.hidden_units,
+                hidden_layers=request.hidden_layers,
+                hidden_units=request.hidden_units,
+                hidden_width=request.hidden_units,
+                act_kw=activation,
+                activation_type=cfg.activation.kind,
+                w0_first=residual.first_w0,
+                w0_hidden=residual.hidden_w0,
+                norm=residual.norm,
+                drop_path_max=residual.drop_path,
+                residual_alpha_init=residual.alpha_init,
+            )
         core = _AttentionDenseModel(
             token_core,
             build_attention_module(attention, request.hidden_units),
@@ -378,12 +396,21 @@ class WaveLifecycle(ArchitectureLifecycle):
         if self.config.wave and self.config.wave.grad_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.wave.grad_clip_norm)
 
+    @staticmethod
+    def _wave_core(model: nn.Module) -> Any:
+        """Unwrap preprocessor/spectral/convolution containers to WaveResNet."""
+
+        current: Any = model
+        while hasattr(current, "core"):
+            current = current.core
+        return getattr(current, "wave", current)
+
     def _apply_warmup(self, model: nn.Module, step: int) -> None:
         wave = self.config.wave
         if wave is None or wave.warmup is None:
             return
         ratio = min(1.0, step / max(1, wave.warmup.epochs))
-        mutable_model = cast(Any, model)
+        mutable_model = self._wave_core(model)
         if hasattr(mutable_model, "stem_w0"):
             mutable_model.stem_w0 = wave.warmup.first_initial + ratio * (
                 wave.first_w0 - wave.warmup.first_initial
@@ -422,8 +449,9 @@ class WaveLifecycle(ArchitectureLifecycle):
             and self.current_depth < self.hidden_layers
         ):
             add = min(progressive.growth, self.hidden_layers - self.current_depth)
-            if hasattr(model, "add_blocks"):
-                blocks = cast(Any, model).add_blocks(add)
+            wave_core = self._wave_core(model)
+            if hasattr(wave_core, "add_blocks"):
+                blocks = wave_core.add_blocks(add)
                 if blocks:
                     optimizer.add_param_group(
                         {"params": [param for block in blocks for param in block.parameters()]}
@@ -447,8 +475,15 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
     assert wave is not None and cfg.residual is not None
     activation = _activation_kwargs(cfg)
     context = cfg.context
-    initial_depth = (
-        wave.progressive_depth.initial_layers if wave.progressive_depth else request.hidden_layers
+    initial_depth = int(
+        (request.structure_metadata or {}).get(
+            "current_depth",
+            (
+                wave.progressive_depth.initial_layers
+                if wave.progressive_depth
+                else request.hidden_layers
+            ),
+        )
     )
     first_w0 = wave.warmup.first_initial if wave.warmup else wave.first_w0
     hidden_w0 = wave.warmup.hidden_initial if wave.warmup else wave.hidden_w0
@@ -486,6 +521,21 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
                     seq_len=seq_len,
                     token_dim=token_dim,
                 )
+        elif cfg.attention is not None:
+            if len(request.input_shape) < 2:
+                raise ValueError("Wave attention requires token-shaped flat input.")
+            token_dim = int(request.input_shape[-1])
+            seq_len = int(math.prod(request.input_shape[:-1]))
+            attention = _legacy_attention(cfg)
+            assert attention is not None
+            if token_dim % attention.num_heads:
+                raise ValueError("attention.num_heads must divide Wave token width.")
+            core = _WaveResNetAttentionDenseModel(
+                core,
+                cast(nn.Module, build_attention_module(attention, token_dim)),
+                seq_len=seq_len,
+                token_dim=token_dim,
+            )
     else:
         conv = cfg.convolution
         if (
@@ -628,7 +678,14 @@ def _geometry_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         offsets=geometry.offsets,
         wrap_mode=geometry.wrap_mode,
         activation_type=cfg.activation.kind.replace("-", "_"),
-        activation_config=_activation_kwargs(cfg),
+        activation_config={
+            **_activation_kwargs(cfg),
+            "slope_init": cfg.activation.slope_init,
+            "slope_trainable": cfg.activation.slope_trainable,
+            "clip_max": cfg.activation.clip_max,
+            "activation_types": cfg.activation.activation_types,
+            "activation_ratios": cfg.activation.activation_ratios,
+        },
         norm=residual.norm,
         drop_path_max=residual.drop_path,
         residual_alpha_init=residual.alpha_init,

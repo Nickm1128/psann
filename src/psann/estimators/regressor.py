@@ -42,6 +42,7 @@ from ..nn import WithPreprocessor
 from ..types import LossLike, ScalerSpec
 
 _DEFAULT_ARCHITECTURE = ArchitectureConfig.dense()
+_OMITTED = object()
 
 
 def _activation_mapping(config: ArchitectureConfig) -> dict[str, object]:
@@ -173,6 +174,82 @@ def _legacy_architecture(
             attention_value = AttentionConfig(
                 **{field.name: getattr(attention, field.name) for field in fields(AttentionConfig)}
             )
+    residual = (
+        ResidualConfig(norm, residual_alpha_init, drop_path_max, w0_first, w0_hidden)
+        if (
+            norm != "rms"
+            or w0_first != 12.0
+            or w0_hidden != 1.0
+            or drop_path_max != 0.0
+            or residual_alpha_init != 0.0
+        )
+        else None
+    )
+    if shape is not None:
+        return ArchitectureConfig.geometric_sparse(
+            activation=__import__(
+                "psann.architectures", fromlist=["ActivationConfig"]
+            ).ActivationConfig(**activation_values),
+            residual=residual or ResidualConfig(),
+            geometry=GeometryConfig(
+                shape, k, pattern, radius, offsets, wrap_mode, bias, compute_mode, geo_seed
+            ),
+        )
+    wave_requested = any(
+        value != default
+        for value, default in (
+            (first_layer_w0, 30.0),
+            (hidden_w0, 1.0),
+            (dropout, 0.0),
+            (grad_clip_norm, 5.0),
+            (first_layer_w0_initial, 10.0),
+            (hidden_w0_initial, 0.5),
+            (w0_warmup_epochs, 10),
+            (progressive_depth_initial, None),
+            (context_dim, None),
+            (context_builder, None),
+        )
+    )
+    if wave_requested:
+        warmup = (
+            __import__("psann.architectures", fromlist=["W0WarmupConfig"]).W0WarmupConfig(
+                first_layer_w0_initial, hidden_w0_initial, w0_warmup_epochs
+            )
+            if first_layer_w0_initial is not None and hidden_w0_initial is not None
+            else None
+        )
+        progressive = (
+            __import__(
+                "psann.architectures", fromlist=["ProgressiveDepthConfig"]
+            ).ProgressiveDepthConfig(
+                progressive_depth_initial, progressive_depth_interval, progressive_depth_growth
+            )
+            if progressive_depth_initial is not None
+            else None
+        )
+        return ArchitectureConfig.for_wave(
+            activation=__import__(
+                "psann.architectures", fromlist=["ActivationConfig"]
+            ).ActivationConfig(**activation_values),
+            residual=residual or ResidualConfig(alpha_init=residual_alpha_init),
+            wave=WaveConfig(
+                first_layer_w0,
+                hidden_w0,
+                norm if norm != "rms" else "none",
+                dropout,
+                grad_clip_norm,
+                warmup,
+                progressive,
+            ),
+            attention=attention_value,
+            context=(
+                ContextConfig(
+                    context_dim, context_builder, context_builder_params, use_film, use_phase_shift
+                )
+                if (context_dim is not None or context_builder is not None)
+                else None
+            ),
+        )
     state_value = None
     if stateful or state is not None:
         raw_state = (
@@ -192,6 +269,7 @@ def _legacy_architecture(
         ).ActivationConfig(**activation_values),
         attention=attention_value,
         state=state_value,
+        residual=residual,
     )
 
 
@@ -237,88 +315,222 @@ class PSANNRegressor(_Phase2Regressor):
         lsm_train: bool = False,
         lsm_pretrain_epochs: int = 0,
         lsm_lr: float | None = None,
-        activation: object | None = None,
-        activation_type: str = "psann",
-        preserve_shape: bool = False,
-        data_format: str = "channels_first",
-        conv_kernel_size: int = 1,
-        conv_channels: int | None = None,
-        per_element: bool = False,
-        attention: object | None = None,
-        stateful: bool = False,
-        state: object | None = None,
-        state_reset: str = "batch",
-        stream_lr: float | None = None,
-        context_builder: object | None = None,
-        context_builder_params: object | None = None,
-        w0_first: float = 12.0,
-        w0_hidden: float = 1.0,
-        norm: str = "rms",
-        drop_path_max: float = 0.0,
-        residual_alpha_init: float = 0.0,
-        first_layer_w0: float = 30.0,
-        hidden_w0: float = 1.0,
-        dropout: float = 0.0,
-        grad_clip_norm: float | None = 5.0,
-        first_layer_w0_initial: float | None = 10.0,
-        hidden_w0_initial: float | None = 0.5,
-        w0_warmup_epochs: int = 10,
-        progressive_depth_initial: int | None = None,
-        progressive_depth_interval: int = 15,
-        progressive_depth_growth: int = 1,
-        context_dim: int | None = None,
-        use_film: bool = True,
-        use_phase_shift: bool = True,
-        use_spectral_gate: bool = False,
-        k_fft: int = 64,
-        gate_type: str = "rfft",
-        gate_groups: str = "depthwise",
-        gate_init: float = 0.0,
-        gate_strength: float = 1.0,
-        phase_init: float = 0.0,
-        phase_trainable: bool = True,
-        pool: str = "last",
-        shape: tuple[int, int] | None = None,
-        k: int = 8,
-        pattern: str = "local",
-        radius: int = 1,
-        offsets: object | None = None,
-        wrap_mode: str = "clamp",
-        bias: bool = True,
-        compute_mode: str = "gather",
-        geo_seed: int | None = None,
+        activation: object = _OMITTED,
+        activation_type: object = _OMITTED,
+        preserve_shape: object = _OMITTED,
+        data_format: object = _OMITTED,
+        conv_kernel_size: object = _OMITTED,
+        conv_channels: object = _OMITTED,
+        per_element: object = _OMITTED,
+        attention: object = _OMITTED,
+        stateful: object = _OMITTED,
+        state: object = _OMITTED,
+        state_reset: object = _OMITTED,
+        stream_lr: object = _OMITTED,
+        context_builder: object = _OMITTED,
+        context_builder_params: object = _OMITTED,
+        w0_first: object = _OMITTED,
+        w0_hidden: object = _OMITTED,
+        norm: object = _OMITTED,
+        drop_path_max: object = _OMITTED,
+        residual_alpha_init: object = _OMITTED,
+        first_layer_w0: object = _OMITTED,
+        hidden_w0: object = _OMITTED,
+        dropout: object = _OMITTED,
+        grad_clip_norm: object = _OMITTED,
+        first_layer_w0_initial: object = _OMITTED,
+        hidden_w0_initial: object = _OMITTED,
+        w0_warmup_epochs: object = _OMITTED,
+        progressive_depth_initial: object = _OMITTED,
+        progressive_depth_interval: object = _OMITTED,
+        progressive_depth_growth: object = _OMITTED,
+        context_dim: object = _OMITTED,
+        use_film: object = _OMITTED,
+        use_phase_shift: object = _OMITTED,
+        use_spectral_gate: object = _OMITTED,
+        k_fft: object = _OMITTED,
+        gate_type: object = _OMITTED,
+        gate_groups: object = _OMITTED,
+        gate_init: object = _OMITTED,
+        gate_strength: object = _OMITTED,
+        phase_init: object = _OMITTED,
+        phase_trainable: object = _OMITTED,
+        pool: object = _OMITTED,
+        shape: object = _OMITTED,
+        k: object = _OMITTED,
+        pattern: object = _OMITTED,
+        radius: object = _OMITTED,
+        offsets: object = _OMITTED,
+        wrap_mode: object = _OMITTED,
+        bias: object = _OMITTED,
+        compute_mode: object = _OMITTED,
+        geo_seed: object = _OMITTED,
     ) -> None:
-        explicit_flat = any(
-            (
-                activation is not None,
-                activation_type != "psann",
-                preserve_shape,
-                conv_channels is not None,
-                attention is not None,
-                stateful,
-                state is not None,
-                context_builder is not None,
-                context_dim is not None,
-                use_spectral_gate,
-                shape is not None,
-                progressive_depth_initial is not None,
-            )
-        )
+        flat_supplied = {
+            name: value
+            for name, value in {
+                "activation": activation,
+                "activation_type": activation_type,
+                "preserve_shape": preserve_shape,
+                "data_format": data_format,
+                "conv_kernel_size": conv_kernel_size,
+                "conv_channels": conv_channels,
+                "per_element": per_element,
+                "attention": attention,
+                "stateful": stateful,
+                "state": state,
+                "state_reset": state_reset,
+                "stream_lr": stream_lr,
+                "context_builder": context_builder,
+                "context_builder_params": context_builder_params,
+                "w0_first": w0_first,
+                "w0_hidden": w0_hidden,
+                "norm": norm,
+                "drop_path_max": drop_path_max,
+                "residual_alpha_init": residual_alpha_init,
+                "first_layer_w0": first_layer_w0,
+                "hidden_w0": hidden_w0,
+                "dropout": dropout,
+                "grad_clip_norm": grad_clip_norm,
+                "first_layer_w0_initial": first_layer_w0_initial,
+                "hidden_w0_initial": hidden_w0_initial,
+                "w0_warmup_epochs": w0_warmup_epochs,
+                "progressive_depth_initial": progressive_depth_initial,
+                "progressive_depth_interval": progressive_depth_interval,
+                "progressive_depth_growth": progressive_depth_growth,
+                "context_dim": context_dim,
+                "use_film": use_film,
+                "use_phase_shift": use_phase_shift,
+                "use_spectral_gate": use_spectral_gate,
+                "k_fft": k_fft,
+                "gate_type": gate_type,
+                "gate_groups": gate_groups,
+                "gate_init": gate_init,
+                "gate_strength": gate_strength,
+                "phase_init": phase_init,
+                "phase_trainable": phase_trainable,
+                "pool": pool,
+                "shape": shape,
+                "k": k,
+                "pattern": pattern,
+                "radius": radius,
+                "offsets": offsets,
+                "wrap_mode": wrap_mode,
+                "bias": bias,
+                "compute_mode": compute_mode,
+                "geo_seed": geo_seed,
+            }.items()
+            if value is not _OMITTED
+        }
+        explicit_flat = bool(flat_supplied)
+        defaults = {
+            "activation": None,
+            "activation_type": "psann",
+            "preserve_shape": False,
+            "data_format": "channels_first",
+            "conv_kernel_size": 1,
+            "conv_channels": None,
+            "per_element": False,
+            "attention": None,
+            "stateful": False,
+            "state": None,
+            "state_reset": "batch",
+            "stream_lr": None,
+            "context_builder": None,
+            "context_builder_params": None,
+            "w0_first": 12.0,
+            "w0_hidden": 1.0,
+            "norm": "rms",
+            "drop_path_max": 0.0,
+            "residual_alpha_init": 0.0,
+            "first_layer_w0": 30.0,
+            "hidden_w0": 1.0,
+            "dropout": 0.0,
+            "grad_clip_norm": 5.0,
+            "first_layer_w0_initial": 10.0,
+            "hidden_w0_initial": 0.5,
+            "w0_warmup_epochs": 10,
+            "progressive_depth_initial": None,
+            "progressive_depth_interval": 15,
+            "progressive_depth_growth": 1,
+            "context_dim": None,
+            "use_film": True,
+            "use_phase_shift": True,
+            "use_spectral_gate": False,
+            "k_fft": 64,
+            "gate_type": "rfft",
+            "gate_groups": "depthwise",
+            "gate_init": 0.0,
+            "gate_strength": 1.0,
+            "phase_init": 0.0,
+            "phase_trainable": True,
+            "pool": "last",
+            "shape": None,
+            "k": 8,
+            "pattern": "local",
+            "radius": 1,
+            "offsets": None,
+            "wrap_mode": "clamp",
+            "bias": True,
+            "compute_mode": "gather",
+            "geo_seed": None,
+        }
+        (
+            activation,
+            activation_type,
+            preserve_shape,
+            data_format,
+            conv_kernel_size,
+            conv_channels,
+            per_element,
+            attention,
+            stateful,
+            state,
+            state_reset,
+            stream_lr,
+            context_builder,
+            context_builder_params,
+            w0_first,
+            w0_hidden,
+            norm,
+            drop_path_max,
+            residual_alpha_init,
+            first_layer_w0,
+            hidden_w0,
+            dropout,
+            grad_clip_norm,
+            first_layer_w0_initial,
+            hidden_w0_initial,
+            w0_warmup_epochs,
+            progressive_depth_initial,
+            progressive_depth_interval,
+            progressive_depth_growth,
+            context_dim,
+            use_film,
+            use_phase_shift,
+            use_spectral_gate,
+            k_fft,
+            gate_type,
+            gate_groups,
+            gate_init,
+            gate_strength,
+            phase_init,
+            phase_trainable,
+            pool,
+            shape,
+            k,
+            pattern,
+            radius,
+            offsets,
+            wrap_mode,
+            bias,
+            compute_mode,
+            geo_seed,
+        ) = [flat_supplied.get(name, default) for name, default in defaults.items()]
         if architecture is not _DEFAULT_ARCHITECTURE and explicit_flat:
-            names = [
-                name
-                for name, enabled in (
-                    ("activation", activation is not None),
-                    ("preserve_shape", preserve_shape),
-                    ("attention", attention is not None),
-                    ("state", state is not None),
-                    ("context_builder", context_builder is not None),
-                )
-                if enabled
-            ]
             raise ValueError(
                 "architecture conflicts with legacy architecture keyword(s): "
-                + ", ".join(names or ["activation_type"])
+                + ", ".join(flat_supplied)
             )
         legacy_flat_adapter = architecture is _DEFAULT_ARCHITECTURE and explicit_flat
         if legacy_flat_adapter:
@@ -584,7 +796,17 @@ class PSANNRegressor(_Phase2Regressor):
                     inferred = np.asarray(builder(np.asarray(X, dtype=np.float32)))
                     dim = int(inferred.reshape(inferred.shape[0], -1).shape[1])
                     self.architecture = replace(self.architecture, context=replace(policy, dim=dim))
-        return super().fit(X, y, *args, **kwargs)  # type: ignore[arg-type]
+        result = super().fit(X, y, *args, **kwargs)  # type: ignore[arg-type]
+        if self._architecture_lifecycle_ is not None and self.model_ is not None:
+            self._architecture_lifecycle_.on_fit_end(model=self.model_, runtime={})
+        return result
+
+    def _after_model_built(self) -> None:
+        super()._after_model_built()
+        if self._architecture_lifecycle_ is not None and self.model_ is not None:
+            self._architecture_lifecycle_.on_fit_start(
+                model=self.model_, optimizer=getattr(self, "_optimizer_", None), runtime={}
+            )
 
     def _build_conv_core(
         self,
@@ -1050,7 +1272,12 @@ class PSANNRegressor(_Phase2Regressor):
             )
         state_dict = payload["model_state_dict"]
         if state_dict and all(str(key).startswith("core.") for key in state_dict):
-            estimator.model_ = WithPreprocessor(None, estimator.model_)
+            # State-dict checkpoints retain constructor parameters, including the
+            # fitted LSM module.  Recreate the same wrapper rather than a
+            # placeholder whose empty prefix can never satisfy ``core.*`` keys.
+            estimator.model_ = WithPreprocessor(
+                cast(nn.Module | None, estimator.lsm), estimator.model_
+            )
         estimator.model_.load_state_dict(state_dict, strict=True)
         if map_location is not None:
             estimator.device = torch.device(map_location)

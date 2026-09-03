@@ -11,7 +11,31 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import asdict, dataclass, fields, replace
+from collections.abc import Iterator
 from typing import Any, Callable, Mapping, TypeAlias, cast
+
+
+class FrozenMapping(Mapping[str, object]):
+    """Pickle-safe immutable mapping with deterministic equality and iteration."""
+
+    def __init__(self, values: Mapping[str, object]) -> None:
+        self._items = tuple((str(key), _freeze(item)) for key, item in sorted(values.items()))
+        self._values = dict(self._items)
+
+    def __getitem__(self, key: str) -> object:
+        return self._values[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        return len(self._values)
+
+    def __hash__(self) -> int:
+        return hash(self._items)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Mapping) and dict(self.items()) == dict(other.items())
 
 
 def _canonical_name(value: str) -> str:
@@ -36,14 +60,26 @@ def _positive(value: float, path: str) -> float:
     return result
 
 
-def _frozen_mapping(
-    value: Mapping[str, object] | None, path: str
-) -> tuple[tuple[str, object], ...] | None:
+def _integer(value: object, path: str, *, minimum: int | None = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{path} must be an integer.")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{path} must be at least {minimum}.")
+    return value
+
+
+def _boolean(value: object, path: str) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"{path} must be a boolean.")
+    return value
+
+
+def _frozen_mapping(value: Mapping[str, object] | None, path: str) -> FrozenMapping | None:
     if value is None:
         return None
     if not isinstance(value, Mapping):
         raise TypeError(f"{path} must be a mapping or None.")
-    return tuple((str(key), _freeze(item)) for key, item in sorted(value.items()))
+    return FrozenMapping(value)
 
 
 def _freeze(value: object) -> object:
@@ -57,15 +93,8 @@ def _freeze(value: object) -> object:
 
 
 def _thaw(value: object) -> object:
-    if (
-        isinstance(value, tuple)
-        and value
-        and all(
-            isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], str)
-            for item in value
-        )
-    ):
-        return {key: _thaw(item) for key, item in value}
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
     if isinstance(value, tuple):
         return [_thaw(item) for item in value]
     return value
@@ -79,7 +108,7 @@ class ActivationConfig:
     decay_init: float = 0.1
     learnable: tuple[str, ...] = ("amplitude", "frequency", "decay")
     decay_mode: str = "abs"
-    bounds: tuple[tuple[str, tuple[float | None, float | None]], ...] | None = None
+    bounds: Mapping[str, tuple[float | None, float | None]] | None = None
     slope_init: float = 1.0
     slope_trainable: bool = True
     clip_max: float = 1.0
@@ -109,7 +138,7 @@ class ActivationConfig:
             dict(self.bounds) if self.bounds is not None else None, "activation.bounds"
         )
         if bounds is not None:
-            for key, pair in bounds:
+            for key, pair in bounds.items():
                 if key not in allowed or not isinstance(pair, tuple) or len(pair) != 2:
                     raise ValueError("activation.bounds must map activation fields to bound pairs.")
                 low, high = pair
@@ -121,6 +150,7 @@ class ActivationConfig:
                     raise ValueError(f"activation.bounds.{key} has reversed bounds.")
         object.__setattr__(self, "bounds", bounds)
         _finite(self.slope_init, "activation.slope_init")
+        _boolean(self.slope_trainable, "activation.slope_trainable")
         _positive(self.clip_max, "activation.clip_max")
         if self.activation_types is not None:
             types = tuple(_canonical_name(item) for item in self.activation_types)
@@ -164,14 +194,18 @@ class ConvolutionConfig:
     per_element: bool = False
 
     def __post_init__(self) -> None:
-        if self.channels is not None and int(self.channels) <= 0:
-            raise ValueError("convolution.channels must be positive.")
-        if int(self.kernel_size) <= 0:
-            raise ValueError("convolution.kernel_size must be positive.")
+        if self.channels is not None:
+            object.__setattr__(
+                self, "channels", _integer(self.channels, "convolution.channels", minimum=1)
+            )
+        object.__setattr__(
+            self, "kernel_size", _integer(self.kernel_size, "convolution.kernel_size", minimum=1)
+        )
         fmt = _canonical_name(self.data_format)
         if fmt not in {"channels-first", "channels-last"}:
             raise ValueError("convolution.data_format must be channels_first or channels_last.")
         object.__setattr__(self, "data_format", fmt.replace("-", "_"))
+        _boolean(self.per_element, "convolution.per_element")
 
 
 @dataclass(frozen=True)
@@ -187,11 +221,14 @@ class AttentionConfig:
     def __post_init__(self) -> None:
         if _canonical_name(self.kind) != "mha":
             raise ValueError("attention.kind must be mha.")
-        if int(self.num_heads) <= 0:
-            raise ValueError("attention.num_heads must be positive.")
+        object.__setattr__(
+            self, "num_heads", _integer(self.num_heads, "attention.num_heads", minimum=1)
+        )
         drop = _finite(self.dropout, "attention.dropout")
         if not 0 <= drop < 1:
             raise ValueError("attention.dropout must satisfy 0 <= value < 1.")
+        for name in ("bias", "batch_first", "add_bias_kv", "add_zero_attn"):
+            _boolean(getattr(self, name), f"attention.{name}")
 
 
 @dataclass(frozen=True)
@@ -218,19 +255,20 @@ class StateConfig:
         object.__setattr__(self, "reset", reset)
         if self.stream_lr is not None:
             _positive(self.stream_lr, "state.stream_lr")
+        _boolean(self.detach, "state.detach")
 
 
 @dataclass(frozen=True)
 class ContextConfig:
     dim: int | None = None
     builder: str | Callable[..., object] | None = None
-    builder_params: tuple[tuple[str, object], ...] | None = None
+    builder_params: Mapping[str, object] | None = None
     film: bool = True
     phase_shift: bool = True
 
     def __post_init__(self) -> None:
-        if self.dim is not None and int(self.dim) <= 0:
-            raise ValueError("context.dim must be positive.")
+        if self.dim is not None:
+            object.__setattr__(self, "dim", _integer(self.dim, "context.dim", minimum=1))
         if (
             self.builder is not None
             and not isinstance(self.builder, str)
@@ -245,6 +283,8 @@ class ContextConfig:
                 "context.builder_params",
             ),
         )
+        _boolean(self.film, "context.film")
+        _boolean(self.phase_shift, "context.phase_shift")
 
 
 @dataclass(frozen=True)
@@ -256,8 +296,7 @@ class W0WarmupConfig:
     def __post_init__(self) -> None:
         _positive(self.first_initial, "wave.warmup.first_initial")
         _positive(self.hidden_initial, "wave.warmup.hidden_initial")
-        if int(self.epochs) < 0:
-            raise ValueError("wave.warmup.epochs must be non-negative.")
+        object.__setattr__(self, "epochs", _integer(self.epochs, "wave.warmup.epochs", minimum=0))
 
 
 @dataclass(frozen=True)
@@ -267,10 +306,17 @@ class ProgressiveDepthConfig:
     growth: int = 1
 
     def __post_init__(self) -> None:
-        if int(self.initial_layers) <= 0:
-            raise ValueError("wave.progressive_depth.initial_layers must be positive.")
-        if int(self.interval) <= 0 or int(self.growth) <= 0:
-            raise ValueError("wave.progressive_depth.interval and growth must be positive.")
+        object.__setattr__(
+            self,
+            "initial_layers",
+            _integer(self.initial_layers, "wave.progressive_depth.initial_layers", minimum=1),
+        )
+        object.__setattr__(
+            self, "interval", _integer(self.interval, "wave.progressive_depth.interval", minimum=1)
+        )
+        object.__setattr__(
+            self, "growth", _integer(self.growth, "wave.progressive_depth.growth", minimum=1)
+        )
 
 
 @dataclass(frozen=True)
@@ -306,8 +352,7 @@ class SpectralConfig:
     strength: float = 1.0
 
     def __post_init__(self) -> None:
-        if int(self.k_fft) <= 0:
-            raise ValueError("spectral.k_fft must be positive.")
+        object.__setattr__(self, "k_fft", _integer(self.k_fft, "spectral.k_fft", minimum=1))
         kind = _canonical_name(self.gate_type)
         if kind not in {"rfft", "fourier-features"}:
             raise ValueError("spectral.gate_type must be rfft or fourier-features.")
@@ -329,6 +374,7 @@ class SequenceConfig:
 
     def __post_init__(self) -> None:
         _finite(self.phase_init, "sequence.phase_init")
+        _boolean(self.phase_trainable, "sequence.phase_trainable")
         pool = _canonical_name(self.pool)
         if pool not in {"last", "mean"}:
             raise ValueError("sequence.pool must be last or mean.")
@@ -349,12 +395,12 @@ class GeometryConfig:
 
     def __post_init__(self) -> None:
         if self.shape is not None:
-            shape = tuple(int(item) for item in self.shape)
+            shape = tuple(_integer(item, "geometry.shape", minimum=1) for item in self.shape)
             if len(shape) != 2 or any(item <= 0 for item in shape):
                 raise ValueError("geometry.shape must contain two positive dimensions.")
             object.__setattr__(self, "shape", shape)
-        if int(self.k) <= 0 or int(self.radius) < 0:
-            raise ValueError("geometry.k must be positive and geometry.radius non-negative.")
+        object.__setattr__(self, "k", _integer(self.k, "geometry.k", minimum=1))
+        object.__setattr__(self, "radius", _integer(self.radius, "geometry.radius", minimum=0))
         pattern = _canonical_name(self.pattern)
         if pattern not in {"local", "random", "hash"}:
             raise ValueError("geometry.pattern must be local, random, or hash.")
@@ -368,10 +414,16 @@ class GeometryConfig:
             raise ValueError("geometry.compute_mode must be gather or scatter.")
         object.__setattr__(self, "compute_mode", compute)
         if self.offsets is not None:
-            offsets = tuple(tuple(int(value) for value in pair) for pair in self.offsets)
+            offsets = tuple(
+                tuple(_integer(value, "geometry.offsets") for value in pair)
+                for pair in self.offsets
+            )
             if not offsets or any(len(pair) != 2 for pair in offsets):
                 raise ValueError("geometry.offsets must be non-empty pairs of integers.")
             object.__setattr__(self, "offsets", offsets)
+        _boolean(self.bias, "geometry.bias")
+        if self.seed is not None:
+            object.__setattr__(self, "seed", _integer(self.seed, "geometry.seed"))
 
 
 @dataclass(frozen=True)
@@ -390,7 +442,12 @@ class ArchitectureConfig:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", _canonical_name(self.kind))
-        validate_architecture(self, hidden_layers=2)
+        # Typed construction has the same policy normalization as a tagged
+        # mapping.  Estimator-dependent progressive-depth validation occurs
+        # later, when the actual hidden layer count is available.
+        for name in _POLICIES:
+            object.__setattr__(self, name, _policy_from_mapping(name, getattr(self, name)))
+        validate_architecture(self, hidden_layers=None)
 
     @classmethod
     def dense(cls, **kwargs: object) -> "ArchitectureConfig":
@@ -547,7 +604,7 @@ def normalize_architecture(value: ArchitectureLike) -> ArchitectureConfig:
     return ArchitectureConfig.geometric_sparse()
 
 
-def validate_architecture(value: ArchitectureConfig, *, hidden_layers: int) -> None:
+def validate_architecture(value: ArchitectureConfig, *, hidden_layers: int | None) -> None:
     """Validate cross-policy capability constraints before any model is built."""
 
     kind = value.kind
@@ -634,6 +691,7 @@ def validate_architecture(value: ArchitectureConfig, *, hidden_layers: int) -> N
     if (
         value.wave
         and value.wave.progressive_depth
+        and hidden_layers is not None
         and value.wave.progressive_depth.initial_layers > hidden_layers
     ):
         raise ValueError("wave.progressive_depth.initial_layers cannot exceed hidden_layers.")
