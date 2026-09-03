@@ -691,15 +691,12 @@ class PSANNRegressor(_Phase2Regressor):
         )
         self.architecture = canonical
         self.hidden_width = units
-        # Flat ``preserve_shape`` is an old base-estimator mode that keeps its
-        # flattened validation layout.  Canonical and wrapper convolutional
-        # policies use the channel-first registry path instead.
-        self._use_channel_first_train_inputs_ = (
-            canonical.convolution is not None and not legacy_flat_adapter
-        )
-        self._legacy_flattened_preserve_shape_ = bool(
-            legacy_flat_adapter and canonical.convolution is not None and not per_element
-        )
+        # A flat ``preserve_shape`` request now translates to the same canonical
+        # convolutional execution route as an explicit architecture.  Retaining
+        # flattened fit hooks here would advertise residual/attention policies
+        # while bypassing the registry and silently changing the backbone.
+        self._use_channel_first_train_inputs_ = canonical.convolution is not None
+        self._legacy_flattened_preserve_shape_ = False
         self._architecture_capabilities_: Any = None
         self._architecture_lifecycle_: Any = None
         self._architecture_structure_: dict[str, object] | None = None
@@ -767,10 +764,8 @@ class PSANNRegressor(_Phase2Regressor):
         state_cfg: Optional[dict[str, Any]] = None,
         input_shape: Optional[tuple[int, ...]] = None,
     ) -> nn.Module:
-        # The pre-Phase-3 flat ``preserve_shape`` adapter deliberately kept
-        # flattened optimisation and a dense core.  Preserve that executable
-        # compatibility boundary while canonical convolution policies always
-        # enter the registry through ``_build_conv_core``.
+        # Old schema-v1 payloads emitted before the registry correction retain
+        # this marker and must still rebuild their historical dense topology.
         if getattr(self, "_legacy_flattened_preserve_shape_", False):
             return _Phase2Regressor._build_dense_core(
                 self,
@@ -1163,10 +1158,22 @@ class PSANNRegressor(_Phase2Regressor):
                         activation=activation, residual=residual
                     )
             elif old_name == "WaveResNetRegressor":
+                legacy_wave_model: Any = legacy.model_
+                while hasattr(legacy_wave_model, "core"):
+                    legacy_wave_model = legacy_wave_model.core
+                # The 0.x shaped Wave options were accepted before all fit
+                # routes used channel-first hooks.  Migrate what the retained
+                # module actually executed, not merely an option that its old
+                # fit route ignored; the latter cannot be reconstructed from a
+                # state dict with a different topology.
+                effective_convolution = hasattr(legacy_wave_model, "conv_core")
+                effective_spectral = hasattr(legacy_wave_model, "spectral")
+                effective_attention = hasattr(legacy_wave_model, "attention")
                 raw_attention = getattr(legacy, "attention", None)
                 migrated_attention = None
                 if (
-                    raw_attention is not None
+                    effective_attention
+                    and raw_attention is not None
                     and getattr(raw_attention, "is_enabled", lambda: bool(raw_attention))()
                 ):
                     migrated_attention = AttentionConfig(
@@ -1209,15 +1216,13 @@ class PSANNRegressor(_Phase2Regressor):
                             getattr(legacy, "data_format", "channels_first"),
                             False,
                         )
-                        if getattr(legacy, "preserve_shape", False)
+                        if effective_convolution
                         else None
                     ),
                     # The legacy flat Wave builder explicitly ignored attention
                     # whenever spectral gating was enabled; preserve that effective
                     # behavior rather than creating an invalid canonical pair.
-                    attention=(
-                        None if getattr(legacy, "use_spectral_gate", False) else migrated_attention
-                    ),
+                    attention=(None if effective_spectral else migrated_attention),
                     context=(
                         ContextConfig(
                             getattr(legacy, "context_dim", None),
@@ -1238,7 +1243,7 @@ class PSANNRegressor(_Phase2Regressor):
                             getattr(legacy, "gate_init", 0.0),
                             getattr(legacy, "gate_strength", 1.0),
                         )
-                        if getattr(legacy, "use_spectral_gate", False)
+                        if effective_spectral
                         else None
                     ),
                 )
@@ -1361,6 +1366,15 @@ class PSANNRegressor(_Phase2Regressor):
                         and warmup_step < wave.warmup.epochs
                     ),
                     "next_expand_epoch": getattr(legacy, "_progressive_next_expand_epoch", None),
+                    # Legacy flat attention used the generic token wrapper around
+                    # a Wave token backbone.  Canonical Wave attention has a
+                    # different (and intentional) composition, so retain this
+                    # migration-only structural discriminator for strict v1 load.
+                    "legacy_attention_wrapper": bool(
+                        migrated.architecture.attention is not None
+                        and hasattr(migrated.model_, "token_backbone")
+                        and hasattr(migrated.model_, "readout")
+                    ),
                 }
             for name in (
                 "input_shape_",
@@ -1401,14 +1415,35 @@ class PSANNRegressor(_Phase2Regressor):
         primary_dim = fitted.get("primary_dim")
         if not input_shape or output_dim is None or primary_dim is None:
             raise ValueError("Schema-v1 checkpoint is missing fitted input/output metadata.")
+        state_dict = payload["model_state_dict"]
+        has_preprocessor = state_dict and any(str(key).startswith("preproc.") for key in state_dict)
         if (
             estimator.architecture.convolution is not None
             and not estimator._legacy_flattened_preserve_shape_
         ):
             internal = tuple(fitted.get("internal_shape_cf") or input_shape)
+            in_channels = int(internal[0])
+            if has_preprocessor:
+                preprocessor = getattr(estimator.lsm, "model", estimator.lsm)
+                output_channels = getattr(preprocessor, "out_channels", None)
+                if output_channels is None:
+                    core_weight = next(
+                        (
+                            value
+                            for key, value in state_dict.items()
+                            if str(key).startswith("core.") and str(key).endswith("conv.weight")
+                        ),
+                        None,
+                    )
+                    if core_weight is None:
+                        raise ValueError(
+                            "Checkpoint preprocessor state is missing a convolutional core projection."
+                        )
+                    output_channels = int(cast(torch.Tensor, core_weight).shape[1])
+                in_channels = int(output_channels)
             estimator.model_ = estimator._build_conv_core(
                 len(internal) - 1,
-                int(internal[0]),
+                in_channels,
                 int(output_dim),
                 segmentation_head=bool(estimator.per_element),
                 spatial_shape=tuple(internal[1:]),
@@ -1417,8 +1452,6 @@ class PSANNRegressor(_Phase2Regressor):
             estimator.model_ = estimator._build_dense_core(
                 int(np.prod(input_shape)), int(output_dim), input_shape=input_shape
             )
-        state_dict = payload["model_state_dict"]
-        has_preprocessor = state_dict and any(str(key).startswith("preproc.") for key in state_dict)
         if has_preprocessor and estimator.architecture.convolution is None:
             # The core was trained on the preprocessor output, not raw X.  Its
             # saved first projection is the authoritative dimension for schema

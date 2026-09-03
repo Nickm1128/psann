@@ -5,6 +5,7 @@ import pickle
 import warnings
 
 import pytest
+import numpy as np
 
 from psann.architectures import (
     AttentionConfig,
@@ -15,6 +16,7 @@ from psann.architectures import (
     normalize_architecture,
 )
 from psann import PSANNRegressor
+from psann.conv import ResidualPSANNConv2dNet
 
 
 @pytest.mark.parametrize(
@@ -85,3 +87,23 @@ def test_flat_architecture_routes_preserve_every_supported_policy():
     sequence = PSANNRegressor(phase_init=0.25, pool="mean").architecture
     assert sequence.kind == "sequence"
     assert sequence.sequence and sequence.sequence.pool == "mean"
+
+
+def test_flat_shaped_residual_attention_uses_registry_at_fit_boundary():
+    X = np.ones((8, 1, 2, 2), dtype=np.float32)
+    estimator = PSANNRegressor(
+        preserve_shape=True,
+        norm="layer",
+        attention={"kind": "mha", "num_heads": 1},
+        conv_channels=4,
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+    ).fit(X, X.mean(axis=(1, 2, 3)))
+    core = estimator.model_.core
+    assert isinstance(core.conv_core, ResidualPSANNConv2dNet)
+    assert core.attention is not None
+    assert estimator._architecture_capabilities_.supports_attention
+    assert estimator.predict(X[:2]).shape == (2,)

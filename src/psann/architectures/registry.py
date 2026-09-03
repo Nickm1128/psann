@@ -489,8 +489,9 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
             ),
         )
     )
-    first_w0 = wave.warmup.first_initial if wave.warmup else wave.first_w0
-    hidden_w0 = wave.warmup.hidden_initial if wave.warmup else wave.hidden_w0
+    warmup_enabled = bool(wave.warmup and wave.warmup.epochs > 0)
+    first_w0 = wave.warmup.first_initial if warmup_enabled and wave.warmup else wave.first_w0
+    hidden_w0 = wave.warmup.hidden_initial if warmup_enabled and wave.warmup else wave.hidden_w0
     if cfg.convolution is None:
         core: Any = WaveResNet(
             request.preprocessor_output_dim or request.input_dim,
@@ -534,12 +535,39 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
             assert attention is not None
             if token_dim % attention.num_heads:
                 raise ValueError("attention.num_heads must divide Wave token width.")
-            core = _WaveResNetAttentionDenseModel(
-                core,
-                cast(nn.Module, build_attention_module(attention, token_dim)),
-                seq_len=seq_len,
-                token_dim=token_dim,
-            )
+            if (request.structure_metadata or {}).get("legacy_attention_wrapper", False):
+                # Unversioned Wave checkpoints used the generic token wrapper.
+                # Rebuild that exact serialized shape only for migrated payloads.
+                token_core = WaveResNet(
+                    token_dim,
+                    request.hidden_units,
+                    initial_depth,
+                    request.hidden_units,
+                    first_layer_w0=first_w0,
+                    hidden_w0=hidden_w0,
+                    context_dim=context.dim if context else None,
+                    norm=cast(Any, wave.norm),
+                    use_film=context.film if context else True,
+                    use_phase_shift=context.phase_shift if context else True,
+                    dropout=wave.dropout,
+                    residual_alpha_init=cfg.residual.alpha_init,
+                    activation_config=cast(Any, activation),
+                )
+                core = _AttentionDenseModel(
+                    token_core,
+                    cast(nn.Module, build_attention_module(attention, request.hidden_units)),
+                    seq_len=seq_len,
+                    token_dim=token_dim,
+                    embed_dim=request.hidden_units,
+                    output_dim=request.output_dim,
+                )
+            else:
+                core = _WaveResNetAttentionDenseModel(
+                    core,
+                    cast(nn.Module, build_attention_module(attention, token_dim)),
+                    seq_len=seq_len,
+                    token_dim=token_dim,
+                )
     else:
         conv = cfg.convolution
         if (

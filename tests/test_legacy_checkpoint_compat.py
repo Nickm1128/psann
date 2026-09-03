@@ -52,6 +52,25 @@ def test_constructor_parameters_match_get_params_and_sklearn_clone(estimator_cls
     assert cloned.get_params(deep=False) == estimator.get_params(deep=False)
 
 
+@pytest.mark.parametrize(
+    ("estimator_cls", "expected_layers"),
+    [
+        (ResPSANNRegressor, 8),
+        (ResConvPSANNRegressor, 6),
+        (WaveResNetRegressor, 6),
+        (SGRPSANNRegressor, 2),
+        (GeoSparseRegressor, 4),
+    ],
+)
+def test_facade_class_and_initializer_signatures_are_historical(
+    estimator_cls, expected_layers
+) -> None:
+    class_signature = inspect.signature(estimator_cls)
+    init_signature = inspect.signature(estimator_cls.__init__)
+    assert class_signature.parameters["hidden_layers"].default == expected_layers
+    assert init_signature.parameters["hidden_layers"].default == expected_layers
+
+
 def test_no_sklearn_fallback_uses_constructor_parameters_in_subprocess() -> None:
     code = r"""
 import builtins

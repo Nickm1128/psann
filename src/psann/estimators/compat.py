@@ -27,7 +27,11 @@ def _legacy_signature(defaults: dict[str, object]) -> Signature:
     """Define 0.x wrapper signatures without importing derivative estimators."""
 
     return Signature(
-        [Parameter(name, Parameter.KEYWORD_ONLY, default=value) for name, value in defaults.items()]
+        [Parameter("self", Parameter.POSITIONAL_OR_KEYWORD)]
+        + [
+            Parameter(name, Parameter.KEYWORD_ONLY, default=value)
+            for name, value in defaults.items()
+        ]
     )
 
 
@@ -244,6 +248,8 @@ class _LegacyFacade(PSANNRegressor):
     def _capture_legacy_params(self, supplied: Mapping[str, Any]) -> None:
         values: dict[str, Any] = {}
         for name, parameter in self._legacy_signature.parameters.items():
+            if name == "self":
+                continue
             value = supplied.get(name, parameter.default)
             values[name] = value
             # These compatibility attributes intentionally retain their original
@@ -746,6 +752,7 @@ SGRPSANNRegressor._legacy_signature = _legacy_signature(
 )
 GeoSparseRegressor._legacy_signature = _legacy_signature(
     _with_defaults(
+        hidden_layers=4,
         amp=False,
         amp_dtype="bfloat16",
         compile=False,

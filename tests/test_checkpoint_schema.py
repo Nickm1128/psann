@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import os
+import pytest
 import subprocess
 import sys
 import torch
@@ -13,7 +14,7 @@ from psann.architectures import (
     GeometryConfig,
     ResidualConfig,
 )
-from psann.lsm import LSMExpander
+from psann.lsm import LSMConv2dExpander, LSMExpander
 
 
 def test_schema_v1_round_trip_does_not_store_final_module(tmp_path):
@@ -57,6 +58,30 @@ def test_schema_v1_round_trip_reconstructs_lsm_preprocessor(tmp_path):
     estimator.save(str(path))
     loaded = PSANNRegressor.load(str(path))
     np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
+
+
+@pytest.mark.parametrize("lsm_train", [False, True])
+def test_schema_v1_round_trip_reconstructs_convolutional_lsm_preprocessor(tmp_path, lsm_train):
+    X = np.ones((8, 1, 2, 2), dtype=np.float32)
+    y = X.mean(axis=(1, 2, 3))
+    lsm = LSMConv2dExpander(out_channels=2, hidden_layers=1, conv_channels=4, epochs=1)
+    if not lsm_train:
+        lsm.fit(X, epochs=1)
+    estimator = PSANNRegressor(
+        architecture=ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=4)),
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+        lsm=lsm,
+        lsm_train=lsm_train,
+    ).fit(X, y)
+    path = tmp_path / f"conv-lsm-{lsm_train}.pt"
+    estimator.save(str(path))
+    np.testing.assert_allclose(
+        PSANNRegressor.load(str(path)).predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6
+    )
 
 
 def test_schema_v1_round_trip_for_every_canonical_architecture(tmp_path):
@@ -119,6 +144,48 @@ def test_enriched_legacy_wave_migrates_and_survives_v1_resave(tmp_path):
     assert migrated.architecture.spectral and migrated.architecture.spectral.k_fft == 2
     assert migrated.architecture.wave and migrated.architecture.wave.progressive_depth
     v1_path = tmp_path / "resaved.pt"
+    migrated.save(str(v1_path))
+    np.testing.assert_allclose(
+        PSANNRegressor.load(str(v1_path)).predict(X[:2]), migrated.predict(X[:2]), rtol=1e-6
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "X", "factory"),
+    [
+        (
+            "attention",
+            np.ones((8, 2, 2), dtype=np.float32),
+            lambda legacy: legacy(attention={"kind": "mha", "num_heads": 1}),
+        ),
+        (
+            "conv-spectral",
+            np.ones((8, 1, 4), dtype=np.float32),
+            lambda legacy: legacy.with_conv_stem(conv_channels=4, use_spectral_gate=True, k_fft=2),
+        ),
+        (
+            "warmup-disabled",
+            np.ones((8, 2), dtype=np.float32),
+            lambda legacy: legacy(first_layer_w0=31.0, w0_warmup_epochs=0),
+        ),
+    ],
+)
+def test_effective_legacy_wave_compositions_survive_v1_resave(tmp_path, name, X, factory):
+    from psann._sklearn.wave import WaveResNetRegressor as LegacyWave
+
+    y = X.reshape(len(X), -1).mean(axis=1)
+    legacy = factory(
+        LegacyWave(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4, random_state=0)
+        if name == "conv-spectral"
+        else lambda **kwargs: LegacyWave(
+            hidden_layers=1, hidden_units=4, epochs=1, batch_size=4, random_state=0, **kwargs
+        )
+    )
+    legacy.fit(X, y)
+    old_path = tmp_path / f"{name}-old.pt"
+    v1_path = tmp_path / f"{name}-v1.pt"
+    legacy.save(str(old_path))
+    migrated = PSANNRegressor.load(str(old_path))
     migrated.save(str(v1_path))
     np.testing.assert_allclose(
         PSANNRegressor.load(str(v1_path)).predict(X[:2]), migrated.predict(X[:2]), rtol=1e-6
