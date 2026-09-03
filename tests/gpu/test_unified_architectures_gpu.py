@@ -9,6 +9,12 @@ import torch
 from psann.architectures import ArchitectureConfig, ConvolutionConfig, GeometryConfig
 from psann.estimators import PSANNRegressor
 from psann.lsm import LSMConv2dExpander
+from psann.preprocessing import (
+    LSMConfig,
+    LSMPretrainingConfig,
+    PreprocessorConfig,
+    PreprocessorTrainingConfig,
+)
 
 pytestmark = pytest.mark.gpu
 
@@ -69,3 +75,54 @@ def test_convolutional_lsm_checkpoint_persists_on_cuda(tmp_path) -> None:
     loaded = PSANNRegressor.load(str(path), map_location="cuda")
     np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
     assert next(loaded.model_.parameters()).device.type == "cuda"
+
+
+@pytest.mark.parametrize("convolutional", [False, True])
+def test_canonical_lsm_cuda_trainable_two_generation_checkpoint(
+    tmp_path, convolutional: bool
+) -> None:
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    if convolutional:
+        X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+        y = X.mean(axis=(1, 2, 3))
+        architecture = ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3))
+        component = LSMConfig.convolutional(
+            output_dim=2,
+            hidden_units=3,
+            random_state=0,
+            pretraining=LSMPretrainingConfig(epochs=0),
+        )
+    else:
+        X, y = _flat()
+        X = np.concatenate((X, X[:2]), axis=0)
+        y = np.concatenate((y, y[:2]), axis=0)
+        architecture = ArchitectureConfig.dense()
+        component = LSMConfig.dense(
+            output_dim=4,
+            hidden_layers=1,
+            hidden_units=5,
+            random_state=0,
+            pretraining=LSMPretrainingConfig(epochs=0, batch_size=4),
+        )
+    estimator = PSANNRegressor(
+        architecture=architecture,
+        preprocessor=PreprocessorConfig(
+            component, PreprocessorTrainingConfig(trainable=True, lr=5e-3)
+        ),
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        device="cuda",
+        random_state=0,
+    ).fit(X, y)
+    assert all(parameter.requires_grad for parameter in estimator.preprocessor_.parameters())
+    first = tmp_path / f"canonical-{convolutional}-first.pt"
+    second = tmp_path / f"canonical-{convolutional}-second.pt"
+    estimator.save(str(first))
+    restored = PSANNRegressor.load(str(first), map_location="cuda")
+    restored.save(str(second))
+    reloaded = PSANNRegressor.load(str(second), map_location="cuda")
+    np.testing.assert_allclose(reloaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-5)
+    assert next(reloaded.model_.parameters()).device.type == "cuda"
