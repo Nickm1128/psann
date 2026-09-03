@@ -236,12 +236,12 @@ class ActivationConfig:
             if self.activation_types is None:
                 raise ValueError("activation.kind='mixed' requires activation.activation_types.")
             raw_types = _activation_sequence(self.activation_types, "activation.activation_types")
-            types = []
+            normalized_types: list[str] = []
             for index, item in enumerate(raw_types):
                 if not isinstance(item, str):
                     raise TypeError(f"activation.activation_types[{index}] must be a string.")
-                types.append(normalize_activation_name(item))
-            types = tuple(types)
+                normalized_types.append(normalize_activation_name(item))
+            types = tuple(normalized_types)
             supported = {"psann", "phase-psann", "relu-sigmoid-psann", "relu", "tanh"}
             if (
                 not types
