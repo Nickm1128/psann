@@ -4,6 +4,12 @@ import numpy as np
 import torch
 
 from psann.estimators import PSANNRegressor
+from psann.architectures import (
+    ArchitectureConfig,
+    ConvolutionConfig,
+    GeometryConfig,
+    ResidualConfig,
+)
 from psann.lsm import LSMExpander
 
 
@@ -48,3 +54,40 @@ def test_schema_v1_round_trip_reconstructs_lsm_preprocessor(tmp_path):
     estimator.save(str(path))
     loaded = PSANNRegressor.load(str(path))
     np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
+
+
+def test_schema_v1_round_trip_for_every_canonical_architecture(tmp_path):
+    cases = (
+        ("dense", ArchitectureConfig.dense(), np.ones((8, 2), dtype=np.float32)),
+        (
+            "residual",
+            ArchitectureConfig.dense(residual=ResidualConfig()),
+            np.ones((8, 2), dtype=np.float32),
+        ),
+        ("wave", ArchitectureConfig.for_wave(), np.ones((8, 2), dtype=np.float32)),
+        ("sequence", ArchitectureConfig.for_sequence(), np.ones((8, 2), dtype=np.float32)),
+        (
+            "geo",
+            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(1, 2))),
+            np.ones((8, 2), dtype=np.float32),
+        ),
+        (
+            "conv",
+            ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=4)),
+            np.ones((8, 1, 2), dtype=np.float32),
+        ),
+    )
+    for name, architecture, X in cases:
+        estimator = PSANNRegressor(
+            architecture=architecture,
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=4,
+            random_state=0,
+        ).fit(X, X.reshape(len(X), -1).mean(axis=1))
+        path = tmp_path / f"{name}.pt"
+        estimator.save(str(path))
+        np.testing.assert_allclose(
+            PSANNRegressor.load(str(path)).predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6
+        )
