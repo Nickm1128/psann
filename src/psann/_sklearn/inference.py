@@ -52,9 +52,7 @@ class _PSANNRegressorInferenceMixin:
             meta["layout"] = "tokens" if preserve_tokens else "flat"
             flat_for_context = X2d
             inputs_np = (
-                X2d.reshape(X_arr.shape).astype(np.float32, copy=False)
-                if preserve_tokens
-                else X2d
+                X2d.reshape(X_arr.shape).astype(np.float32, copy=False) if preserve_tokens else X2d
             )
         else:
             X_cf = (

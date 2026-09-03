@@ -795,7 +795,11 @@ class PSANNRegressor(_Phase2Regressor):
         )
         capabilities = getattr(self, "preprocessor_capabilities_", None)
         effective_shape = tuple(input_shape)
-        if capabilities is not None and capabilities.output_topology == "tokens" and effective_shape:
+        if (
+            capabilities is not None
+            and capabilities.output_topology == "tokens"
+            and effective_shape
+        ):
             effective_shape = effective_shape[:-1] + (capabilities.output_dim,)
             if self.architecture.kind == "sequence":
                 token_dim = capabilities.output_dim
@@ -860,9 +864,7 @@ class PSANNRegressor(_Phase2Regressor):
             5: "spatial-3d",
         }.get(array.ndim)
         if array.ndim == 3:
-            input_topology = (
-                "spatial-1d" if self.architecture.convolution is not None else "tokens"
-            )
+            input_topology = "spatial-1d" if self.architecture.convolution is not None else "tokens"
         if input_topology is None:
             raise ValueError("preprocessor input must have a supported batch topology.")
         spatial_ndim = array.ndim - 2 if input_topology.startswith("spatial-") else None
@@ -1214,10 +1216,14 @@ class PSANNRegressor(_Phase2Regressor):
                 if path == ["component"]:
                     if not isinstance(value, (LSMConfig, ModulePreprocessorConfig)):
                         raise TypeError("preprocessor__component must be a component config.")
-                    component_changes = {field.name: getattr(value, field.name) for field in fields(value)}
+                    component_changes = {
+                        field.name: getattr(value, field.name) for field in fields(value)
+                    }
                 elif path == ["training"]:
                     if not isinstance(value, PreprocessorTrainingConfig):
-                        raise TypeError("preprocessor__training must be a PreprocessorTrainingConfig.")
+                        raise TypeError(
+                            "preprocessor__training must be a PreprocessorTrainingConfig."
+                        )
                     training_changes = {
                         field.name: getattr(value, field.name) for field in fields(value)
                     }

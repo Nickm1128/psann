@@ -43,9 +43,7 @@ class _AttentionDenseModel(nn.Module):
         elif x.ndim == 2 and x.shape[1] == self.seq_len * self.token_dim:
             tokens = x.reshape(x.shape[0], self.seq_len, self.token_dim)
         else:
-            raise ValueError(
-                "Attention-enabled models require flattened or token-shaped inputs."
-            )
+            raise ValueError("Attention-enabled models require flattened or token-shaped inputs.")
         batch = tokens.shape[0]
         embedded = self.token_backbone(tokens.reshape(batch * self.seq_len, self.token_dim))
         embedded = embedded.reshape(batch, self.seq_len, self.embed_dim)
@@ -142,9 +140,7 @@ class _WaveResNetAttentionDenseModel(nn.Module):
         elif x.ndim == 2 and x.shape[1] == self.seq_len * self.token_dim:
             tokens = x.reshape(x.shape[0], self.seq_len, self.token_dim)
         else:
-            raise ValueError(
-                "Wave attention models require flattened or token-shaped inputs."
-            )
+            raise ValueError("Wave attention models require flattened or token-shaped inputs.")
         tokens = self.attention(tokens, tokens, tokens)[0]
         flat = tokens.reshape(tokens.shape[0], -1)
         return self.wave(flat, context) if context is not None else self.wave(flat)

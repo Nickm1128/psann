@@ -216,9 +216,7 @@ def test_custom_preprocessor_clone_and_parent_component_update_are_runtime_safe(
     estimator = _small_estimator(config)
     cloned = clone(estimator)
     cloned.set_params(
-        preprocessor__component=ModulePreprocessorConfig(
-            torch.nn.Linear(3, 5), "flat", "flat", 5
-        )
+        preprocessor__component=ModulePreprocessorConfig(torch.nn.Linear(3, 5), "flat", "flat", 5)
     ).fit(X, y)
     assert cloned.preprocessor_capabilities_.output_dim == 5
     assert cloned.predict(X[:2]).shape == (2,)

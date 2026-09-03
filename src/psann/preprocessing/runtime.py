@@ -145,11 +145,16 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
             raise ValueError(
                 "preprocessor.component.output_topology is incompatible with module output rank."
             )
-        if produced.shape[-1] != component.output_dim and not component.output_topology.startswith("spatial-"):
+        if produced.shape[-1] != component.output_dim and not component.output_topology.startswith(
+            "spatial-"
+        ):
             raise ValueError(
                 "preprocessor.component.output_dim conflicts with module output width."
             )
-        if component.output_topology.startswith("spatial-") and produced.shape[1] != component.output_dim:
+        if (
+            component.output_topology.startswith("spatial-")
+            and produced.shape[1] != component.output_dim
+        ):
             raise ValueError(
                 "preprocessor.component.output_dim conflicts with module output channels."
             )
