@@ -20,6 +20,7 @@ from ..architectures import (
     W0WarmupConfig,
     WaveConfig,
     normalize_activation_config,
+    normalize_activation_name,
 )
 from .regressor import PSANNRegressor
 
@@ -85,18 +86,31 @@ def _with_defaults(**overrides: object) -> dict[str, object]:
     return values
 
 
+_MISSING_ACTIVATION_TYPE = object()
+
+
 def _activation(kwargs: dict[str, Any]) -> ActivationConfig:
+    """Normalize the complete legacy activation payload at one boundary."""
+
     raw = kwargs.pop("activation", None)
-    kind = kwargs.pop("activation_type", "psann")
-    values = dict(raw) if isinstance(raw, Mapping) else {}
-    if "kind" in values:
-        requested = normalize_activation_config({"kind": kind}).kind
-        configured = normalize_activation_config({"kind": values["kind"]}).kind
-        if requested != configured:
-            raise ValueError("activation_type conflicts with activation.kind.")
+    supplied_kind = kwargs.pop("activation_type", _MISSING_ACTIVATION_TYPE)
+    if raw is None:
+        return normalize_activation_config(
+            {"kind": "psann" if supplied_kind is _MISSING_ACTIVATION_TYPE else supplied_kind}
+        )
+    if isinstance(raw, ActivationConfig):
+        activation = normalize_activation_config(raw)
+    elif isinstance(raw, Mapping):
+        values = dict(raw)
+        if "kind" not in values:
+            values["kind"] = "psann" if supplied_kind is _MISSING_ACTIVATION_TYPE else supplied_kind
+        activation = normalize_activation_config(values)
     else:
-        values["kind"] = kind
-    return normalize_activation_config(values)
+        raise TypeError("activation must be None, an ActivationConfig, or a mapping.")
+    if supplied_kind is not _MISSING_ACTIVATION_TYPE:
+        if normalize_activation_name(cast(str, supplied_kind)) != activation.kind:
+            raise ValueError("activation_type conflicts with activation.kind.")
+    return activation
 
 
 def _attention(kwargs: dict[str, Any]) -> AttentionConfig | None:
@@ -624,6 +638,8 @@ class GeoSparseRegressor(_LegacyFacade):
     def __init__(self, **kwargs: Any) -> None:
         self._warn()
         supplied = dict(kwargs)
+        activation_type_was_supplied = "activation_type" in kwargs
+        activation_was_supplied = kwargs.get("activation") is not None
         stateful = False
         state = None
         architecture = kwargs.pop("architecture", None)
@@ -631,6 +647,10 @@ class GeoSparseRegressor(_LegacyFacade):
             _discard_redundant_architecture_keywords(kwargs)
         if architecture is None:
             activation = _activation(kwargs)
+            if not activation_type_was_supplied and activation_was_supplied:
+                # Keep sklearn cloning faithful when a tagged/typed policy supplied
+                # the discriminant instead of the historical default keyword.
+                supplied["activation_type"] = activation.kind
             ignored_attention = kwargs.get("attention")
             if ignored_attention is not None:
                 warnings.warn(

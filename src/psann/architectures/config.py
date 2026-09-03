@@ -11,8 +11,9 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import asdict, dataclass, fields, replace
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, Callable, Mapping, TypeAlias, cast
+from numbers import Real
 
 
 class FrozenMapping(Mapping[str, object]):
@@ -59,8 +60,23 @@ _ACTIVATION_ALIASES = {
 def _canonical_activation_name(value: str) -> str:
     """Return the public spelling for a documented activation-name alias."""
 
-    name = _canonical_name(value)
+    if not isinstance(value, str):
+        raise TypeError("activation.kind must be a string.")
+    name = value.strip().lower().replace("_", "-")
     return _ACTIVATION_ALIASES.get(name, name)
+
+
+def normalize_activation_name(value: str) -> str:
+    """Canonicalize one activation discriminant without validating a full policy."""
+
+    name = _canonical_activation_name(value)
+    allowed = {"psann", "phase-psann", "mixed", "relu", "tanh", "relu-sigmoid-psann"}
+    if name not in allowed:
+        raise ValueError(
+            "activation.kind must be psann, phase-psann, mixed, relu, tanh, or "
+            "relu-sigmoid-psann."
+        )
+    return name
 
 
 def _finite(value: float, path: str) -> float:
@@ -75,6 +91,32 @@ def _positive(value: float, path: str) -> float:
     if result <= 0:
         raise ValueError(f"{path} must be positive.")
     return result
+
+
+def _finite_real(value: object, path: str) -> float:
+    """Validate public numeric policy values without coercing strings or booleans."""
+
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise TypeError(f"{path} must be a finite real number.")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{path} must be finite.")
+    return result
+
+
+def _positive_real(value: object, path: str) -> float:
+    result = _finite_real(value, path)
+    if result <= 0:
+        raise ValueError(f"{path} must be positive.")
+    return result
+
+
+def _activation_sequence(value: object, path: str) -> Sequence[object]:
+    """Validate the non-string public containers used by mixed activations."""
+
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise TypeError(f"{path} must be a non-string sequence.")
+    return value
 
 
 def _integer(value: object, path: str, *, minimum: int | None = None) -> int:
@@ -139,13 +181,7 @@ class ActivationConfig:
     feature_dim: int = -1
 
     def __post_init__(self) -> None:
-        kind = _canonical_activation_name(self.kind)
-        allowed_kinds = {"psann", "phase-psann", "mixed", "relu", "tanh", "relu-sigmoid-psann"}
-        if kind not in allowed_kinds:
-            raise ValueError(
-                "activation.kind must be psann, phase-psann, mixed, relu, tanh, or "
-                "relu-sigmoid-psann."
-            )
+        kind = normalize_activation_name(self.kind)
         object.__setattr__(self, "kind", kind)
         if _positive(self.amplitude_init, "activation.amplitude_init") <= 0:
             raise ValueError("activation.amplitude_init must be positive.")
@@ -179,9 +215,11 @@ class ActivationConfig:
         _finite(self.slope_init, "activation.slope_init")
         _boolean(self.slope_trainable, "activation.slope_trainable")
         _positive(self.clip_max, "activation.clip_max")
-        phase_init = _finite(self.phase_init, "activation.phase_init")
+        phase_init = _finite_real(self.phase_init, "activation.phase_init")
         phase_trainable = _boolean(self.phase_trainable, "activation.phase_trainable")
-        ratio_sum_tol = _positive(self.ratio_sum_tol, "activation.ratio_sum_tol")
+        ratio_sum_tol = _positive_real(self.ratio_sum_tol, "activation.ratio_sum_tol")
+        if not isinstance(self.mix_layout, str):
+            raise TypeError("activation.mix_layout must be a string.")
         mix_layout = _canonical_name(self.mix_layout)
         if mix_layout not in {"random", "contiguous"}:
             raise ValueError("activation.mix_layout must be random or contiguous.")
@@ -197,7 +235,13 @@ class ActivationConfig:
         if kind == "mixed":
             if self.activation_types is None:
                 raise ValueError("activation.kind='mixed' requires activation.activation_types.")
-            types = tuple(_canonical_activation_name(item) for item in self.activation_types)
+            raw_types = _activation_sequence(self.activation_types, "activation.activation_types")
+            types = []
+            for index, item in enumerate(raw_types):
+                if not isinstance(item, str):
+                    raise TypeError(f"activation.activation_types[{index}] must be a string.")
+                types.append(normalize_activation_name(item))
+            types = tuple(types)
             supported = {"psann", "phase-psann", "relu-sigmoid-psann", "relu", "tanh"}
             if (
                 not types
@@ -210,7 +254,13 @@ class ActivationConfig:
             if self.activation_ratios is None:
                 ratios = None
             else:
-                ratios = tuple(float(item) for item in self.activation_ratios)
+                raw_ratios = _activation_sequence(
+                    self.activation_ratios, "activation.activation_ratios"
+                )
+                ratios = tuple(
+                    _finite_real(item, f"activation.activation_ratios[{index}]")
+                    for index, item in enumerate(raw_ratios)
+                )
                 if (
                     len(types) != len(ratios)
                     or any(not math.isfinite(item) or item < 0 for item in ratios)

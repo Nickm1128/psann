@@ -8,6 +8,7 @@ from psann.architectures import (
     ArchitectureConfig,
     GeometryConfig,
     normalize_activation_config,
+    normalize_activation_name,
 )
 
 
@@ -18,12 +19,11 @@ def _normalize_geo_activation(
 
     values = dict(activation_config or {})
     if "kind" in values:
-        requested = normalize_activation_config({"kind": activation_type}).kind
-        configured = normalize_activation_config({"kind": values["kind"]}).kind
-        if requested != configured:
+        activation = normalize_activation_config(values)
+        if normalize_activation_name(activation_type) != activation.kind:
             raise ValueError("activation_type conflicts with activation_config.kind.")
-    else:
-        values["kind"] = activation_type
+        return activation
+    values["kind"] = activation_type
     return normalize_activation_config(values)
 
 

@@ -107,6 +107,135 @@ def test_geosparse_activation_normalizer_equivalence_and_rejections() -> None:
 
 
 @pytest.mark.parametrize(
+    ("raw", "path"),
+    [
+        ({"kind": "phase-psann", "phase_init": "0.2"}, "activation.phase_init"),
+        ({"kind": "phase-psann", "phase_init": True}, "activation.phase_init"),
+        (
+            {"kind": "mixed", "activation_types": ["psann"], "ratio_sum_tol": "0.1"},
+            "activation.ratio_sum_tol",
+        ),
+        (
+            {"kind": "mixed", "activation_types": ["psann"], "ratio_sum_tol": True},
+            "activation.ratio_sum_tol",
+        ),
+        ({"kind": "mixed", "activation_types": "psann"}, "activation.activation_types"),
+        ({"kind": "mixed", "activation_types": [1]}, "activation.activation_types[0]"),
+        (
+            {"kind": "mixed", "activation_types": ["psann"], "activation_ratios": "1"},
+            "activation.activation_ratios",
+        ),
+        (
+            {"kind": "mixed", "activation_types": ["psann"], "activation_ratios": [True]},
+            "activation.activation_ratios[0]",
+        ),
+    ],
+)
+def test_phase_and_mixed_wrong_types_report_full_activation_paths(
+    raw: dict[str, object], path: str
+) -> None:
+    with pytest.raises(TypeError, match=path.replace("[", r"\[").replace("]", r"\]")):
+        normalize_activation_config(raw)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"amp_init": 1.0, "amplitude_init": 1.0},
+        {"freq_init": 1.0, "frequency_init": 1.0},
+        {"damp_init": 0.1, "decay_init": 0.1},
+        {"damping_init": 0.1, "decay_init": 0.1},
+        {"trainable": True, "learnable": ()},
+        {"kind": "mixed", "types": ["psann"], "activation_types": ["psann"]},
+        {"kind": "mixed", "ratios": [1.0], "activation_ratios": [1.0]},
+        {"kind": "mixed", "layout": "random", "mix_layout": "random"},
+        {"kind": "mixed", "seed": 1, "mix_seed": 1},
+        {"relu_slope_init": 1.0, "slope_init": 1.0},
+        {"slope_learnable": True, "slope_trainable": True},
+        {"clip_at": 1.0, "clip_max": 1.0},
+        {"amp_bounds": (0.0, 1.0), "bounds": {"amplitude": (0.0, 1.0)}},
+        {"freq_bounds": (0.0, 1.0), "bounds": {"frequency": (0.0, 1.0)}},
+        {"damp_bounds": (0.0, 1.0), "bounds": {"decay": (0.0, 1.0)}},
+    ],
+)
+def test_activation_alias_conflicts_are_never_silently_preferred(raw: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="conflicting"):
+        normalize_activation_config(raw)
+
+
+@pytest.mark.parametrize(
+    "constructor",
+    [
+        lambda activation: ArchitectureConfig.dense(activation=activation),
+        lambda activation: ArchitectureConfig.convolutional(activation=activation),
+        lambda activation: ArchitectureConfig.for_wave(activation=activation),
+        lambda activation: ArchitectureConfig.for_sequence(activation=activation),
+    ],
+)
+@pytest.mark.parametrize(
+    "activation",
+    [
+        ActivationConfig(kind="phase-psann", phase_init=0.2),
+        ActivationConfig(kind="mixed", activation_types=("psann", "relu")),
+    ],
+)
+def test_phase_and_mixed_are_rejected_for_every_non_geosparse_architecture(
+    constructor: object, activation: ActivationConfig
+) -> None:
+    with pytest.raises(ValueError, match="geometric-sparse"):
+        constructor(activation)  # type: ignore[operator]
+
+
+def test_geosparse_facade_activation_adapter_retains_typed_policies_and_rejects_bad_values() -> (
+    None
+):
+    from sklearn.base import clone
+
+    typed = ActivationConfig(kind="phase-psann", phase_init=0.2, phase_trainable=False)
+    with pytest.warns(DeprecationWarning):
+        facade = GeoSparseRegressor(activation=typed, shape=(2, 2), k=2)
+    assert facade.architecture.activation is typed
+    assert clone(facade).architecture.activation == typed
+
+    tagged = {"kind": "mixed", "types": ["psann", "relu"], "ratios": [0.5, 0.5]}
+    with pytest.warns(DeprecationWarning):
+        omitted_type = GeoSparseRegressor(activation=tagged, shape=(2, 2), k=2)
+    assert omitted_type.architecture.activation.kind == "mixed"
+    with pytest.warns(DeprecationWarning):
+        matching_type = GeoSparseRegressor(
+            activation_type="mixed", activation=tagged, shape=(2, 2), k=2
+        )
+    assert matching_type.architecture.activation.kind == "mixed"
+    with pytest.warns(DeprecationWarning), pytest.raises(ValueError, match="conflicts"):
+        GeoSparseRegressor(activation_type="relu", activation=tagged, shape=(2, 2), k=2)
+    with pytest.warns(DeprecationWarning), pytest.raises(TypeError, match="activation"):
+        GeoSparseRegressor(activation=7, shape=(2, 2), k=2)
+
+
+def test_geosparse_facade_fully_tagged_mixed_payload_reaches_fit_and_predict() -> None:
+    X = np.ones((8, 4), dtype=np.float32)
+    y = X.mean(axis=1)
+    with pytest.warns(DeprecationWarning):
+        facade = GeoSparseRegressor(
+            activation_type="mixed",
+            activation={
+                "kind": "mixed",
+                "activation_types": ["phase-psann", "relu"],
+                "activation_ratios": [0.5, 0.5],
+                "phase_init": 0.2,
+            },
+            shape=(2, 2),
+            k=2,
+            hidden_layers=1,
+            epochs=1,
+            batch_size=4,
+            random_state=0,
+        )
+    facade.fit(X, y)
+    assert facade.predict(X[:2]).shape == (2,)
+
+
+@pytest.mark.parametrize(
     ("activation_type", "activation", "expected_type"),
     [
         (
@@ -267,7 +396,11 @@ def test_geosparse_benchmark_json_uses_shared_normalizer_and_real_consumer() -> 
         )
 
         payloads = [
-            {"activation_types": ["phase-psann", "relu"], "activation_ratios": [0.5, 0.5]},
+            {
+                "kind": "mixed",
+                "activation_types": ["phase-psann", "relu"],
+                "activation_ratios": [0.5, 0.5],
+            },
             {"types": ["phasepsann", "relu"], "ratios": [0.5, 0.5], "layout": "contiguous"},
         ]
         X = np.ones((8, 4), dtype=np.float32)
@@ -286,14 +419,16 @@ def test_geosparse_benchmark_json_uses_shared_normalizer_and_real_consumer() -> 
                 > 0
             )
 
-            def factory(epochs: int) -> PSANNRegressor:
+            def factory(
+                epochs: int, *, activation_payload: dict[str, object] = payload
+            ) -> PSANNRegressor:
                 return build_geosparse_estimator(
                     input_dim=4,
                     shape=(2, 2),
                     geo_depth=1,
                     geo_k=2,
                     activation_type="mixed",
-                    activation_config=payload,
+                    activation_config=activation_payload,
                     amp=False,
                     amp_dtype="float32",
                     compile=False,
