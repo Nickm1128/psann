@@ -1211,7 +1211,12 @@ class PSANNRegressor(_Phase2Regressor):
                         if getattr(legacy, "preserve_shape", False)
                         else None
                     ),
-                    attention=migrated_attention,
+                    # The legacy flat Wave builder explicitly ignored attention
+                    # whenever spectral gating was enabled; preserve that effective
+                    # behavior rather than creating an invalid canonical pair.
+                    attention=(
+                        None if getattr(legacy, "use_spectral_gate", False) else migrated_attention
+                    ),
                     context=(
                         ContextConfig(
                             getattr(legacy, "context_dim", None),
