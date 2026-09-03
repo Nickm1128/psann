@@ -172,6 +172,10 @@ def _common(kwargs: dict[str, Any]) -> dict[str, Any]:
         "compile_dynamic",
         "hidden_width",
         "w0",
+        # Checkpoint reconstruction may supply the canonical boundary even
+        # though the retained facade signature intentionally presents 0.x LSM
+        # keywords.  It is not added to the public facade signature.
+        "preprocessor",
         "lsm",
         "lsm_train",
         "lsm_pretrain_epochs",

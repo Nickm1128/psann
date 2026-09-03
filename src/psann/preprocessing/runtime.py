@@ -65,6 +65,10 @@ def _lsm_expander(config: LSMConfig, device: torch.device) -> nn.Module:
         return LSMExpander(
             config.output_dim,
             hidden_units=config.hidden_units,
+            # ``hidden_units`` is the canonical spelling.  Supplying the
+            # historical alias as ``None`` keeps the underlying expander from
+            # emitting a compatibility warning for a canonical configuration.
+            hidden_width=None,
             batch_size=training.batch_size if training.batch_size is not None else 256,
             early_stopping=(
                 training.early_stopping if training.early_stopping is not None else False
@@ -79,6 +83,7 @@ def _lsm_expander(config: LSMConfig, device: torch.device) -> nn.Module:
     return LSMConv2dExpander(
         config.output_dim,
         conv_channels=config.hidden_units,
+        hidden_channels=None,
         kernel_size=config.kernel_size or 1,
         **common,
     )
@@ -107,7 +112,10 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
             f"received {request.input_topology}."
         )
     expander = _lsm_expander(component, request.device)
-    expander.fit(request.data, epochs=component.pretraining.epochs)
+    expander.fit(
+        request.data,
+        epochs=0 if request.reconstruction_only else component.pretraining.epochs,
+    )
     module = expander.model
     if not isinstance(module, (LSM, LSMConv2d)):
         raise RuntimeError("preprocessor component did not create a graph module.")

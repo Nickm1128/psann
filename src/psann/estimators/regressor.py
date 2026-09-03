@@ -50,11 +50,14 @@ from ..attention import AttentionConfig as LegacyAttentionConfig
 from ..state import StateConfig as LegacyStateConfig
 from ..nn import WithPreprocessor
 from ..preprocessing import (
+    ModulePreprocessorConfig,
     PreprocessorBuildRequest,
     PreprocessorConfig,
     PreprocessorLike,
+    PreprocessorTrainingConfig,
     normalize_preprocessor,
     prepare_preprocessor,
+    preprocessor_to_mapping,
     validate_preprocessor_capability,
 )
 from ..types import LossLike, ScalerSpec
@@ -788,11 +791,12 @@ class PSANNRegressor(_Phase2Regressor):
             bool(self.per_element),
             self._device(),
             torch.float32,
-            # The retained fit hook owns the one composition wrapper.  It receives
-            # the prepared module/output width separately; passing it here would
-            # make the registry wrap it a second time.
-            None,
-            None,
+            self._prepared_preprocessor_,
+            (
+                self.preprocessor_capabilities_.output_dim
+                if self.preprocessor_capabilities_ is not None
+                else None
+            ),
             getattr(self, "_architecture_structure_", None),
             self.w0,
         )
@@ -809,6 +813,15 @@ class PSANNRegressor(_Phase2Regressor):
             )
             self._attention_shape_ = (seq_len, request.hidden_units)
         self._architecture_lifecycle_.on_model_built(model=result.model, runtime={})
+        if request.preprocessor is not None:
+            # The retained Phase-2 fit hooks own final composition for every
+            # train/predict/HISSO route.  The registry nevertheless receives
+            # the prepared module and output width to select the core shape.
+            # Return that core here so those hooks create exactly one runtime
+            # ``WithPreprocessor`` rather than nesting two identical wrappers.
+            if not isinstance(result.model, WithPreprocessor):
+                raise RuntimeError("architecture builder did not compose the requested preprocessor.")
+            return result.model.core
         return result.model
 
     def _resolve_lsm_module(
@@ -1211,7 +1224,7 @@ class PSANNRegressor(_Phase2Regressor):
         return self
 
     def save(self, path: str) -> None:
-        """Write a portable schema-v1 payload without serialising a final module."""
+        """Write a portable schema-v2 payload without serialising a final model."""
 
         self._ensure_fitted()
         model = self.model_
@@ -1224,6 +1237,60 @@ class PSANNRegressor(_Phase2Regressor):
         # checkpoint always stores the one canonical constructor surface.
         params = PSANNRegressor.get_params(self, deep=False)
         params["architecture"] = architecture_to_mapping(self.architecture)
+        artifacts: dict[str, object] = {
+            "hisso_reward_fn": getattr(self, "_hisso_reward_fn_", None),
+        }
+        configured_preprocessor = self.preprocessor
+        attached_preprocessor = getattr(model, "preproc", None)
+        if configured_preprocessor is not None and isinstance(
+            configured_preprocessor.component, ModulePreprocessorConfig
+        ):
+            # The portable constructor metadata describes the boundary while
+            # the prototype reconstructs user-defined module structure.  The
+            # state dictionary below remains authoritative for its weights.
+            component = configured_preprocessor.component
+            params["preprocessor"] = {
+                "kind": "module",
+                "input_topology": component.input_topology,
+                "output_topology": component.output_topology,
+                "output_dim": component.output_dim,
+                "training": {
+                    "trainable": configured_preprocessor.training.trainable,
+                    "lr": configured_preprocessor.training.lr,
+                },
+            }
+            artifacts["preprocessor_module"] = deepcopy(component.module).cpu()
+        elif configured_preprocessor is not None:
+            params["preprocessor"] = preprocessor_to_mapping(configured_preprocessor)
+        elif attached_preprocessor is not None:
+            # Old ``lsm=`` objects remain a 0.x adapter.  Persist the actual
+            # prepared module as a module-boundary artifact so that a new v2
+            # save does not discard its graph structure or fitted weights.
+            input_topology = (
+                "spatial-2d"
+                if hasattr(attached_preprocessor, "out_channels")
+                else "flat"
+            )
+            output_dim = int(
+                getattr(
+                    attached_preprocessor,
+                    "out_channels",
+                    getattr(attached_preprocessor, "output_dim", 0),
+                )
+            )
+            if output_dim <= 0:
+                raise TypeError("legacy preprocessor module has no declared output width.")
+            params["preprocessor"] = {
+                "kind": "module",
+                "input_topology": input_topology,
+                "output_topology": input_topology,
+                "output_dim": output_dim,
+                "training": {
+                    "trainable": bool(getattr(self, "lsm_train", False)),
+                    "lr": getattr(self, "lsm_lr", None),
+                },
+            }
+            artifacts["preprocessor_module"] = deepcopy(attached_preprocessor).cpu()
         fitted = {
             "input_shape": (
                 tuple(self.input_shape_)
@@ -1254,6 +1321,21 @@ class PSANNRegressor(_Phase2Regressor):
                 self, "_legacy_flattened_preserve_shape_", False
             ),
         }
+        if self.preprocessor_capabilities_ is not None:
+            fitted["preprocessing"] = {
+                "input_topology": self.preprocessor_capabilities_.input_topology,
+                "output_topology": self.preprocessor_capabilities_.output_topology,
+                "output_dim": self.preprocessor_capabilities_.output_dim,
+                "diagnostics": self.preprocessor_diagnostics_ or {},
+            }
+        elif attached_preprocessor is not None:
+            metadata = cast(Mapping[str, object], params["preprocessor"])
+            fitted["preprocessing"] = {
+                "input_topology": metadata["input_topology"],
+                "output_topology": metadata["output_topology"],
+                "output_dim": metadata["output_dim"],
+                "diagnostics": {},
+            }
         # A migrated checkpoint can carry a reconstruction discriminator which
         # the generic lifecycle does not own (for example the retained legacy
         # Wave attention wrapper).  Lifecycle counters are authoritative when
@@ -1265,15 +1347,13 @@ class PSANNRegressor(_Phase2Regressor):
         torch.save(
             {
                 "schema": "psann.regressor",
-                "schema_version": 1,
+                "schema_version": 2,
                 "package_version": "0.12.4",
                 "estimator_params": params,
                 "fitted": fitted,
                 "structure": structure,
                 "model_state_dict": state_dict,
-                "artifacts": {
-                    "hisso_reward_fn": getattr(self, "_hisso_reward_fn_", None),
-                },
+                "artifacts": artifacts,
             },
             path,
         )
@@ -1610,11 +1690,30 @@ class PSANNRegressor(_Phase2Regressor):
                 capability_request
             ).capabilities
             return migrated
-        if payload.get("schema_version") != 1:
-            raise ValueError(
-                f"Unsupported psann.regressor schema version {payload.get('schema_version')!r}."
-            )
+        version = payload.get("schema_version")
+        if version not in {1, 2}:
+            raise ValueError(f"Unsupported psann.regressor schema version {version!r}.")
         raw_params = dict(payload.get("estimator_params", {}))
+        raw_preprocessor = raw_params.get("preprocessor")
+        if isinstance(raw_preprocessor, Mapping) and raw_preprocessor.get("kind") == "module":
+            module = dict(payload.get("artifacts", {})).get("preprocessor_module")
+            if not isinstance(module, nn.Module):
+                raise ValueError("Schema-v2 artifacts.preprocessor_module is missing or invalid.")
+            training = raw_preprocessor.get("training", {})
+            if not isinstance(training, Mapping):
+                raise ValueError("Schema-v2 estimator_params.preprocessor.training is invalid.")
+            try:
+                raw_params["preprocessor"] = PreprocessorConfig(
+                    ModulePreprocessorConfig(
+                        module=module,
+                        input_topology=cast(str, raw_preprocessor["input_topology"]),
+                        output_topology=cast(str, raw_preprocessor["output_topology"]),
+                        output_dim=cast(int, raw_preprocessor["output_dim"]),
+                    ),
+                    training=PreprocessorTrainingConfig(**dict(training)),
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("Schema-v2 estimator_params.preprocessor is invalid.") from exc
         if "architecture" not in raw_params:
             raise ValueError("Schema-v1 checkpoint is missing estimator_params.architecture.")
         estimator = cls(**raw_params)
@@ -1632,6 +1731,39 @@ class PSANNRegressor(_Phase2Regressor):
             raise ValueError("Schema-v1 checkpoint is missing fitted input/output metadata.")
         state_dict = payload["model_state_dict"]
         has_preprocessor = state_dict and any(str(key).startswith("preproc.") for key in state_dict)
+        if version == 2 and estimator.preprocessor is not None:
+            preprocessing = fitted.get("preprocessing")
+            if not isinstance(preprocessing, Mapping):
+                raise ValueError("Schema-v2 checkpoint is missing fitted.preprocessing metadata.")
+            expected_output = preprocessing.get("output_dim")
+            if expected_output != estimator.preprocessor.component.output_dim:
+                raise ValueError(
+                    "Schema-v2 fitted.preprocessing.output_dim conflicts with preprocessor."
+                )
+            if estimator.architecture.convolution is not None:
+                internal = tuple(fitted.get("internal_shape_cf") or input_shape)
+                build_data = np.zeros((1,) + internal, dtype=np.float32)
+                topology = f"spatial-{len(internal) - 1}d"
+                shape = internal
+            else:
+                build_data = np.zeros((1,) + input_shape, dtype=np.float32)
+                topology = "flat" if len(input_shape) == 1 else "tokens"
+                shape = input_shape
+            prepared = prepare_preprocessor(
+                PreprocessorBuildRequest(
+                    estimator.preprocessor,
+                    topology,
+                    shape,
+                    build_data,
+                    estimator._device(),
+                    torch.float32,
+                    reconstruction_only=True,
+                )
+            )
+            estimator._prepared_preprocessor_ = prepared.module
+            estimator.preprocessor_ = prepared.module
+            estimator.preprocessor_capabilities_ = prepared.capabilities
+            estimator.preprocessor_diagnostics_ = dict(preprocessing.get("diagnostics") or {})
         if (
             estimator.architecture.convolution is not None
             and not estimator._legacy_flattened_preserve_shape_
@@ -1639,7 +1771,9 @@ class PSANNRegressor(_Phase2Regressor):
             internal = tuple(fitted.get("internal_shape_cf") or input_shape)
             in_channels = int(internal[0])
             if has_preprocessor:
-                preprocessor = getattr(estimator.lsm, "model", estimator.lsm)
+                preprocessor = estimator.preprocessor_
+                if preprocessor is None:
+                    preprocessor = getattr(estimator.lsm, "model", estimator.lsm)
                 output_channels = getattr(preprocessor, "out_channels", None)
                 if output_channels is None:
                     core_weight = next(
@@ -1696,7 +1830,9 @@ class PSANNRegressor(_Phase2Regressor):
             # State-dict checkpoints retain constructor parameters, including the
             # fitted LSM module.  Recreate the same wrapper rather than a
             # placeholder whose empty prefix can never satisfy ``core.*`` keys.
-            preprocessor = getattr(estimator.lsm, "model", estimator.lsm)
+            preprocessor = estimator.preprocessor_
+            if preprocessor is None:
+                preprocessor = getattr(estimator.lsm, "model", estimator.lsm)
             estimator.model_ = WithPreprocessor(
                 cast(nn.Module | None, preprocessor), estimator.model_
             )

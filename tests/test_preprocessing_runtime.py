@@ -68,3 +68,31 @@ def test_canonical_preprocessor_shallow_params_exclude_legacy_lsm_names() -> Non
     assert estimator.preprocessor.component.output_dim == 6
     assert estimator.preprocessor.component.pretraining.epochs == 1
     assert estimator.preprocessor.training.trainable is True
+
+
+def test_v2_dense_lsm_checkpoint_survives_two_generations(tmp_path) -> None:
+    X = np.arange(24, dtype=np.float32).reshape(8, 3) / 10
+    y = X.sum(axis=1)
+    estimator = PSANNRegressor(
+        preprocessor=PreprocessorConfig(
+            component=LSMConfig.dense(
+                output_dim=4,
+                hidden_layers=1,
+                hidden_units=5,
+                pretraining=LSMPretrainingConfig(epochs=0, batch_size=4),
+            )
+        ),
+        hidden_layers=1,
+        hidden_units=6,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+    ).fit(X, y)
+    first = tmp_path / "first.pt"
+    second = tmp_path / "second.pt"
+    estimator.save(str(first))
+    loaded = PSANNRegressor.load(str(first))
+    loaded.save(str(second))
+    reloaded = PSANNRegressor.load(str(second))
+    assert reloaded.preprocessor_capabilities_.output_dim == 4
+    np.testing.assert_allclose(reloaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-5)
