@@ -7,6 +7,7 @@ legacy estimator implementation package.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Optional, Tuple, cast
 
 import torch
@@ -79,6 +80,26 @@ class _AttentionConvModel(nn.Module):
         if self.segmentation_head:
             return conv_core.head(context)
         return conv_core.fc(conv_core.pool(context).flatten(1))
+
+
+class _FlattenedConvModel(nn.Module):
+    """Expose a canonical convolutional core through the historical flat layout."""
+
+    def __init__(self, core: nn.Module, *, input_shape: Tuple[int, ...], data_format: str) -> None:
+        super().__init__()
+        self.core = core
+        self.input_shape = tuple(map(int, input_shape))
+        self.data_format = data_format
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if x.ndim != 2 or x.shape[1] != math.prod(self.input_shape):
+            raise ValueError(
+                "Flattened convolution inputs must match the documented feature shape."
+            )
+        shaped = x.reshape(x.shape[0], *self.input_shape)
+        if self.data_format == "channels_last":
+            shaped = shaped.movedim(-1, 1)
+        return self.core(shaped)
 
 
 class _WaveResNetSpectralDenseModel(nn.Module):

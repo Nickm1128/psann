@@ -45,6 +45,7 @@ from ..architectures import (
     normalize_architecture,
 )
 from ..architectures.config import _thaw, replace_architecture_paths, validate_architecture
+from ..architectures.wrappers import _FlattenedConvModel
 from ..attention import AttentionConfig as LegacyAttentionConfig
 from ..state import StateConfig as LegacyStateConfig
 from ..nn import WithPreprocessor
@@ -691,12 +692,16 @@ class PSANNRegressor(_Phase2Regressor):
         )
         self.architecture = canonical
         self.hidden_width = units
-        # A flat ``preserve_shape`` request now translates to the same canonical
-        # convolutional execution route as an explicit architecture.  Retaining
-        # flattened fit hooks here would advertise residual/attention policies
-        # while bypassing the registry and silently changing the backbone.
-        self._use_channel_first_train_inputs_ = canonical.convolution is not None
-        self._legacy_flattened_preserve_shape_ = False
+        # Flat ``preserve_shape`` retains its historical train/validation layout,
+        # but its model is now a registry-built convolutional core wrapped only
+        # at the input boundary.  This avoids advertising policies that a dense
+        # fallback would silently discard.
+        self._use_channel_first_train_inputs_ = (
+            canonical.convolution is not None and not legacy_flat_adapter
+        )
+        self._legacy_flattened_preserve_shape_ = bool(
+            legacy_flat_adapter and canonical.convolution is not None and not per_element
+        )
         self._architecture_capabilities_: Any = None
         self._architecture_lifecycle_: Any = None
         self._architecture_structure_: dict[str, object] | None = None
@@ -764,16 +769,28 @@ class PSANNRegressor(_Phase2Regressor):
         state_cfg: Optional[dict[str, Any]] = None,
         input_shape: Optional[tuple[int, ...]] = None,
     ) -> nn.Module:
-        # Old schema-v1 payloads emitted before the registry correction retain
-        # this marker and must still rebuild their historical dense topology.
+        # Flat compatibility retains the old train/validation layout but routes
+        # the actual model construction through the canonical convolution builder.
         if getattr(self, "_legacy_flattened_preserve_shape_", False):
-            return _Phase2Regressor._build_dense_core(
-                self,
-                input_dim,
-                output_dim,
-                state_cfg=state_cfg,
-                input_shape=input_shape,
+            raw_shape = tuple(input_shape or (input_dim,))
+            conv = self.architecture.convolution
+            assert conv is not None
+            internal = (
+                (raw_shape[-1],) + raw_shape[:-1]
+                if conv.data_format == "channels_last"
+                else raw_shape
             )
+            core = self._receive_build(
+                self._request(
+                    input_dim=int(np.prod(internal)),
+                    output_dim=output_dim,
+                    input_shape=internal,
+                    spatial_shape=tuple(internal[1:]),
+                    spatial_ndim=len(internal) - 1,
+                    in_channels=int(internal[0]),
+                )
+            )
+            return _FlattenedConvModel(core, input_shape=raw_shape, data_format=conv.data_format)
         return self._receive_build(
             self._request(
                 input_dim=input_dim, output_dim=output_dim, input_shape=input_shape or (input_dim,)
