@@ -108,11 +108,74 @@ def _common(kwargs: dict[str, Any]) -> dict[str, Any]:
         "lsm_train",
         "lsm_pretrain_epochs",
         "lsm_lr",
+        "context_builder",
+        "context_builder_params",
     }
     unknown = set(kwargs) - accepted
     if unknown:
         raise TypeError(f"Unexpected legacy estimator argument {sorted(unknown)[0]!r}.")
     return kwargs
+
+
+_REDUNDANT_ARCHITECTURE_KEYWORDS = {
+    "activation",
+    "activation_type",
+    "preserve_shape",
+    "data_format",
+    "conv_kernel_size",
+    "conv_channels",
+    "per_element",
+    "attention",
+    "stateful",
+    "state",
+    "state_reset",
+    "stream_lr",
+    "context_dim",
+    "context_builder",
+    "context_builder_params",
+    "use_film",
+    "use_phase_shift",
+    "w0_first",
+    "w0_hidden",
+    "norm",
+    "drop_path_max",
+    "residual_alpha_init",
+    "first_layer_w0",
+    "hidden_w0",
+    "dropout",
+    "grad_clip_norm",
+    "first_layer_w0_initial",
+    "hidden_w0_initial",
+    "w0_warmup_epochs",
+    "progressive_depth_initial",
+    "progressive_depth_interval",
+    "progressive_depth_growth",
+    "use_spectral_gate",
+    "k_fft",
+    "gate_type",
+    "gate_groups",
+    "gate_init",
+    "gate_strength",
+    "phase_init",
+    "phase_trainable",
+    "pool",
+    "shape",
+    "k",
+    "pattern",
+    "radius",
+    "offsets",
+    "wrap_mode",
+    "bias",
+    "compute_mode",
+    "geo_seed",
+}
+
+
+def _discard_redundant_architecture_keywords(kwargs: dict[str, Any]) -> None:
+    """Drop flat policy mirrors when a schema-v1 config is already present."""
+
+    for key in _REDUNDANT_ARCHITECTURE_KEYWORDS:
+        kwargs.pop(key, None)
 
 
 class _LegacyFacade(PSANNRegressor):
@@ -145,6 +208,10 @@ class _LegacyFacade(PSANNRegressor):
         return dict(self._legacy_params_)
 
     def set_params(self, **params: object) -> "_LegacyFacade":
+        # Retain the established 0.x channel spelling before reconstructing
+        # the thin facade.  The canonical estimator owns the actual rebuild.
+        if "hidden_channels" in params:
+            params = self._normalize_param_aliases(dict(params))
         candidate = self.get_params(deep=False)
         unknown = set(params) - set(candidate)
         if unknown:
@@ -167,6 +234,8 @@ class ResPSANNRegressor(_LegacyFacade):
         stateful = False
         state = None
         architecture = kwargs.pop("architecture", None)
+        if architecture is not None:
+            _discard_redundant_architecture_keywords(kwargs)
         if architecture is None:
             activation = _activation(kwargs)
             preserve_shape = bool(kwargs.pop("preserve_shape", False))
@@ -215,6 +284,8 @@ class ResConvPSANNRegressor(_LegacyFacade):
                 "ResConvPSANNRegressor.__init__() got an unexpected keyword argument 'attention'"
             )
         architecture = kwargs.pop("architecture", None)
+        if architecture is not None:
+            _discard_redundant_architecture_keywords(kwargs)
         if architecture is None:
             activation = _activation(kwargs)
             kwargs.pop("preserve_shape", None)
@@ -253,6 +324,8 @@ class WaveResNetRegressor(_LegacyFacade):
         stateful = False
         state = None
         architecture = kwargs.pop("architecture", None)
+        if architecture is not None:
+            _discard_redundant_architecture_keywords(kwargs)
         if architecture is None:
             activation = _activation(kwargs)
             preserve_shape = bool(kwargs.pop("preserve_shape", False))
@@ -423,6 +496,8 @@ class SGRPSANNRegressor(_LegacyFacade):
         stateful = False
         state = None
         architecture = kwargs.pop("architecture", None)
+        if architecture is not None:
+            _discard_redundant_architecture_keywords(kwargs)
         if architecture is None:
             activation = _activation(kwargs)
             if activation.kind != "psann":
@@ -498,6 +573,8 @@ class GeoSparseRegressor(_LegacyFacade):
         stateful = False
         state = None
         architecture = kwargs.pop("architecture", None)
+        if architecture is not None:
+            _discard_redundant_architecture_keywords(kwargs)
         if architecture is None:
             activation = _activation(kwargs)
             ignored_attention = kwargs.get("attention")

@@ -8,6 +8,7 @@ selection with immutable architecture configuration and registry requests.
 from __future__ import annotations
 
 import warnings
+from copy import deepcopy
 from dataclasses import fields, replace
 from inspect import Parameter, Signature, signature
 from typing import Any, Mapping, Optional, Tuple, Union
@@ -378,6 +379,15 @@ class PSANNRegressor(_Phase2Regressor):
                 geo_seed=geo_seed,
             )
         canonical = normalize_architecture(architecture)
+        # ``super().__init__`` receives the resolved canonical value below, so
+        # preserve the Phase 2 alias-only warning here rather than making the
+        # inherited resolver believe both spellings were supplied.
+        if hidden_width is not None and hidden_units is None:
+            warnings.warn(
+                "PSANNRegressor: `hidden_width` is deprecated; use `hidden_units` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         units = (
             hidden_width
             if hidden_units is None and hidden_width is not None
@@ -440,7 +450,7 @@ class PSANNRegressor(_Phase2Regressor):
             ),
         )
         self.architecture = canonical
-        self.hidden_width = hidden_width if hidden_width is not None else units
+        self.hidden_width = units
         self._use_channel_first_train_inputs_ = canonical.convolution is not None
         self._architecture_capabilities_ = None
         self._architecture_lifecycle_ = None
@@ -636,6 +646,13 @@ class PSANNRegressor(_Phase2Regressor):
             "lsm_train",
             "lsm_pretrain_epochs",
             "lsm_lr",
+            # These names remain visible during 0.x because the Phase 2
+            # estimator accepted them through ``set_params``.  They are a
+            # compatibility adapter, not a second canonical architecture
+            # representation.
+            "conv_channels",
+            "context_builder",
+            "context_builder_params",
         )
         params = {name: getattr(self, name) for name in names}
         if deep:
@@ -680,6 +697,22 @@ class PSANNRegressor(_Phase2Regressor):
     def set_params(self, **params: object) -> "PSANNRegressor":
         if not params:
             return self
+        # Keep the established sklearn aliases and the context-builder cache
+        # semantics before applying canonical architecture updates.  The
+        # context builder is fit plumbing retained until Phase 4; it is not a
+        # dense-architecture policy.
+        original = dict(params)
+        normalised = self._normalize_param_aliases(dict(params))
+        reset_context_builder = (
+            "context_builder" in normalised or "context_builder_params" in normalised
+        )
+        if "context_builder_params" in normalised:
+            constructor_value = original.get("context_builder_params")
+            self._context_builder_params_constructor_ = constructor_value
+            normalised["context_builder_params"] = deepcopy(
+                {} if constructor_value is None else constructor_value
+            )
+        params = normalised
         if "architecture" in params and any(key.startswith("architecture__") for key in params):
             raise ValueError(
                 "architecture and architecture__ parameters cannot be updated together."
@@ -705,6 +738,12 @@ class PSANNRegressor(_Phase2Regressor):
         changed_architecture = candidate != self.architecture
         for key, value in params.items():
             setattr(self, key, value)
+        if reset_context_builder:
+            self._context_builder_callable_ = None
+            if self.context_builder is None and "context_dim" not in params:
+                self._context_dim_ = None
+                if hasattr(self, "context_dim"):
+                    self.context_dim = None
         if changed_architecture:
             self.architecture = candidate
             conv = candidate.convolution
