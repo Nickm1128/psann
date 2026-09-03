@@ -200,7 +200,7 @@ def run_supervised_training(
         else:
             raise ValueError("PreparedInputState did not contain training targets.")
 
-    inputs_np = prepared.train_inputs.astype(np.float32, copy=False)
+    inputs_np: np.ndarray = prepared.train_inputs.astype(np.float32, copy=False)
     targets_np = np.asarray(train_targets, dtype=np.float32)
     context_np = None
     if prepared.train_context is not None:

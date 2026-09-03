@@ -5,6 +5,11 @@ streaming implementation.  This class replaces only the former subclass-based mo
 selection with immutable architecture configuration and registry requests.
 """
 
+# The retained 0.x flat adapter intentionally receives heterogeneous omitted
+# sentinel values and normalizes them before construction; its boundary is dynamic.
+# mypy cannot narrow that generated compatibility surface argument-by-argument.
+# mypy: disable-error-code=arg-type
+
 from __future__ import annotations
 
 import warnings
@@ -155,7 +160,7 @@ def _legacy_architecture(
                 )
             activation_values[canonical_key] = activation_values.pop(legacy_key)
     activation_values.setdefault("kind", activation_type)
-    canonical_activation = ActivationConfig(**activation_values)
+    canonical_activation = ActivationConfig(**cast(Any, activation_values))
     attention_value = None
     if attention is not None:
         if isinstance(attention, Mapping):
@@ -181,7 +186,7 @@ def _legacy_architecture(
         return ArchitectureConfig.geometric_sparse(
             activation=canonical_activation,
             residual=residual or ResidualConfig(),
-            geometry=GeometryConfig(
+            geometry=GeometryConfig(  # type: ignore[arg-type]
                 shape, k, pattern, radius, offsets, wrap_mode, bias, compute_mode, geo_seed
             ),
         )
@@ -255,7 +260,7 @@ def _legacy_architecture(
                 else None
             ),
             context=(
-                ContextConfig(
+                ContextConfig(  # type: ignore[arg-type]
                     context_dim, context_builder, context_builder_params, use_film, use_phase_shift
                 )
                 if (context_dim is not None or context_builder is not None)
@@ -545,7 +550,7 @@ class PSANNRegressor(_Phase2Regressor):
             bias,
             compute_mode,
             geo_seed,
-        ) = [flat_supplied.get(name, default) for name, default in defaults.items()]
+        ) = cast(Any, [flat_supplied.get(name, default) for name, default in defaults.items()])
         if architecture is not _DEFAULT_ARCHITECTURE and explicit_flat:
             raise ValueError(
                 "architecture conflicts with legacy architecture keyword(s): "
@@ -558,7 +563,7 @@ class PSANNRegressor(_Phase2Regressor):
                 DeprecationWarning,
                 stacklevel=2,
             )
-            architecture = _legacy_architecture(
+            architecture = _legacy_architecture(  # type: ignore[arg-type]
                 activation=activation,
                 activation_type=activation_type,
                 preserve_shape=preserve_shape,

@@ -476,12 +476,15 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
     activation = _activation_kwargs(cfg)
     context = cfg.context
     initial_depth = int(
-        (request.structure_metadata or {}).get(
-            "current_depth",
-            (
-                wave.progressive_depth.initial_layers
-                if wave.progressive_depth
-                else request.hidden_layers
+        cast(
+            Any,
+            (request.structure_metadata or {}).get(
+                "current_depth",
+                (
+                    wave.progressive_depth.initial_layers
+                    if wave.progressive_depth
+                    else request.hidden_layers
+                ),
             ),
         )
     )

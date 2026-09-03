@@ -206,7 +206,9 @@ def _prepare_noise_tensor(
             )
         internal_shape = prepared.internal_shape_cf
         if np.isscalar(noisy):
-            std = np.full((1, *internal_shape), float(cast(Any, noisy)), dtype=np.float32)
+            std: np.ndarray = np.full(
+                (1, *internal_shape), float(cast(Any, noisy)), dtype=np.float32
+            )
         else:
             arr = np.asarray(noisy, dtype=np.float32)
             if tuple(arr.shape) == internal_shape:

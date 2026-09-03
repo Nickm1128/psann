@@ -770,11 +770,11 @@ def replace_architecture_paths(
         policy = changes.get(name, getattr(candidate, name))
         if policy is None:
             raise ValueError(f"architecture.{name} is absent; set that policy object first.")
-        known = {field.name for field in fields(policy)}
+        known = {field.name for field in fields(cast(Any, policy))}
         unknown = set(fields_to_replace) - known
         if unknown:
             raise ValueError(f"architecture.{name}.{sorted(unknown)[0]} is unknown.")
-        changes[name] = replace(policy, **cast(Any, fields_to_replace))
+        changes[name] = replace(cast(Any, policy), **cast(Any, fields_to_replace))
     candidate = replace(candidate, **cast(Any, changes))
     validate_architecture(candidate, hidden_layers=hidden_layers)
     return candidate

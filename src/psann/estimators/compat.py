@@ -555,13 +555,13 @@ class SGRPSANNRegressor(_LegacyFacade):
             self.state = None
             self._legacy_params_["stateful"] = False
             self._legacy_params_["state"] = None
-        if self.lsm is not None:
+        if cast(Any, self).lsm is not None:
             warnings.warn(
                 "SGRPSANNRegressor does not support LSM preprocessors; ignoring lsm settings.",
                 RuntimeWarning,
                 stacklevel=2,
             )
-            self.lsm = cast(Any, None)
+            cast(Any, self).lsm = None
 
 
 class GeoSparseRegressor(_LegacyFacade):
