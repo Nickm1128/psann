@@ -8,7 +8,6 @@ from psann.architectures import (
     ConvolutionConfig,
     GeometryConfig,
     ResidualConfig,
-    SequenceConfig,
 )
 from psann.estimators import PSANNRegressor
 from sklearn.base import clone

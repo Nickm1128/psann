@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from .estimators import PSANNRegressor
 from .estimators.compat import (
-    GeoSparseRegressor,
-    ResConvPSANNRegressor,
-    ResPSANNRegressor,
-    SGRPSANNRegressor,
-    WaveResNetRegressor,
+    GeoSparseRegressor as GeoSparseRegressor,
+    ResConvPSANNRegressor as ResConvPSANNRegressor,
+    ResPSANNRegressor as ResPSANNRegressor,
+    SGRPSANNRegressor as SGRPSANNRegressor,
+    WaveResNetRegressor as WaveResNetRegressor,
 )
 from ._sklearn import (
     _AttentionConvModel,
@@ -21,7 +21,8 @@ __all__ = [
     "PSANNRegressor",
 ]
 
-for _cls in (_AttentionDenseModel,
+for _cls in (
+    _AttentionDenseModel,
     _AttentionConvModel,
     _WaveResNetSpectralDenseModel,
     _WaveResNetConvModel,

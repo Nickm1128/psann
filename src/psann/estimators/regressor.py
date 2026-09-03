@@ -1093,9 +1093,7 @@ class PSANNRegressor(_Phase2Regressor):
                 )
         estimator._optimizer_ = None
         estimator._hisso_trainer_ = None
-        estimator._hisso_reward_fn_ = dict(payload.get("artifacts", {})).get(
-            "hisso_reward_fn"
-        )
+        estimator._hisso_reward_fn_ = dict(payload.get("artifacts", {})).get("hisso_reward_fn")
         return estimator
 
 

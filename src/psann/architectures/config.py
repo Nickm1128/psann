@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import asdict, dataclass, fields, replace
-from typing import Callable, Mapping, TypeAlias
+from typing import Any, Callable, Mapping, TypeAlias, cast
 
 
 def _canonical_name(value: str) -> str:
@@ -394,35 +394,35 @@ class ArchitectureConfig:
 
     @classmethod
     def dense(cls, **kwargs: object) -> "ArchitectureConfig":
-        return cls(kind="dense", **kwargs)
+        return cls(kind="dense", **cast(Any, kwargs))
 
     @classmethod
     def convolutional(cls, **kwargs: object) -> "ArchitectureConfig":
         kwargs.setdefault("convolution", ConvolutionConfig())
-        return cls(kind="convolutional", **kwargs)
+        return cls(kind="convolutional", **cast(Any, kwargs))
 
     @classmethod
     def for_wave(cls, **kwargs: object) -> "ArchitectureConfig":
         kwargs.setdefault("residual", ResidualConfig())
         kwargs.setdefault("wave", WaveConfig())
-        return cls(kind="wave", **kwargs)
+        return cls(kind="wave", **cast(Any, kwargs))
 
     @classmethod
     def for_sequence(cls, **kwargs: object) -> "ArchitectureConfig":
         kwargs.setdefault("sequence", SequenceConfig())
         kwargs.setdefault("spectral", SpectralConfig())
-        return cls(kind="sequence", **kwargs)
+        return cls(kind="sequence", **cast(Any, kwargs))
 
     @classmethod
     def geometric_sparse(cls, **kwargs: object) -> "ArchitectureConfig":
         kwargs.setdefault("residual", ResidualConfig())
         kwargs.setdefault("geometry", GeometryConfig())
-        return cls(kind="geometric-sparse", **kwargs)
+        return cls(kind="geometric-sparse", **cast(Any, kwargs))
 
 
 ArchitectureLike: TypeAlias = ArchitectureConfig | Mapping[str, object] | str
 
-_POLICIES: dict[str, type[object]] = {
+_POLICIES: dict[str, type[Any]] = {
     "activation": ActivationConfig,
     "residual": ResidualConfig,
     "convolution": ConvolutionConfig,
@@ -641,7 +641,7 @@ def validate_architecture(value: ArchitectureConfig, *, hidden_layers: int) -> N
 
 def _mapping_value(value: object) -> object:
     if hasattr(value, "__dataclass_fields__"):
-        return {key: _mapping_value(item) for key, item in asdict(value).items()}
+        return {key: _mapping_value(item) for key, item in asdict(cast(Any, value)).items()}
     return _thaw(value)
 
 
@@ -669,7 +669,9 @@ def replace_architecture_path(
     if policy_name not in _POLICIES:
         raise ValueError(f"Unknown architecture policy {policy_name!r}.")
     if len(pieces) == 2:
-        candidate = replace(value, **{policy_name: _policy_from_mapping(policy_name, replacement)})
+        candidate = replace(
+            value, **cast(Any, {policy_name: _policy_from_mapping(policy_name, replacement)})
+        )
     else:
         policy = getattr(value, policy_name)
         if policy is None:
@@ -677,6 +679,9 @@ def replace_architecture_path(
         field_name = pieces[2]
         if len(pieces) != 3 or field_name not in {field.name for field in fields(policy)}:
             raise ValueError(f"Unknown architecture parameter path {path!r}.")
-        candidate = replace(value, **{policy_name: replace(policy, **{field_name: replacement})})
+        candidate = replace(
+            value,
+            **cast(Any, {policy_name: replace(policy, **cast(Any, {field_name: replacement}))}),
+        )
     validate_architecture(candidate, hidden_layers=hidden_layers)
     return candidate
