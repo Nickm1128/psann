@@ -1081,7 +1081,7 @@ class PSANNRegressor(_Phase2Regressor):
         structure = (
             self._architecture_lifecycle_.structure_metadata()
             if self._architecture_lifecycle_
-            else {}
+            else dict(getattr(self, "_architecture_structure_", {}) or {})
         )
         torch.save(
             {
@@ -1162,6 +1162,25 @@ class PSANNRegressor(_Phase2Regressor):
                         activation=activation, residual=residual
                     )
             elif old_name == "WaveResNetRegressor":
+                raw_attention = getattr(legacy, "attention", None)
+                migrated_attention = None
+                if (
+                    raw_attention is not None
+                    and getattr(raw_attention, "is_enabled", lambda: bool(raw_attention))()
+                ):
+                    migrated_attention = AttentionConfig(
+                        **{
+                            field.name: getattr(raw_attention, field.name)
+                            for field in fields(AttentionConfig)
+                            if hasattr(raw_attention, field.name)
+                        }
+                    )
+                warmup = W0WarmupConfig(
+                    getattr(legacy, "first_layer_w0_initial", 10.0),
+                    getattr(legacy, "hidden_w0_initial", 0.5),
+                    getattr(legacy, "w0_warmup_epochs", 10),
+                )
+                progressive_initial = getattr(legacy, "progressive_depth_initial", None)
                 architecture = ArchitectureConfig.for_wave(
                     activation=activation,
                     residual=ResidualConfig(alpha_init=getattr(legacy, "residual_alpha_init", 0.0)),
@@ -1171,6 +1190,50 @@ class PSANNRegressor(_Phase2Regressor):
                         getattr(legacy, "norm", "none"),
                         getattr(legacy, "dropout", 0.0),
                         getattr(legacy, "grad_clip_norm", 5.0),
+                        warmup,
+                        (
+                            ProgressiveDepthConfig(
+                                progressive_initial,
+                                getattr(legacy, "progressive_depth_interval", 15),
+                                getattr(legacy, "progressive_depth_growth", 1),
+                            )
+                            if progressive_initial is not None
+                            else None
+                        ),
+                    ),
+                    convolution=(
+                        ConvolutionConfig(
+                            getattr(legacy, "conv_channels", None),
+                            getattr(legacy, "conv_kernel_size", 1),
+                            getattr(legacy, "data_format", "channels_first"),
+                            False,
+                        )
+                        if getattr(legacy, "preserve_shape", False)
+                        else None
+                    ),
+                    attention=migrated_attention,
+                    context=(
+                        ContextConfig(
+                            getattr(legacy, "context_dim", None),
+                            getattr(legacy, "context_builder", None),
+                            getattr(legacy, "context_builder_params", None),
+                            getattr(legacy, "use_film", True),
+                            getattr(legacy, "use_phase_shift", True),
+                        )
+                        if getattr(legacy, "context_dim", None) is not None
+                        or getattr(legacy, "context_builder", None) is not None
+                        else None
+                    ),
+                    spectral=(
+                        SpectralConfig(
+                            getattr(legacy, "k_fft", 64),
+                            getattr(legacy, "gate_type", "rfft"),
+                            getattr(legacy, "gate_groups", "depthwise"),
+                            getattr(legacy, "gate_init", 0.0),
+                            getattr(legacy, "gate_strength", 1.0),
+                        )
+                        if getattr(legacy, "use_spectral_gate", False)
+                        else None
                     ),
                 )
             elif old_name == "SGRPSANNRegressor":
@@ -1238,6 +1301,19 @@ class PSANNRegressor(_Phase2Regressor):
                 random_state=getattr(legacy, "random_state", None),
             )
             migrated.model_ = legacy.model_
+            if old_name == "WaveResNetRegressor":
+                migrated._architecture_structure_ = {
+                    "current_depth": int(
+                        getattr(
+                            legacy,
+                            "_progressive_depth_current",
+                            getattr(legacy, "hidden_layers", 1),
+                        )
+                    ),
+                    "warmup_step": int(getattr(legacy, "_w0_schedule_step", 0)),
+                    "warmup_active": bool(getattr(legacy, "_w0_schedule_active", False)),
+                    "next_expand_epoch": getattr(legacy, "_progressive_next_expand_epoch", None),
+                }
             for name in (
                 "input_shape_",
                 "_internal_input_shape_cf_",
