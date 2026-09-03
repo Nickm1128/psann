@@ -2,9 +2,9 @@ from __future__ import annotations
 
 """Public sklearn-style estimator surface and serialization compatibility aliases."""
 
+from .estimators import PSANNRegressor
 from ._sklearn import (
     GeoSparseRegressor,
-    PSANNRegressor,
     ResConvPSANNRegressor,
     ResPSANNRegressor,
     SGRPSANNRegressor,
@@ -17,15 +17,9 @@ from ._sklearn import (
 
 __all__ = [
     "PSANNRegressor",
-    "ResPSANNRegressor",
-    "ResConvPSANNRegressor",
-    "SGRPSANNRegressor",
-    "WaveResNetRegressor",
-    "GeoSparseRegressor",
 ]
 
 for _cls in (
-    PSANNRegressor,
     ResPSANNRegressor,
     ResConvPSANNRegressor,
     SGRPSANNRegressor,
@@ -36,4 +30,7 @@ for _cls in (
     _WaveResNetSpectralDenseModel,
     _WaveResNetConvModel,
 ):
-    _cls.__module__ = __name__
+    # Compatibility classes retain their historical pickle import path.  The
+    # canonical estimator is defined in psann.estimators.regressor.
+    if _cls is not PSANNRegressor:
+        _cls.__module__ = __name__

@@ -11,11 +11,6 @@ __all__ = [
     # Estimators
     "AttentionConfig",
     "PSANNRegressor",
-    "ResPSANNRegressor",
-    "ResConvPSANNRegressor",
-    "SGRPSANNRegressor",
-    "WaveResNetRegressor",
-    "GeoSparseRegressor",
     # Expanders / activation configs
     "LSM",
     "LSMExpander",
