@@ -39,7 +39,7 @@ def _run_single(
             "target_scaler": "standard" if scale_y else None,
         }
     )
-    estimator = model.estimator(**params)
+    estimator = model.build(**params)
     start = time.perf_counter()
     X_train, y_train, X_val, y_val, y_train_labels, y_val_labels = _split_train_val(
         dataset, val_fraction=float(val_fraction), seed=int(seed)

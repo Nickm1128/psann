@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--geo-activation-config",
         default=None,
-        help="Optional JSON object forwarded as GeoSparseRegressor activation config.",
+        help="Optional JSON object used for the canonical geometric-sparse activation config.",
     )
     parser.add_argument("--dense-depth", type=int, default=2)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -139,7 +139,7 @@ def main() -> int:
                     tol=args.param_tol,
                 )
 
-                def geo_factory(epochs: int) -> GeoSparseRegressor:
+                def geo_factory(epochs: int) -> PSANNRegressor:
                     return build_geosparse_estimator(
                         input_dim=input_dim,
                         shape=None,

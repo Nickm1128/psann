@@ -1091,11 +1091,14 @@ class PSANNRegressor(_Phase2Regressor):
                 self, "_legacy_flattened_preserve_shape_", False
             ),
         }
-        structure = (
-            self._architecture_lifecycle_.structure_metadata()
-            if self._architecture_lifecycle_
-            else dict(getattr(self, "_architecture_structure_", {}) or {})
-        )
+        # A migrated checkpoint can carry a reconstruction discriminator which
+        # the generic lifecycle does not own (for example the retained legacy
+        # Wave attention wrapper).  Lifecycle counters are authoritative when
+        # present, but must not discard those durable structure fields on a
+        # later ordinary v1 save.
+        structure = dict(getattr(self, "_architecture_structure_", {}) or {})
+        if self._architecture_lifecycle_:
+            structure.update(self._architecture_lifecycle_.structure_metadata())
         torch.save(
             {
                 "schema": "psann.regressor",
@@ -1411,6 +1414,38 @@ class PSANNRegressor(_Phase2Regressor):
             ):
                 if hasattr(legacy, name):
                     setattr(migrated, name, getattr(legacy, name))
+            # Migration deliberately retains the historical fitted module so
+            # predictions remain bit-compatible until the caller saves a v1
+            # checkpoint.  Still derive the canonical capabilities now: they
+            # are part of the new object's public architecture contract and do
+            # not require replacing the retained module.
+            migrated_shape = tuple(getattr(migrated, "input_shape_", ()) or ())
+            migrated_output = int(getattr(migrated, "_output_dim_", 1) or 1)
+            if migrated.architecture.convolution is not None:
+                internal = tuple(
+                    getattr(migrated, "_internal_input_shape_cf_", ()) or migrated_shape
+                )
+                if not internal:
+                    raise ValueError("Unversioned convolutional checkpoint is missing input shape.")
+                capability_request = migrated._request(
+                    input_dim=int(np.prod(internal)),
+                    output_dim=migrated_output,
+                    input_shape=internal,
+                    spatial_shape=tuple(internal[1:]),
+                    spatial_ndim=len(internal) - 1,
+                    in_channels=int(internal[0]),
+                )
+            else:
+                if not migrated_shape:
+                    raise ValueError("Unversioned checkpoint is missing input shape.")
+                capability_request = migrated._request(
+                    input_dim=int(np.prod(migrated_shape)),
+                    output_dim=migrated_output,
+                    input_shape=migrated_shape,
+                )
+            migrated._architecture_capabilities_ = build_architecture(
+                capability_request
+            ).capabilities
             return migrated
         if payload.get("schema_version") != 1:
             raise ValueError(

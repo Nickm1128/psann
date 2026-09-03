@@ -24,7 +24,16 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = ensure_src_dir(_REPO_ROOT)
 
 from gpu_env_report import gather_env_info
-from psann import ResPSANNRegressor, SGRPSANNRegressor, WaveResNetRegressor
+from psann import PSANNRegressor
+from psann.architectures import (
+    ActivationConfig,
+    ArchitectureConfig,
+    ContextConfig,
+    ResidualConfig,
+    SequenceConfig,
+    SpectralConfig,
+    WaveConfig,
+)
 from psann.params import count_params as psann_count_params
 from psann.utils import (
     make_context_rotating_moons,

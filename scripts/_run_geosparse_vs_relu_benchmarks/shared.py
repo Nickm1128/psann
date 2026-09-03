@@ -35,6 +35,6 @@ except ImportError:  # pragma: no cover - supports `python scripts/foo.py`
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = ensure_src_dir(_REPO_ROOT)
 
-from psann import GeoSparseRegressor, PSANNRegressor, count_params  # noqa: E402
+from psann import PSANNRegressor, count_params  # noqa: E402
 from psann.nn import PSANNNet  # noqa: E402
 from psann.nn_geo_sparse import GeoSparseNet  # noqa: E402

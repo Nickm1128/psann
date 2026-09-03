@@ -20,7 +20,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import torch
 
-from psann import ResConvPSANNRegressor, ResPSANNRegressor
+from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig, ConvolutionConfig, ResidualConfig
 
 # ---------------------------------------------------------------------------
 # Synthetic datasets
@@ -232,11 +233,18 @@ def _build_estimator(variant: str, device: str, *, epochs: int, seed: int):
         early_stopping=False,
     )
     if variant == "dense":
-        return ResPSANNRegressor(**common)
+        return PSANNRegressor(
+            architecture=ArchitectureConfig.dense(residual=ResidualConfig()), **common
+        )
     if variant == "conv":
         conv_params = dict(common)
         conv_params["hidden_units"] = 32
-        return ResConvPSANNRegressor(conv_channels=32, **conv_params)
+        return PSANNRegressor(
+            architecture=ArchitectureConfig.convolutional(
+                residual=ResidualConfig(), convolution=ConvolutionConfig(channels=32)
+            ),
+            **conv_params,
+        )
     raise ValueError(f"Unsupported variant '{variant}'. Expected 'dense' or 'conv'.")
 
 

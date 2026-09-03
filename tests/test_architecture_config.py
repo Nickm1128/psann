@@ -6,6 +6,7 @@ import warnings
 
 import pytest
 import numpy as np
+import torch
 
 from psann.architectures import (
     AttentionConfig,
@@ -107,3 +108,26 @@ def test_flat_shaped_residual_attention_uses_registry_at_fit_boundary():
     assert core.attention is not None
     assert estimator._architecture_capabilities_.supports_attention
     assert estimator.predict(X[:2]).shape == (2,)
+
+
+def test_flat_registry_checkpoint_reloads_the_registry_topology(tmp_path):
+    X = np.ones((8, 1, 2, 2), dtype=np.float32)
+    estimator = PSANNRegressor(
+        preserve_shape=True,
+        norm="layer",
+        attention={"kind": "mha", "num_heads": 1},
+        conv_channels=4,
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+    ).fit(X, X.mean(axis=(1, 2, 3)))
+    path = tmp_path / "flat-registry.pt"
+    estimator.save(str(path))
+    loaded = PSANNRegressor.load(str(path))
+    assert isinstance(loaded.model_.core.conv_core, ResidualPSANNConv2dNet)
+    assert loaded.model_.core.attention is not None
+    assert loaded._architecture_capabilities_.supports_attention
+    np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-5)
+    assert torch.load(path, weights_only=False)["fitted"]["legacy_flattened_preserve_shape"] is True

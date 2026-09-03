@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from .data import resolve_geo_shape
 from .shared import *
+from psann.architectures import ActivationConfig, ArchitectureConfig, GeometryConfig
 
 
 def count_geosparse_params(
@@ -233,14 +234,19 @@ def build_geosparse_estimator(
     epochs: int,
     batch_size: int,
     lr: float,
-) -> GeoSparseRegressor:
-    return GeoSparseRegressor(
+) -> PSANNRegressor:
+    activation = dict(activation_config or {})
+    activation["kind"] = activation_type
+    return PSANNRegressor(
+        architecture=ArchitectureConfig.geometric_sparse(
+            activation=ActivationConfig(**activation),
+            geometry=GeometryConfig(
+                shape=resolve_geo_shape(input_dim, shape),
+                k=geo_k,
+                compute_mode="gather",
+            ),
+        ),
         hidden_layers=geo_depth,
-        activation_type=activation_type,
-        activation=activation_config,
-        shape=resolve_geo_shape(input_dim, shape),
-        k=geo_k,
-        compute_mode="gather",
         epochs=epochs,
         batch_size=batch_size,
         lr=lr,
@@ -278,7 +284,7 @@ def build_dense_estimator(
     return PSANNRegressor(
         hidden_layers=dense_depth,
         hidden_units=dense_width,
-        activation_type="relu",
+        architecture=ArchitectureConfig.dense(activation=ActivationConfig(kind="relu")),
         epochs=epochs,
         batch_size=batch_size,
         lr=lr,

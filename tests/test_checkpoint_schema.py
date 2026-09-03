@@ -184,12 +184,90 @@ def test_effective_legacy_wave_compositions_survive_v1_resave(tmp_path, name, X,
     legacy.fit(X, y)
     old_path = tmp_path / f"{name}-old.pt"
     v1_path = tmp_path / f"{name}-v1.pt"
+    second_v1_path = tmp_path / f"{name}-second-v1.pt"
     legacy.save(str(old_path))
     migrated = PSANNRegressor.load(str(old_path))
     migrated.save(str(v1_path))
+    loaded = PSANNRegressor.load(str(v1_path))
+    np.testing.assert_allclose(loaded.predict(X[:2]), migrated.predict(X[:2]), rtol=1e-6)
+    loaded.save(str(second_v1_path))
+    second_payload = torch.load(second_v1_path, weights_only=False)
+    if name == "attention":
+        assert second_payload["structure"]["legacy_attention_wrapper"] is True
     np.testing.assert_allclose(
-        PSANNRegressor.load(str(v1_path)).predict(X[:2]), migrated.predict(X[:2]), rtol=1e-6
+        PSANNRegressor.load(str(second_v1_path)).predict(X[:2]), migrated.predict(X[:2]), rtol=1e-6
     )
+
+
+@pytest.mark.parametrize(
+    ("old_name", "factory", "X", "expected"),
+    [
+        (
+            "PSANNRegressor",
+            lambda: __import__("psann._sklearn.base", fromlist=["PSANNRegressor"]).PSANNRegressor(
+                hidden_layers=1, hidden_units=4, epochs=1, batch_size=4
+            ),
+            np.ones((8, 2), dtype=np.float32),
+            {"kind": "dense"},
+        ),
+        (
+            "ResPSANNRegressor",
+            lambda: __import__(
+                "psann._sklearn.residual", fromlist=["ResPSANNRegressor"]
+            ).ResPSANNRegressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4),
+            np.ones((8, 2), dtype=np.float32),
+            {"kind": "dense"},
+        ),
+        (
+            "ResConvPSANNRegressor",
+            lambda: __import__(
+                "psann._sklearn.residual", fromlist=["ResConvPSANNRegressor"]
+            ).ResConvPSANNRegressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4),
+            np.ones((8, 1, 2, 2), dtype=np.float32),
+            {"kind": "convolutional"},
+        ),
+        (
+            "WaveResNetRegressor",
+            lambda: __import__(
+                "psann._sklearn.wave", fromlist=["WaveResNetRegressor"]
+            ).WaveResNetRegressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4),
+            np.ones((8, 2), dtype=np.float32),
+            {"kind": "wave"},
+        ),
+        (
+            "SGRPSANNRegressor",
+            lambda: __import__(
+                "psann._sklearn.sgr", fromlist=["SGRPSANNRegressor"]
+            ).SGRPSANNRegressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4),
+            np.ones((8, 2, 2), dtype=np.float32),
+            {"kind": "sequence"},
+        ),
+        (
+            "GeoSparseRegressor",
+            lambda: __import__(
+                "psann._sklearn.geosparse", fromlist=["GeoSparseRegressor"]
+            ).GeoSparseRegressor(
+                hidden_layers=1, hidden_units=4, epochs=1, batch_size=4, shape=(1, 2)
+            ),
+            np.ones((8, 2), dtype=np.float32),
+            {"kind": "geometric-sparse"},
+        ),
+    ],
+)
+def test_unversioned_migrations_populate_canonical_capabilities(
+    tmp_path, old_name, factory, X, expected
+):
+    legacy = factory()
+    legacy.fit(X, X.reshape(len(X), -1).mean(axis=1))
+    path = tmp_path / f"{old_name}.pt"
+    legacy.save(str(path))
+    capabilities = PSANNRegressor.load(str(path))._architecture_capabilities_
+    assert capabilities is not None
+    assert capabilities.kind == expected["kind"]
+    assert capabilities.input_topologies
+    assert isinstance(capabilities.supports_preprocessor, bool)
+    assert isinstance(capabilities.supports_attention, bool)
+    assert isinstance(capabilities.supports_state, bool)
 
 
 def test_schema_v1_load_works_without_sklearn(tmp_path):
@@ -211,5 +289,31 @@ assert PSANNRegressor.load(sys.argv[1]).predict(__import__('numpy').ones((2, 2),
 """
     result = subprocess.run(
         [sys.executable, "-c", code, os.fspath(path)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_unversioned_migration_works_without_sklearn(tmp_path):
+    from psann._sklearn.base import PSANNRegressor as Phase2Regressor
+
+    X = np.ones((8, 2), dtype=np.float32)
+    old_path = tmp_path / "phase2-unversioned.pt"
+    Phase2Regressor(hidden_layers=1, hidden_units=4, epochs=1, batch_size=4).fit(
+        X, X.mean(axis=1)
+    ).save(str(old_path))
+    code = """import builtins, sys
+original = builtins.__import__
+def blocked(name, *args, **kwargs):
+    if name == 'sklearn' or name.startswith('sklearn.'):
+        raise ImportError('blocked')
+    return original(name, *args, **kwargs)
+builtins.__import__ = blocked
+from psann.estimators import PSANNRegressor
+loaded = PSANNRegressor.load(sys.argv[1])
+assert loaded._architecture_capabilities_ is not None
+assert loaded.predict(__import__('numpy').ones((2, 2), dtype='float32')).shape == (2,)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code, os.fspath(old_path)], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
