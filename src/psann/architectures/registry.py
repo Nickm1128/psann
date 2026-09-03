@@ -155,6 +155,12 @@ def _activation_kwargs(config: ArchitectureConfig) -> dict[str, object]:
     }
 
 
+def _backbone_activation_type(config: ArchitectureConfig) -> str:
+    """Translate public hyphenated policy names to retained backbone spellings."""
+
+    return config.activation.kind.replace("-", "_")
+
+
 def _legacy_attention(config: ArchitectureConfig) -> LegacyAttentionConfig | None:
     attention = config.attention
     if attention is None:
@@ -215,7 +221,7 @@ def _dense_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult
             hidden_width=request.hidden_units,
             act_kw=activation,
             state_cfg=state_kwargs,
-            activation_type=cfg.activation.kind,
+            activation_type=_backbone_activation_type(cfg),
             w0=request.w0,
         )
     else:
@@ -227,7 +233,7 @@ def _dense_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult
             hidden_units=request.hidden_units,
             hidden_width=request.hidden_units,
             act_kw=activation,
-            activation_type=cfg.activation.kind,
+            activation_type=_backbone_activation_type(cfg),
             w0_first=residual.first_w0,
             w0_hidden=residual.hidden_w0,
             norm=residual.norm,
@@ -254,7 +260,7 @@ def _dense_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult
                 hidden_width=request.hidden_units,
                 act_kw=activation,
                 state_cfg=state_kwargs,
-                activation_type=cfg.activation.kind,
+                activation_type=_backbone_activation_type(cfg),
                 w0=request.w0,
             )
         else:
@@ -266,7 +272,7 @@ def _dense_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult
                 hidden_units=request.hidden_units,
                 hidden_width=request.hidden_units,
                 act_kw=activation,
-                activation_type=cfg.activation.kind,
+                activation_type=_backbone_activation_type(cfg),
                 w0_first=residual.first_w0,
                 w0_hidden=residual.hidden_w0,
                 norm=residual.norm,
@@ -307,7 +313,7 @@ def _convolution_builder(request: ArchitectureBuildRequest) -> ArchitectureBuild
             hidden_channels=conv.channels or request.hidden_units,
             kernel_size=conv.kernel_size,
             act_kw=activation,
-            activation_type=cfg.activation.kind,
+            activation_type=_backbone_activation_type(cfg),
             w0_first=residual.first_w0,
             w0_hidden=residual.hidden_w0,
             norm=residual.norm,
@@ -327,7 +333,7 @@ def _convolution_builder(request: ArchitectureBuildRequest) -> ArchitectureBuild
             hidden_channels=conv.channels or request.hidden_units,
             kernel_size=conv.kernel_size,
             act_kw=activation,
-            activation_type=cfg.activation.kind,
+            activation_type=_backbone_activation_type(cfg),
             w0=request.w0,
             segmentation_head=request.per_element,
         )
@@ -591,7 +597,7 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
             hidden_channels=width,
             kernel_size=conv.kernel_size,
             act_kw=activation,
-            activation_type=cfg.activation.kind,
+            activation_type=_backbone_activation_type(cfg),
             w0=request.w0,
             segmentation_head=False,
         )

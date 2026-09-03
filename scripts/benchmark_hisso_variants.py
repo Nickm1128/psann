@@ -241,7 +241,7 @@ def _build_estimator(variant: str, device: str, *, epochs: int, seed: int):
         conv_params["hidden_units"] = 32
         return PSANNRegressor(
             architecture=ArchitectureConfig.convolutional(
-                residual=ResidualConfig(), convolution=ConvolutionConfig(channels=32)
+                residual=ResidualConfig(), convolution=ConvolutionConfig(channels=32, kernel_size=3)
             ),
             **conv_params,
         )

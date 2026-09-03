@@ -28,11 +28,11 @@ from psann import PSANNRegressor
 from psann.architectures import (
     ActivationConfig,
     ArchitectureConfig,
-    ContextConfig,
     ResidualConfig,
     SequenceConfig,
     SpectralConfig,
     WaveConfig,
+    W0WarmupConfig,
 )
 from psann.params import count_params as psann_count_params
 from psann.utils import (

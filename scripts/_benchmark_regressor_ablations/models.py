@@ -11,7 +11,9 @@ class ModelSpec:
     params: Dict[str, Any]
 
     def build(self, **params: Any) -> PSANNRegressor:
-        return PSANNRegressor(architecture=self.architecture, **self.params, **params)
+        merged = dict(self.params)
+        merged.update(params)
+        return PSANNRegressor(architecture=self.architecture, **merged)
 
 
 MODELS: Dict[str, ModelSpec] = {
@@ -46,7 +48,7 @@ MODELS: Dict[str, ModelSpec] = {
     "wrn_base": ModelSpec(
         name="wrn_base",
         architecture=ArchitectureConfig.for_wave(
-            wave=WaveConfig(norm="rms"), context=ContextConfig(film=True, phase_shift=True)
+            wave=WaveConfig(norm="rms", warmup=W0WarmupConfig(10.0, 0.5, 10))
         ),
         params={
             "hidden_layers": 6,
@@ -56,7 +58,7 @@ MODELS: Dict[str, ModelSpec] = {
     "wrn_no_phase": ModelSpec(
         name="wrn_no_phase",
         architecture=ArchitectureConfig.for_wave(
-            wave=WaveConfig(norm="rms"), context=ContextConfig(film=True, phase_shift=False)
+            wave=WaveConfig(norm="rms", warmup=W0WarmupConfig(10.0, 0.5, 10))
         ),
         params={
             "hidden_layers": 6,
@@ -66,7 +68,7 @@ MODELS: Dict[str, ModelSpec] = {
     "wrn_no_film": ModelSpec(
         name="wrn_no_film",
         architecture=ArchitectureConfig.for_wave(
-            wave=WaveConfig(norm="rms"), context=ContextConfig(film=False, phase_shift=True)
+            wave=WaveConfig(norm="rms", warmup=W0WarmupConfig(10.0, 0.5, 10))
         ),
         params={
             "hidden_layers": 6,
@@ -76,7 +78,8 @@ MODELS: Dict[str, ModelSpec] = {
     "wrn_spec_gate_rfft": ModelSpec(
         name="wrn_spec_gate_rfft",
         architecture=ArchitectureConfig.for_wave(
-            wave=WaveConfig(norm="rms"), spectral=SpectralConfig(k_fft=64, gate_type="rfft")
+            wave=WaveConfig(norm="rms", warmup=W0WarmupConfig(10.0, 0.5, 10)),
+            spectral=SpectralConfig(k_fft=64, gate_type="rfft"),
         ),
         params={
             "hidden_layers": 6,
@@ -86,7 +89,7 @@ MODELS: Dict[str, ModelSpec] = {
     "wrn_spec_gate_feats": ModelSpec(
         name="wrn_spec_gate_feats",
         architecture=ArchitectureConfig.for_wave(
-            wave=WaveConfig(norm="rms"),
+            wave=WaveConfig(norm="rms", warmup=W0WarmupConfig(10.0, 0.5, 10)),
             spectral=SpectralConfig(k_fft=64, gate_type="fourier-features"),
         ),
         params={
