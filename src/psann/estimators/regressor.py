@@ -1380,10 +1380,18 @@ class PSANNRegressor(_Phase2Regressor):
     def load(
         cls, path: str, *, map_location: Optional[Union[str, torch.device]] = "cpu"
     ) -> "PSANNRegressor":
+        # Historical pickles name ``psann.lsm`` classes. Their public import
+        # path warns for users, but checkpoint deserialization must be silent.
+        from .. import lsm as legacy_lsm_module
+
+        legacy_lsm_module._set_deserialization_warning_suppressed(True)
         try:
-            payload = torch.load(path, map_location=map_location, weights_only=False)
-        except TypeError:
-            payload = torch.load(path, map_location=map_location)
+            try:
+                payload = torch.load(path, map_location=map_location, weights_only=False)
+            except TypeError:
+                payload = torch.load(path, map_location=map_location)
+        finally:
+            legacy_lsm_module._set_deserialization_warning_suppressed(False)
         if payload.get("schema") != "psann.regressor":
             # Preserve the strict Phase-2 reader, then attach its deserialised
             # module to a configuration-bearing canonical instance.  It remains a

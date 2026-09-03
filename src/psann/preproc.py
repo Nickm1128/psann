@@ -9,7 +9,8 @@ import torch
 import torch.nn as nn
 
 from ._aliases import resolve_int_alias
-from .lsm import LSM, LSMConv2d, LSMConv2dExpander, LSMExpander
+from ._lsm.conv import LSMConv2d, LSMConv2dExpander
+from ._lsm.dense import LSM, LSMExpander
 
 
 @dataclass
