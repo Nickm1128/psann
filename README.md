@@ -356,33 +356,36 @@ print("WaveResNet R^2:", wave.score(X, y, context=context))
 The Wave architecture applies SIREN-style initialisation with optional `w0` warmup and progressive depth expansion.
 Tip: Specify `device="cuda"` for GPU runs; use `np.float32` inputs (including `context`) to stay on the fast path without extra dtype casts.
 
-For sequence-shaped inputs `(N, T, F)`, `WaveResNetRegressor` can optionally apply a lightweight spectral gate over the inferred sequence axis before the WaveResNet readout. Enable it with `use_spectral_gate=True` and configure `k_fft`, `gate_type`, `gate_groups`, `gate_init`, and `gate_strength`.
+For sequence-shaped inputs `(N, T, F)`, the canonical Wave architecture can apply a
+spectral gate through `ArchitectureConfig.for_wave(spectral=SpectralConfig(...))`.
 
 ### Convolutional WaveResNet with attention
 
 ```python
 import numpy as np
-from psann import WaveResNetRegressor
+from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig, ConvolutionConfig, AttentionConfig
 
 rng = np.random.default_rng(5)
 frames = rng.normal(size=(48, 12, 3)).astype(np.float32)  # (batch, positions, channels)
 targets = frames.mean(axis=(1, 2), keepdims=False).astype(np.float32).reshape(48, 1)
 
-conv_wave = WaveResNetRegressor.with_conv_stem(
-    conv_channels=24,
-    conv_kernel_size=3,
-    data_format="channels_last",
+conv_wave = PSANNRegressor(
+    architecture=ArchitectureConfig.for_wave(
+        convolution=ConvolutionConfig(channels=24, kernel_size=3, data_format="channels_last"),
+        attention=AttentionConfig(num_heads=4),
+    ),
     hidden_layers=3,
     hidden_units=48,
     epochs=40,
     batch_size=16,
-    attention={"kind": "mha", "num_heads": 4},  # token attention over the conv stem
 )
 conv_wave.fit(frames, targets, verbose=0)
 print("Conv WaveResNet R^2:", conv_wave.score(frames, targets))
 ```
 
-`with_conv_stem(...)` wires the estimator into the convolutional training path so tensors stay channel-first internally. The helper keeps the WaveResNet backbone (including optional context injection) while inserting a learnable convolutional stem and the shared attention builder before the dense WaveResNet readout.
+The canonical configuration keeps the WaveResNet backbone while inserting a learnable
+convolutional stem and attention before the dense WaveResNet readout.
 
 ### Episodic HISSO with `HISSOOptions`
 
@@ -507,7 +510,9 @@ Looking for a guided walkthrough? Use the paired notebooks (both ship with Colab
 
 ### Convolutional stems
 
-`PSANNRegressor.with_conv_stem(...)`, `ResPSANNRegressor.with_conv_stem(...)`, and `WaveResNetRegressor.with_conv_stem(...)` return estimators wired into the convolutional training path without instantiating the legacy `*ConvPSANNRegressor` wrappers. The helpers enable `preserve_shape`, switch training to channel-first tensors, and honour `conv_channels`, `conv_kernel_size`, and `per_element` flags (WaveResNet keeps `per_element=False`). Example:
+Use `PSANNRegressor(architecture=ArchitectureConfig.convolutional(...))` for the
+canonical convolutional path. Historical `.with_conv_stem(...)` helpers and legacy
+estimator names are compatibility-only. Example:
 ```python
 est = PSANNRegressor.with_conv_stem(
     hidden_layers=2,
