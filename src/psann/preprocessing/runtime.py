@@ -41,6 +41,7 @@ class PreprocessorBuildResult:
     module: nn.Module
     capabilities: PreprocessorCapabilities
     diagnostics: Mapping[str, object]
+    controller: object | None = None
 
 
 def declared_preprocessor_capabilities(config: PreprocessorConfig) -> PreprocessorCapabilities:
@@ -124,9 +125,35 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
 
     component = request.config.component
     if isinstance(component, ModulePreprocessorConfig):
+        if request.input_topology != component.input_topology:
+            raise ValueError(
+                "preprocessor.component.input_topology conflicts with observed input topology: "
+                f"declared {component.input_topology!r}, received {request.input_topology!r}."
+            )
         module = deepcopy(component.module).to(device=request.device, dtype=request.dtype)
         capabilities = declared_preprocessor_capabilities(request.config)
-        return PreprocessorBuildResult(module, capabilities, {})
+        try:
+            probe = torch.as_tensor(request.data[:1], device=request.device, dtype=request.dtype)
+            with torch.no_grad():
+                produced = module(probe)
+        except Exception as exc:
+            raise ValueError(
+                "preprocessor.component.module cannot execute declared "
+                f"{component.input_topology!r} input topology."
+            ) from exc
+        if produced.ndim != probe.ndim:
+            raise ValueError(
+                "preprocessor.component.output_topology is incompatible with module output rank."
+            )
+        if produced.shape[-1] != component.output_dim and not component.output_topology.startswith("spatial-"):
+            raise ValueError(
+                "preprocessor.component.output_dim conflicts with module output width."
+            )
+        if component.output_topology.startswith("spatial-") and produced.shape[1] != component.output_dim:
+            raise ValueError(
+                "preprocessor.component.output_dim conflicts with module output channels."
+            )
+        return PreprocessorBuildResult(module, capabilities, {}, None)
 
     expected = "flat" if component.topology == "dense" else "spatial-2d"
     if request.input_topology != expected:
@@ -148,7 +175,7 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
     if isinstance(readout, torch.Tensor):
         diagnostics["ols_readout"] = readout.detach().cpu().clone()
     capabilities = declared_preprocessor_capabilities(request.config)
-    return PreprocessorBuildResult(module, capabilities, diagnostics)
+    return PreprocessorBuildResult(module, capabilities, diagnostics, expander)
 
 
 def validate_preprocessor_capability(

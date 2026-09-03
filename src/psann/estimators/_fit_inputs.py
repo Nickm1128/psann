@@ -40,7 +40,9 @@ def _prepare_flatten_inputs(
         X_scaled = X
 
     X_flat = estimator._flatten(X_scaled).astype(np.float32, copy=False)
-    train_inputs = X_flat
+    component = getattr(getattr(estimator, "preprocessor", None), "component", None)
+    preserve_tokens = getattr(component, "input_topology", None) == "tokens"
+    train_inputs = X_scaled.astype(np.float32, copy=False) if preserve_tokens else X_flat
     train_context = None
     context_dim = None
     if context is not None:

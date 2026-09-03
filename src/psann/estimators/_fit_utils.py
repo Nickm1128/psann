@@ -316,7 +316,7 @@ def run_supervised_training(
 def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.optim.Optimizer:
     training = getattr(getattr(estimator, "preprocessor", None), "training", None)
     joint_preprocessor = bool(getattr(training, "trainable", False))
-    legacy_joint = bool(getattr(estimator, "lsm_train", False))
+    legacy_joint = training is None and bool(getattr(estimator, "lsm_train", False))
     if (
         (joint_preprocessor or legacy_joint)
         and isinstance(model, WithPreprocessor)

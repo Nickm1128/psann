@@ -38,12 +38,15 @@ class _AttentionDenseModel(nn.Module):
         self.pool = pool
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if x.ndim != 2 or x.shape[1] != self.seq_len * self.token_dim:
+        if x.ndim == 3 and x.shape[1:] == (self.seq_len, self.token_dim):
+            tokens = x
+        elif x.ndim == 2 and x.shape[1] == self.seq_len * self.token_dim:
+            tokens = x.reshape(x.shape[0], self.seq_len, self.token_dim)
+        else:
             raise ValueError(
-                "Attention-enabled models require their documented flattened token shape."
+                "Attention-enabled models require flattened or token-shaped inputs."
             )
-        batch = x.shape[0]
-        tokens = x.reshape(batch, self.seq_len, self.token_dim)
+        batch = tokens.shape[0]
         embedded = self.token_backbone(tokens.reshape(batch * self.seq_len, self.token_dim))
         embedded = embedded.reshape(batch, self.seq_len, self.embed_dim)
         context = (
@@ -134,13 +137,16 @@ class _WaveResNetAttentionDenseModel(nn.Module):
         self.seq_len, self.token_dim = int(seq_len), int(token_dim)
 
     def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None) -> torch.Tensor:
-        if x.ndim != 2 or x.shape[1] != self.seq_len * self.token_dim:
+        if x.ndim == 3 and x.shape[1:] == (self.seq_len, self.token_dim):
+            tokens = x
+        elif x.ndim == 2 and x.shape[1] == self.seq_len * self.token_dim:
+            tokens = x.reshape(x.shape[0], self.seq_len, self.token_dim)
+        else:
             raise ValueError(
-                "Wave attention models require their documented flattened token shape."
+                "Wave attention models require flattened or token-shaped inputs."
             )
-        tokens = x.reshape(x.shape[0], self.seq_len, self.token_dim)
         tokens = self.attention(tokens, tokens, tokens)[0]
-        flat = tokens.reshape(x.shape[0], -1)
+        flat = tokens.reshape(tokens.shape[0], -1)
         return self.wave(flat, context) if context is not None else self.wave(flat)
 
 

@@ -47,9 +47,15 @@ class _PSANNRegressorInferenceMixin:
         if not self.preserve_shape:
             X2d = self._flatten(X_arr)
             X2d = self._apply_fitted_scaler(X2d)
-            meta["layout"] = "flat"
+            component = getattr(getattr(self, "preprocessor", None), "component", None)
+            preserve_tokens = getattr(component, "input_topology", None) == "tokens"
+            meta["layout"] = "tokens" if preserve_tokens else "flat"
             flat_for_context = X2d
-            inputs_np = X2d
+            inputs_np = (
+                X2d.reshape(X_arr.shape).astype(np.float32, copy=False)
+                if preserve_tokens
+                else X2d
+            )
         else:
             X_cf = (
                 np.moveaxis(X_arr, -1, 1) if self.data_format == "channels_last" else X_arr.copy()

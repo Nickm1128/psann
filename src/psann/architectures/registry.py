@@ -499,8 +499,15 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
     first_w0 = wave.warmup.first_initial if warmup_enabled and wave.warmup else wave.first_w0
     hidden_w0 = wave.warmup.hidden_initial if warmup_enabled and wave.warmup else wave.hidden_w0
     if cfg.convolution is None:
+        # Attention consumes every produced token; its Wave readout therefore
+        # receives the flattened token grid, not just the per-token width.
+        wave_input_dim = (
+            int(math.prod(request.input_shape))
+            if cfg.attention is not None and len(request.input_shape) >= 2
+            else request.preprocessor_output_dim or request.input_dim
+        )
         core: Any = WaveResNet(
-            request.preprocessor_output_dim or request.input_dim,
+            wave_input_dim,
             request.hidden_units,
             initial_depth,
             request.output_dim,

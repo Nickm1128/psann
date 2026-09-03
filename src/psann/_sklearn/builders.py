@@ -343,9 +343,15 @@ class _PSANNRegressorBuilderMixin:
             )
 
             preproc = lsm_module
-            if preproc is not None and not self.lsm_train:
+            if preproc is not None and not (
+                self.preprocessor.training.trainable
+                if getattr(self, "preprocessor", None) is not None
+                else self.lsm_train
+            ):
                 for param in preproc.parameters():
                     param.requires_grad = False
+            if isinstance(core, WithPreprocessor):
+                return core
             return WithPreprocessor(preproc, core)
 
         return FitVariantHooks(build_model=build_model)
@@ -383,9 +389,15 @@ class _PSANNRegressorBuilderMixin:
             )
 
             preproc = lsm_module
-            if preproc is not None and not self.lsm_train:
+            if preproc is not None and not (
+                self.preprocessor.training.trainable
+                if getattr(self, "preprocessor", None) is not None
+                else self.lsm_train
+            ):
                 for param in preproc.parameters():
                     param.requires_grad = False
+            if isinstance(core, WithPreprocessor):
+                return core
             return WithPreprocessor(preproc, core)
 
         def build_hisso_plan(
@@ -445,7 +457,11 @@ class _PSANNRegressorBuilderMixin:
                 input_dim = int(request.lsm_output_dim)
             else:
                 input_dim = int(inputs_arr.shape[1])
-            if self._attention_enabled() and request.lsm_module is not None:
+            if (
+                self._attention_enabled()
+                and request.lsm_module is not None
+                and getattr(self, "preprocessor", None) is None
+            ):
                 raise ValueError(
                     "attention is currently incompatible with lsm preprocessors; "
                     "attach attention after the LSM or disable lsm."
@@ -457,10 +473,16 @@ class _PSANNRegressorBuilderMixin:
                 input_shape=prepared_local.input_shape,
             )
             preproc = request.lsm_module
-            if preproc is not None and not self.lsm_train:
+            if preproc is not None and not (
+                self.preprocessor.training.trainable
+                if getattr(self, "preprocessor", None) is not None
+                else self.lsm_train
+            ):
                 for param in preproc.parameters():
                     param.requires_grad = False
             if preproc is None:
+                return core
+            if isinstance(core, WithPreprocessor):
                 return core
             return WithPreprocessor(preproc, core)
 
