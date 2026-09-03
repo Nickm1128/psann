@@ -1,6 +1,7 @@
 import numpy as np
 
-from psann import GeoSparseRegressor
+from psann.architectures import ArchitectureConfig, GeometryConfig
+from psann import PSANNRegressor
 
 
 def make_data(n: int = 512, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
@@ -19,8 +20,10 @@ if __name__ == "__main__":
     X_train, y_train = X[tr_idx], y[tr_idx]
     X_test, y_test = X[te_idx], y[te_idx]
 
-    model = GeoSparseRegressor(
-        shape=(4, 4),
+    model = PSANNRegressor(
+        architecture=ArchitectureConfig.geometric_sparse(
+            geometry=GeometryConfig(shape=(4, 4))
+        ),
         hidden_layers=4,
         k=8,
         activation_type="relu",

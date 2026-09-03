@@ -7,11 +7,10 @@ This page lists the **supported** public API surface for PSANN. Anything not lis
 These are the identifiers exported from `psann.__init__` and are safe to import directly:
 
 ### Estimators
-- `PSANNRegressor`
-- `ResPSANNRegressor`
-- `ResConvPSANNRegressor`
-- `SGRPSANNRegressor`
-- `WaveResNetRegressor`
+- `PSANNRegressor`, configured with immutable policies from `psann.architectures`.
+- The historical variant estimator names remain direct deprecated imports through
+  the 0.x line; use `ArchitectureConfig.dense`, `.convolutional`, `.for_wave`,
+  `.for_sequence`, or `.geometric_sparse` for new code.
 
 ### Episodic training (HISSO)
 - `HISSOOptions`
@@ -49,7 +48,8 @@ These are the identifiers exported from `psann.__init__` and are safe to import 
 
 These are available but may change without notice:
 
-- `GeoSparseRegressor` (experimental GeoSparse backbone).
+- `GeoSparseRegressor` (deprecated compatibility wrapper; use
+  `PSANNRegressor(architecture=ArchitectureConfig.geometric_sparse(...))`).
 - `psannlm` (LM utilities; packaged separately from the core `psann` distribution).
 
 ## Internal-only modules (not stable)

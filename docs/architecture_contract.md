@@ -138,11 +138,14 @@ requests remain errors.
 
 ## Current Phase 2 characterization
 
-The six current public classes remain direct imports: `PSANNRegressor`,
-`ResPSANNRegressor`, `ResConvPSANNRegressor`, `WaveResNetRegressor`,
-`SGRPSANNRegressor`, and `GeoSparseRegressor`. Current shared fit/scaling/inference
-and serialization remain in `psann._sklearn`; the separate `psannlm` distribution
-retains its own registry names (`respsann`, `sgrpsann`, `waveresnet`, `geosparse`) and
+`PSANNRegressor` is the canonical public estimator. Its architecture is an immutable
+`ArchitectureConfig` from `psann.architectures`, normalized through the one registry
+path. `ResPSANNRegressor`, `ResConvPSANNRegressor`, `WaveResNetRegressor`,
+`SGRPSANNRegressor`, and `GeoSparseRegressor` remain direct deprecated compatibility
+imports through 0.x. Shared fit/scaling/inference and serialization are owned by
+`psann.estimators`; `psann._sklearn` retains compatibility shims. The separate
+`psannlm` distribution retains its own registry names (`respsann`, `sgrpsann`,
+`waveresnet`, `geosparse`) and
 is characterization-only in this phase.
 
 Phase 2 fixes only legacy parameter/checkpoint drift: fallback `get_params` follows

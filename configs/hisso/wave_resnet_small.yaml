@@ -1,6 +1,7 @@
 estimator:
-  target: psann.WaveResNetRegressor
+  target: psann.PSANNRegressor
   params:
+    architecture: wave
     hidden_layers: 4
     hidden_units: 64
     epochs: 60

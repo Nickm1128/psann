@@ -132,7 +132,10 @@ pre-commit run --all-files  # optional one-time sweep
 At a glance, the main things you import from `psann` are:
 
 - Estimators:
-  - `from psann import PSANNRegressor, ResPSANNRegressor, ResConvPSANNRegressor, SGRPSANNRegressor, WaveResNetRegressor`
+  - `from psann import PSANNRegressor`
+  - `from psann.architectures import ArchitectureConfig` and select a canonical
+    architecture policy such as `ArchitectureConfig.for_wave()` or
+    `ArchitectureConfig.geometric_sparse(...)`.
 - HISSO and episodic training:
   - `from psann import HISSOOptions, hisso_infer_series, hisso_evaluate_reward`
   - `from psann import EpisodeTrainer, EpisodeConfig, get_reward_strategy, RewardStrategyBundle`
