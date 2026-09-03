@@ -3,7 +3,7 @@ from __future__ import annotations
 """Deprecated compatibility facade for low-level LSM classes."""
 
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ._lsm.common import TensorLike
 from ._lsm.conv import LSMConv2d as _LSMConv2d
@@ -12,6 +12,10 @@ from ._lsm.conv import MaskedConv2d as _MaskedConv2d
 from ._lsm.dense import LSM as _LSM
 from ._lsm.dense import LSMExpander as _LSMExpander
 from ._lsm.dense import MaskedLinear as _MaskedLinear
+
+if TYPE_CHECKING:
+    from ._lsm.conv import LSMConv2d, LSMConv2dExpander, MaskedConv2d
+    from ._lsm.dense import LSM, LSMExpander, MaskedLinear
 
 __all__ = [
     "TensorLike",
