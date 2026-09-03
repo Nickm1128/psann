@@ -418,9 +418,11 @@ def _benchmark_variant(
         episodes_total = int(sum(episodes))
         profile_time = float(trainer.profile.get("total_time_s", float("nan")))
         wall_throughput = float(episodes_total / max(float(elapsed), 1e-9))
-        profile_throughput = float(
-            episodes_total / max(profile_time, 1e-9)
-        ) if math.isfinite(profile_time) else math.nan
+        profile_throughput = (
+            float(episodes_total / max(profile_time, 1e-9))
+            if math.isfinite(profile_time)
+            else math.nan
+        )
 
         allow_full_window = allow_full_window and getattr(cfg, "episode_length", window) == window
         episode_length_seen = getattr(cfg, "episode_length", window)
@@ -460,13 +462,19 @@ def _benchmark_variant(
             "configured_batch_episodes": int(schedule.batch_episodes),
             "configured_updates_per_epoch": int(schedule.updates_per_epoch),
             "resolved_episode_batch_size": (
-                int(resolved_episode_batch_size) if resolved_episode_batch_size is not None else math.nan
+                int(resolved_episode_batch_size)
+                if resolved_episode_batch_size is not None
+                else math.nan
             ),
             "resolved_updates_per_epoch": (
-                int(resolved_updates_per_epoch) if resolved_updates_per_epoch is not None else math.nan
+                int(resolved_updates_per_epoch)
+                if resolved_updates_per_epoch is not None
+                else math.nan
             ),
             "resolved_episodes_per_epoch": (
-                int(resolved_episodes_per_epoch) if resolved_episodes_per_epoch is not None else math.nan
+                int(resolved_episodes_per_epoch)
+                if resolved_episodes_per_epoch is not None
+                else math.nan
             ),
             "series_length": int(run_stats[0]["series_length"]) if run_stats else math.nan,
             "primary_dim": int(run_stats[0]["primary_dim"]) if run_stats else math.nan,
@@ -630,7 +638,9 @@ def main() -> None:
         for schedule in schedules:
             for variant in variants:
                 if not dataset.supports(variant):
-                    print(f"Skipping variant '{variant}' for dataset '{dataset.name}' (unsupported).")
+                    print(
+                        f"Skipping variant '{variant}' for dataset '{dataset.name}' (unsupported)."
+                    )
                     continue
                 summary = _benchmark_variant(
                     variant,
