@@ -67,3 +67,21 @@ def test_nested_policy_updates_are_transactional_and_validate_only_final_state()
     )
     assert estimator.architecture.spectral is None
     assert estimator.architecture.attention == AttentionConfig(num_heads=2)
+
+
+def test_flat_architecture_routes_preserve_every_supported_policy():
+    conv = PSANNRegressor(
+        preserve_shape=True,
+        norm="layer",
+        attention={"kind": "mha", "num_heads": 1},
+    ).architecture
+    assert conv.kind == "convolutional"
+    assert conv.residual and conv.residual.norm == "layer"
+    assert conv.attention == AttentionConfig(num_heads=1)
+
+    wave = PSANNRegressor(first_layer_w0=31.0, use_spectral_gate=True, k_fft=8).architecture
+    assert wave.kind == "wave" and wave.spectral and wave.spectral.k_fft == 8
+
+    sequence = PSANNRegressor(phase_init=0.25, pool="mean").architecture
+    assert sequence.kind == "sequence"
+    assert sequence.sequence and sequence.sequence.pool == "mean"

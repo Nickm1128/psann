@@ -22,15 +22,18 @@ from ..architectures import (
     ArchitectureBuildRequest,
     ArchitectureConfig,
     ArchitectureLike,
+    ActivationConfig,
     AttentionConfig,
     ConvolutionConfig,
     ContextConfig,
     GeometryConfig,
     ResidualConfig,
+    ProgressiveDepthConfig,
     SequenceConfig,
     SpectralConfig,
     StateConfig,
     WaveConfig,
+    W0WarmupConfig,
     build_architecture,
     architecture_to_mapping,
     normalize_architecture,
@@ -152,18 +155,7 @@ def _legacy_architecture(
                 )
             activation_values[canonical_key] = activation_values.pop(legacy_key)
     activation_values.setdefault("kind", activation_type)
-    if preserve_shape:
-        convolution = ConvolutionConfig(conv_channels, conv_kernel_size, data_format, per_element)
-        return ArchitectureConfig.convolutional(
-            activation=(
-                ArchitectureConfig.dense().activation
-                if not activation_values
-                else __import__(
-                    "psann.architectures", fromlist=["ActivationConfig"]
-                ).ActivationConfig(**activation_values)
-            ),
-            convolution=convolution,
-        )
+    canonical_activation = ActivationConfig(**activation_values)
     attention_value = None
     if attention is not None:
         if isinstance(attention, Mapping):
@@ -187,12 +179,32 @@ def _legacy_architecture(
     )
     if shape is not None:
         return ArchitectureConfig.geometric_sparse(
-            activation=__import__(
-                "psann.architectures", fromlist=["ActivationConfig"]
-            ).ActivationConfig(**activation_values),
+            activation=canonical_activation,
             residual=residual or ResidualConfig(),
             geometry=GeometryConfig(
                 shape, k, pattern, radius, offsets, wrap_mode, bias, compute_mode, geo_seed
+            ),
+        )
+    sequence_requested = any(
+        value != default
+        for value, default in (
+            (phase_init, 0.0),
+            (phase_trainable, True),
+            (pool, "last"),
+        )
+    )
+    if sequence_requested:
+        if preserve_shape or attention_value is not None or residual is not None:
+            raise ValueError(
+                "sequence flat architecture inputs cannot combine with preserve_shape, attention, or residual inputs."
+            )
+        return ArchitectureConfig.for_sequence(
+            activation=canonical_activation,
+            sequence=SequenceConfig(phase_init, phase_trainable, pool),
+            spectral=(
+                SpectralConfig(k_fft, gate_type, gate_groups, gate_init, gate_strength)
+                if use_spectral_gate
+                else None
             ),
         )
     wave_requested = any(
@@ -208,29 +220,24 @@ def _legacy_architecture(
             (progressive_depth_initial, None),
             (context_dim, None),
             (context_builder, None),
+            (use_spectral_gate, False),
         )
     )
     if wave_requested:
         warmup = (
-            __import__("psann.architectures", fromlist=["W0WarmupConfig"]).W0WarmupConfig(
-                first_layer_w0_initial, hidden_w0_initial, w0_warmup_epochs
-            )
+            W0WarmupConfig(first_layer_w0_initial, hidden_w0_initial, w0_warmup_epochs)
             if first_layer_w0_initial is not None and hidden_w0_initial is not None
             else None
         )
         progressive = (
-            __import__(
-                "psann.architectures", fromlist=["ProgressiveDepthConfig"]
-            ).ProgressiveDepthConfig(
+            ProgressiveDepthConfig(
                 progressive_depth_initial, progressive_depth_interval, progressive_depth_growth
             )
             if progressive_depth_initial is not None
             else None
         )
         return ArchitectureConfig.for_wave(
-            activation=__import__(
-                "psann.architectures", fromlist=["ActivationConfig"]
-            ).ActivationConfig(**activation_values),
+            activation=canonical_activation,
             residual=residual or ResidualConfig(alpha_init=residual_alpha_init),
             wave=WaveConfig(
                 first_layer_w0,
@@ -242,6 +249,11 @@ def _legacy_architecture(
                 progressive,
             ),
             attention=attention_value,
+            spectral=(
+                SpectralConfig(k_fft, gate_type, gate_groups, gate_init, gate_strength)
+                if use_spectral_gate
+                else None
+            ),
             context=(
                 ContextConfig(
                     context_dim, context_builder, context_builder_params, use_film, use_phase_shift
@@ -249,6 +261,15 @@ def _legacy_architecture(
                 if (context_dim is not None or context_builder is not None)
                 else None
             ),
+        )
+    if preserve_shape:
+        return ArchitectureConfig.convolutional(
+            activation=canonical_activation,
+            residual=residual,
+            convolution=ConvolutionConfig(
+                conv_channels, conv_kernel_size, data_format, per_element
+            ),
+            attention=attention_value,
         )
     state_value = None
     if stateful or state is not None:
@@ -264,9 +285,7 @@ def _legacy_architecture(
         raw_state.update({"reset": state_reset, "stream_lr": stream_lr})
         state_value = StateConfig(**raw_state)
     return ArchitectureConfig.dense(
-        activation=__import__(
-            "psann.architectures", fromlist=["ActivationConfig"]
-        ).ActivationConfig(**activation_values),
+        activation=canonical_activation,
         attention=attention_value,
         state=state_value,
         residual=residual,
@@ -1270,12 +1289,38 @@ class PSANNRegressor(_Phase2Regressor):
                 int(np.prod(input_shape)), int(output_dim), input_shape=input_shape
             )
         state_dict = payload["model_state_dict"]
-        if state_dict and all(str(key).startswith("core.") for key in state_dict):
+        has_preprocessor = state_dict and any(str(key).startswith("preproc.") for key in state_dict)
+        if has_preprocessor and estimator.architecture.convolution is None:
+            # The core was trained on the preprocessor output, not raw X.  Its
+            # saved first projection is the authoritative dimension for schema
+            # reconstruction, including fitted LSMExpanders.
+            core_weight = next(
+                (
+                    value
+                    for key, value in state_dict.items()
+                    if str(key).startswith("core.") and str(key).endswith("linear.weight")
+                ),
+                None,
+            )
+            if core_weight is None:
+                raise ValueError(
+                    "Checkpoint preprocessor state is missing a dense core projection."
+                )
+            estimator.model_ = estimator._build_dense_core(
+                int(cast(torch.Tensor, core_weight).shape[1]),
+                int(output_dim),
+                input_shape=input_shape,
+            )
+        if state_dict and (
+            any(str(key).startswith("preproc.") for key in state_dict)
+            or all(str(key).startswith("core.") for key in state_dict)
+        ):
             # State-dict checkpoints retain constructor parameters, including the
             # fitted LSM module.  Recreate the same wrapper rather than a
             # placeholder whose empty prefix can never satisfy ``core.*`` keys.
+            preprocessor = getattr(estimator.lsm, "model", estimator.lsm)
             estimator.model_ = WithPreprocessor(
-                cast(nn.Module | None, estimator.lsm), estimator.model_
+                cast(nn.Module | None, preprocessor), estimator.model_
             )
         estimator.model_.load_state_dict(state_dict, strict=True)
         if map_location is not None:

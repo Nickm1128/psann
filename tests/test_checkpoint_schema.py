@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 from psann.estimators import PSANNRegressor
+from psann.lsm import LSMExpander
 
 
 def test_schema_v1_round_trip_does_not_store_final_module(tmp_path):
@@ -33,3 +34,17 @@ def test_unversioned_phase2_payload_migrates_to_canonical_instance(tmp_path):
     migrated = PSANNRegressor.load(str(path))
     assert type(migrated) is PSANNRegressor
     np.testing.assert_allclose(migrated.predict(X[:2]), old.predict(X[:2]))
+
+
+def test_schema_v1_round_trip_reconstructs_lsm_preprocessor(tmp_path):
+    X = np.arange(24, dtype=np.float32).reshape(8, 3)
+    y = X.mean(axis=1)
+    lsm = LSMExpander(output_dim=4, hidden_layers=1, hidden_units=4, epochs=1, batch_size=4)
+    lsm.fit(X, epochs=1)
+    estimator = PSANNRegressor(
+        hidden_layers=1, hidden_units=4, epochs=1, batch_size=4, random_state=0, lsm=lsm
+    ).fit(X, y)
+    path = tmp_path / "lsm.pt"
+    estimator.save(str(path))
+    loaded = PSANNRegressor.load(str(path))
+    np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)

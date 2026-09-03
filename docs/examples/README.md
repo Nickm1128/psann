@@ -42,7 +42,8 @@ These scripts share the refactored helper pipeline (`normalise_fit_args`, `prepa
 
 ## GeoSparse (experimental)
 
-- **28_geosparse_regression.py** — minimal GeoSparseRegressor example on a small synthetic grid (~30 s).
+- **28_geosparse_regression.py** — canonical `PSANNRegressor` with a
+  `geometric-sparse` architecture policy on a small synthetic grid (~30 s).
 
 ## HISSO policies and episodic evaluation (≤ ~3 min CPU)
 
