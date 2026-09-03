@@ -133,7 +133,7 @@ class _LegacyFacade(PSANNRegressor):
         for name, parameter in signature(self._signature_source.__init__).parameters.items():
             if name == "self" or parameter.kind.name in {"VAR_KEYWORD", "VAR_POSITIONAL"}:
                 continue
-            value = supplied.get(name, parameter.default)
+            value = getattr(self, name, supplied.get(name, parameter.default))
             values[name] = value
             # These compatibility attributes intentionally retain their original
             # objects; sklearn.clone verifies constructor identity.
@@ -289,7 +289,7 @@ class WaveResNetRegressor(_LegacyFacade):
             context_params = kwargs.pop("context_builder_params", None)
             context = (
                 None
-                if context_dim is None and context_builder is None
+                if context_dim is None and context_builder is None and "context_dim" not in supplied
                 else ContextConfig(
                     context_dim,
                     context_builder,
@@ -350,6 +350,65 @@ class WaveResNetRegressor(_LegacyFacade):
             self.state = None
             self._legacy_params_["stateful"] = False
             self._legacy_params_["state"] = None
+
+    def _wave_core(self):
+        model = getattr(self, "model_", None)
+        if model is not None and hasattr(model, "core"):
+            model = model.core
+        return getattr(model, "wave", model)
+
+    def _initial_w0_values(self):
+        wave = self.architecture.wave
+        assert wave is not None
+        if wave.warmup is None:
+            return wave.first_w0, wave.hidden_w0
+        return wave.warmup.first_initial, wave.warmup.hidden_initial
+
+    def _target_w0_values(self):
+        wave = self.architecture.wave
+        assert wave is not None
+        return wave.first_w0, wave.hidden_w0
+
+    def _current_w0_values(self):
+        core = self._wave_core()
+        if core is None:
+            return self._initial_w0_values()
+        hidden = core.blocks[0].w0 if getattr(core, "blocks", None) else self._target_w0_values()[1]
+        return core.stem_w0, hidden
+
+    def _reset_w0_schedule(self) -> None:
+        lifecycle = self._architecture_lifecycle_
+        core = self._wave_core()
+        if lifecycle is not None and core is not None:
+            lifecycle.warmup_step = 0
+            lifecycle.warmup_active = bool(self.architecture.wave and self.architecture.wave.warmup)
+            lifecycle._apply_warmup(core, 0)
+        self._w0_schedule_active = bool(self.architecture.wave and self.architecture.wave.warmup)
+        self._w0_schedule_step = 0
+
+    def _update_w0_schedule(self, step: int) -> None:
+        lifecycle = self._architecture_lifecycle_
+        core = self._wave_core()
+        if lifecycle is not None and core is not None:
+            lifecycle.warmup_step = int(step)
+            lifecycle._apply_warmup(core, int(step))
+            epochs = (
+                self.architecture.wave.warmup.epochs
+                if self.architecture.wave and self.architecture.wave.warmup
+                else 0
+            )
+            lifecycle.warmup_active = int(step) < int(epochs)
+        self._w0_schedule_step = int(step)
+        self._w0_schedule_active = bool(getattr(lifecycle, "warmup_active", False))
+
+    def _reset_progressive_depth(self) -> None:
+        lifecycle = self._architecture_lifecycle_
+        core = self._wave_core()
+        if lifecycle is not None and core is not None:
+            lifecycle.current_depth = len(core.blocks)
+        self._progressive_depth_current = (
+            len(core.blocks) if core is not None else self.hidden_layers
+        )
 
 
 class SGRPSANNRegressor(_LegacyFacade):

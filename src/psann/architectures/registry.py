@@ -426,6 +426,7 @@ class WaveLifecycle(ArchitectureLifecycle):
                     )
                     self.current_depth += add
                     self.next_expand_epoch = epoch + 1 + progressive.interval
+                    self._apply_warmup(model, self.warmup_step)
 
     def structure_metadata(self) -> dict[str, object]:
         return {
@@ -544,7 +545,7 @@ def _wave_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildResult:
             conv_core,
             wave_core,
             spatial_shape=request.spatial_shape,
-            attention=attn_module,
+            attention_module=attn_module,
             spectral_gate=spectral_gate,
         )
     caps = ArchitectureCapabilities(
@@ -580,7 +581,7 @@ def _sequence_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         hidden_units=request.hidden_units,
         hidden_width=request.hidden_units,
         act_kw=_activation_kwargs(cfg),
-        activation_type=cfg.activation.kind,
+        activation_type=cfg.activation.kind.replace("-", "_"),
         w0=request.w0,
         phase_init=sequence.phase_init,
         phase_trainable=sequence.phase_trainable,
@@ -622,7 +623,7 @@ def _geometry_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         radius=geometry.radius,
         offsets=geometry.offsets,
         wrap_mode=geometry.wrap_mode,
-        activation_type=cfg.activation.kind,
+        activation_type=cfg.activation.kind.replace("-", "_"),
         activation_config=_activation_kwargs(cfg),
         norm=residual.norm,
         drop_path_max=residual.drop_path,

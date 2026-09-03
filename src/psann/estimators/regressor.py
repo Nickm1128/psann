@@ -8,7 +8,7 @@ selection with immutable architecture configuration and registry requests.
 from __future__ import annotations
 
 import warnings
-from dataclasses import fields
+from dataclasses import fields, replace
 from inspect import Parameter, Signature, signature
 from typing import Any, Mapping, Optional, Tuple, Union
 
@@ -377,7 +377,11 @@ class PSANNRegressor(_Phase2Regressor):
                 geo_seed=geo_seed,
             )
         canonical = normalize_architecture(architecture)
-        units = 64 if hidden_units is None else hidden_units
+        units = (
+            hidden_width
+            if hidden_units is None and hidden_width is not None
+            else (64 if hidden_units is None else hidden_units)
+        )
         validate_architecture(canonical, hidden_layers=int(hidden_layers))
         conv = canonical.convolution
         super().__init__(
@@ -520,6 +524,23 @@ class PSANNRegressor(_Phase2Regressor):
             raise ValueError(
                 "WaveResNetRegressor does not support LSM preprocessors for preserve_shape inputs."
             )
+        if self.architecture.kind == "wave" and self.architecture.context is not None:
+            context = kwargs.get("context")
+            policy = self.architecture.context
+            if context is None and policy.builder is None:
+                raise ValueError(
+                    f"WaveResNetRegressor expects a context array matching context_dim={policy.dim}; received context=None."
+                )
+            if context is not None and policy.dim is None:
+                array = np.asarray(context)
+                dim = int(array.reshape(array.shape[0], -1).shape[1]) if array.ndim > 1 else 1
+                self.architecture = replace(self.architecture, context=replace(policy, dim=dim))
+            elif context is None and policy.builder is not None and policy.dim is None:
+                builder = self._get_context_builder()
+                if builder is not None:
+                    inferred = np.asarray(builder(np.asarray(X, dtype=np.float32)))
+                    dim = int(inferred.reshape(inferred.shape[0], -1).shape[1])
+                    self.architecture = replace(self.architecture, context=replace(policy, dim=dim))
         return super().fit(X, y, *args, **kwargs)
 
     def _build_conv_core(
