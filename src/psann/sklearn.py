@@ -3,12 +3,14 @@ from __future__ import annotations
 """Public sklearn-style estimator surface and serialization compatibility aliases."""
 
 from .estimators import PSANNRegressor
-from ._sklearn import (
+from .estimators.compat import (
     GeoSparseRegressor,
     ResConvPSANNRegressor,
     ResPSANNRegressor,
     SGRPSANNRegressor,
     WaveResNetRegressor,
+)
+from ._sklearn import (
     _AttentionConvModel,
     _AttentionDenseModel,
     _WaveResNetConvModel,
@@ -19,13 +21,7 @@ __all__ = [
     "PSANNRegressor",
 ]
 
-for _cls in (
-    ResPSANNRegressor,
-    ResConvPSANNRegressor,
-    SGRPSANNRegressor,
-    WaveResNetRegressor,
-    GeoSparseRegressor,
-    _AttentionDenseModel,
+for _cls in (_AttentionDenseModel,
     _AttentionConvModel,
     _WaveResNetSpectralDenseModel,
     _WaveResNetConvModel,

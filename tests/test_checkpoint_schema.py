@@ -19,3 +19,17 @@ def test_schema_v1_round_trip_does_not_store_final_module(tmp_path):
     assert "model" not in payload
     loaded = PSANNRegressor.load(str(path))
     np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]))
+
+
+def test_unversioned_phase2_payload_migrates_to_canonical_instance(tmp_path):
+    from psann._sklearn.base import PSANNRegressor as Phase2Regressor
+
+    X = np.ones((8, 2), dtype=np.float32)
+    old = Phase2Regressor(epochs=1, batch_size=4, random_state=0).fit(
+        X, np.ones(8, dtype=np.float32)
+    )
+    path = tmp_path / "phase2.pt"
+    old.save(str(path))
+    migrated = PSANNRegressor.load(str(path))
+    assert type(migrated) is PSANNRegressor
+    np.testing.assert_allclose(migrated.predict(X[:2]), old.predict(X[:2]))

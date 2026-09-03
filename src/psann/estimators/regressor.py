@@ -22,7 +22,12 @@ from ..architectures import (
     ArchitectureLike,
     AttentionConfig,
     ConvolutionConfig,
+    GeometryConfig,
+    ResidualConfig,
+    SequenceConfig,
+    SpectralConfig,
     StateConfig,
+    WaveConfig,
     build_architecture,
     architecture_to_mapping,
     normalize_architecture,
@@ -720,17 +725,134 @@ class PSANNRegressor(_Phase2Regressor):
         except TypeError:
             payload = torch.load(path, map_location=map_location)
         if payload.get("schema") != "psann.regressor":
-            # Preserve unversioned Phase-2 reading, then make the migrated object
-            # explicitly canonical on its next save.  The old deserialised module is
-            # intentionally retained only in memory; it is never emitted by v1.
-            legacy = _Phase2Regressor.load(path, map_location=map_location)
+            # Preserve the strict Phase-2 reader, then attach its deserialised
+            # module to a configuration-bearing canonical instance.  It remains a
+            # migration bridge only: the next save writes a state-dict-only v1 file.
+            from .._sklearn.geosparse import GeoSparseRegressor as LegacyGeo
+            from .._sklearn.residual import (
+                ResConvPSANNRegressor as LegacyResConv,
+                ResPSANNRegressor as LegacyRes,
+            )
+            from .._sklearn.sgr import SGRPSANNRegressor as LegacySGR
+            from .._sklearn.wave import WaveResNetRegressor as LegacyWave
+
+            old_classes = {
+                "PSANNRegressor": _Phase2Regressor,
+                "ResPSANNRegressor": LegacyRes,
+                "ResConvPSANNRegressor": LegacyResConv,
+                "WaveResNetRegressor": LegacyWave,
+                "SGRPSANNRegressor": LegacySGR,
+                "GeoSparseRegressor": LegacyGeo,
+            }
+            old_name = payload.get("class")
+            reader = old_classes.get(old_name)
+            if reader is None:
+                raise ValueError(f"Unsupported unversioned estimator class {old_name!r}.")
+            legacy = reader.load(path, map_location=map_location)
+            activation = normalize_architecture("dense").activation
+            raw_activation = getattr(legacy, "activation", None)
+            if isinstance(raw_activation, Mapping):
+                activation = __import__(
+                    "psann.architectures", fromlist=["ActivationConfig"]
+                ).ActivationConfig(**raw_activation)
+            if old_name in {"ResPSANNRegressor", "ResConvPSANNRegressor"}:
+                residual = ResidualConfig(
+                    getattr(legacy, "norm", "rms"),
+                    getattr(legacy, "residual_alpha_init", 0.0),
+                    getattr(legacy, "drop_path_max", 0.0),
+                    getattr(legacy, "w0_first", 12.0),
+                    getattr(legacy, "w0_hidden", 1.0),
+                )
+                if old_name == "ResConvPSANNRegressor" or getattr(legacy, "preserve_shape", False):
+                    architecture = ArchitectureConfig.convolutional(
+                        activation=activation,
+                        residual=residual,
+                        convolution=ConvolutionConfig(
+                            getattr(legacy, "conv_channels", None),
+                            getattr(legacy, "conv_kernel_size", 1),
+                            getattr(legacy, "data_format", "channels_first"),
+                            getattr(legacy, "per_element", False),
+                        ),
+                    )
+                else:
+                    architecture = ArchitectureConfig.dense(
+                        activation=activation, residual=residual
+                    )
+            elif old_name == "WaveResNetRegressor":
+                architecture = ArchitectureConfig.for_wave(
+                    activation=activation,
+                    residual=ResidualConfig(alpha_init=getattr(legacy, "residual_alpha_init", 0.0)),
+                    wave=WaveConfig(
+                        getattr(legacy, "first_layer_w0", 30.0),
+                        getattr(legacy, "hidden_w0", 1.0),
+                        getattr(legacy, "norm", "none"),
+                        getattr(legacy, "dropout", 0.0),
+                        getattr(legacy, "grad_clip_norm", 5.0),
+                    ),
+                )
+            elif old_name == "SGRPSANNRegressor":
+                architecture = ArchitectureConfig.for_sequence(
+                    activation=activation,
+                    sequence=SequenceConfig(
+                        getattr(legacy, "phase_init", 0.0),
+                        getattr(legacy, "phase_trainable", True),
+                        getattr(legacy, "pool", "last"),
+                    ),
+                    spectral=(
+                        SpectralConfig(
+                            getattr(legacy, "k_fft", 64),
+                            getattr(legacy, "gate_type", "rfft"),
+                            getattr(legacy, "gate_groups", "depthwise"),
+                            getattr(legacy, "gate_init", 0.0),
+                            getattr(legacy, "gate_strength", 1.0),
+                        )
+                        if getattr(legacy, "use_spectral_gate", True)
+                        else None
+                    ),
+                )
+            elif old_name == "GeoSparseRegressor":
+                architecture = ArchitectureConfig.geometric_sparse(
+                    activation=activation,
+                    residual=ResidualConfig(
+                        getattr(legacy, "norm", "rms"),
+                        getattr(legacy, "residual_alpha_init", 0.0),
+                        getattr(legacy, "drop_path_max", 0.0),
+                    ),
+                    geometry=GeometryConfig(
+                        getattr(legacy, "shape", None),
+                        getattr(legacy, "k", 8),
+                        getattr(legacy, "pattern", "local"),
+                        getattr(legacy, "radius", 1),
+                        getattr(legacy, "offsets", None),
+                        getattr(legacy, "wrap_mode", "clamp"),
+                        getattr(legacy, "bias", True),
+                        getattr(legacy, "compute_mode", "gather"),
+                        getattr(legacy, "geo_seed", None),
+                    ),
+                )
+            elif getattr(legacy, "preserve_shape", False):
+                architecture = ArchitectureConfig.convolutional(
+                    activation=activation,
+                    convolution=ConvolutionConfig(
+                        getattr(legacy, "conv_channels", None),
+                        getattr(legacy, "conv_kernel_size", 1),
+                        getattr(legacy, "data_format", "channels_first"),
+                        getattr(legacy, "per_element", False),
+                    ),
+                )
+            else:
+                architecture = ArchitectureConfig.dense(activation=activation)
             migrated = cls(
-                architecture="dense",
-                **{
-                    key: value
-                    for key, value in legacy.get_params(False).items()
-                    if key in cls().get_params(False) and key != "architecture"
-                },
+                architecture=architecture,
+                hidden_layers=getattr(legacy, "hidden_layers", 2),
+                hidden_units=getattr(legacy, "hidden_units", 64),
+                epochs=getattr(legacy, "epochs", 200),
+                batch_size=getattr(legacy, "batch_size", 128),
+                lr=getattr(legacy, "lr", 1e-3),
+                optimizer=getattr(legacy, "optimizer", "adam"),
+                weight_decay=getattr(legacy, "weight_decay", 0.0),
+                device=getattr(legacy, "device", "auto"),
+                random_state=getattr(legacy, "random_state", None),
             )
             migrated.model_ = legacy.model_
             for name in (
