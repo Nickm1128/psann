@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import fields
+from inspect import Parameter, Signature, signature
 from typing import Any, Mapping, Optional, Tuple, Union
 
 import numpy as np
@@ -35,6 +36,7 @@ from ..architectures import (
 from ..architectures.config import replace_architecture_path, validate_architecture
 from ..attention import AttentionConfig as LegacyAttentionConfig
 from ..state import StateConfig as LegacyStateConfig
+from ..nn import WithPreprocessor
 from ..types import LossLike, ScalerSpec
 
 _DEFAULT_ARCHITECTURE = ArchitectureConfig.dense()
@@ -132,6 +134,20 @@ def _legacy_architecture(
     activation_values: dict[str, object] = (
         dict(activation) if isinstance(activation, Mapping) else {}
     )
+    for legacy_key, canonical_key in {
+        "amp_init": "amplitude_init",
+        "freq_init": "frequency_init",
+        "damping_init": "decay_init",
+    }.items():
+        if legacy_key in activation_values:
+            if (
+                canonical_key in activation_values
+                and activation_values[canonical_key] != activation_values[legacy_key]
+            ):
+                raise ValueError(
+                    f"activation has conflicting {legacy_key!r} and {canonical_key!r}."
+                )
+            activation_values[canonical_key] = activation_values.pop(legacy_key)
     activation_values.setdefault("kind", activation_type)
     if preserve_shape:
         convolution = ConvolutionConfig(conv_channels, conv_kernel_size, data_format, per_element)
@@ -470,6 +486,13 @@ class PSANNRegressor(_Phase2Regressor):
         result = build_architecture(request)
         self._architecture_capabilities_ = result.capabilities
         self._architecture_lifecycle_ = result.lifecycle
+        if request.architecture.attention is not None:
+            seq_len = (
+                int(np.prod(request.spatial_shape))
+                if request.spatial_shape is not None
+                else int(np.prod(request.input_shape[:-1])) if len(request.input_shape) > 1 else 1
+            )
+            self._attention_shape_ = (seq_len, request.hidden_units)
         self._architecture_lifecycle_.on_model_built(model=result.model, runtime={})
         return result.model
 
@@ -486,6 +509,18 @@ class PSANNRegressor(_Phase2Regressor):
                 input_dim=input_dim, output_dim=output_dim, input_shape=input_shape or (input_dim,)
             )
         )
+
+    def fit(
+        self, X: np.ndarray, y: np.ndarray | None, *args: object, **kwargs: object
+    ) -> "PSANNRegressor":
+        warning = getattr(self, "_compat_runtime_warning_", None)
+        if warning:
+            warnings.warn(str(warning), RuntimeWarning, stacklevel=2)
+        if getattr(self, "_compat_shaped_lsm_rejected_", False):
+            raise ValueError(
+                "WaveResNetRegressor does not support LSM preprocessors for preserve_shape inputs."
+            )
+        return super().fit(X, y, *args, **kwargs)
 
     def _build_conv_core(
         self,
@@ -668,7 +703,9 @@ class PSANNRegressor(_Phase2Regressor):
         state_dict = {
             key: value.detach().cpu().clone() for key, value in model.state_dict().items()
         }
-        params = self.get_params(deep=False)
+        # Facades retain legacy ``get_params`` for callers, but the canonical
+        # checkpoint always stores the one canonical constructor surface.
+        params = PSANNRegressor.get_params(self, deep=False)
         params["architecture"] = architecture_to_mapping(self.architecture)
         fitted = {
             "input_shape": (
@@ -902,7 +939,10 @@ class PSANNRegressor(_Phase2Regressor):
             estimator.model_ = estimator._build_dense_core(
                 int(np.prod(input_shape)), int(output_dim), input_shape=input_shape
             )
-        estimator.model_.load_state_dict(payload["model_state_dict"], strict=True)
+        state_dict = payload["model_state_dict"]
+        if state_dict and all(str(key).startswith("core.") for key in state_dict):
+            estimator.model_ = WithPreprocessor(None, estimator.model_)
+        estimator.model_.load_state_dict(state_dict, strict=True)
         if map_location is not None:
             estimator.device = torch.device(map_location)
         estimator.model_.to(estimator._device())
@@ -951,3 +991,14 @@ class PSANNRegressor(_Phase2Regressor):
 
 
 __all__ = ["PSANNRegressor"]
+
+
+# ``inspect.signature`` is part of sklearn's public estimator contract.  The
+# implementation accepts the retained flat adapter, while introspection exposes the
+# canonical constructor and therefore agrees with ``get_params(deep=False)``.
+_CANONICAL_PARAM_NAMES = tuple(PSANNRegressor().get_params(deep=False))
+_IMPLEMENTATION_SIGNATURE = signature(PSANNRegressor.__init__)
+PSANNRegressor.__init__.__signature__ = Signature(
+    [Parameter("self", Parameter.POSITIONAL_OR_KEYWORD)]
+    + [_IMPLEMENTATION_SIGNATURE.parameters[name] for name in _CANONICAL_PARAM_NAMES]
+)

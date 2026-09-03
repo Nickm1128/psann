@@ -473,6 +473,11 @@ def _policy_from_mapping(name: str, value: object) -> object | None:
                     tuple(item) if isinstance(item, (list, tuple)) else item
                     for item in raw[field_name]
                 )
+    if name == "wave":
+        if isinstance(raw.get("warmup"), Mapping):
+            raw["warmup"] = W0WarmupConfig(**raw["warmup"])
+        if isinstance(raw.get("progressive_depth"), Mapping):
+            raw["progressive_depth"] = ProgressiveDepthConfig(**raw["progressive_depth"])
     return cls(**raw)  # type: ignore[call-arg]
 
 

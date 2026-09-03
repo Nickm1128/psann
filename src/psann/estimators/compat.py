@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from inspect import signature
 from typing import Any, Mapping
 
 from ..architectures import (
@@ -20,12 +21,26 @@ from ..architectures import (
     WaveConfig,
 )
 from .regressor import PSANNRegressor
+from .._sklearn.geosparse import GeoSparseRegressor as _Phase2GeoSparseRegressor
+from .._sklearn.residual import (
+    ResConvPSANNRegressor as _Phase2ResConvPSANNRegressor,
+    ResPSANNRegressor as _Phase2ResPSANNRegressor,
+)
+from .._sklearn.sgr import SGRPSANNRegressor as _Phase2SGRPSANNRegressor
+from .._sklearn.wave import WaveResNetRegressor as _Phase2WaveResNetRegressor
 
 
 def _activation(kwargs: dict[str, Any]) -> ActivationConfig:
     raw = kwargs.pop("activation", None)
     kind = kwargs.pop("activation_type", "psann")
     values = dict(raw) if isinstance(raw, Mapping) else {}
+    for old_name, new_name in {
+        "amp_init": "amplitude_init",
+        "freq_init": "frequency_init",
+        "damping_init": "decay_init",
+    }.items():
+        if old_name in values:
+            values.setdefault(new_name, values.pop(old_name))
     values.setdefault("kind", kind)
     return ActivationConfig(**values)
 
@@ -104,6 +119,7 @@ class _LegacyFacade(PSANNRegressor):
     """Shared warning/clone behavior; subclasses only construct a config."""
 
     _legacy_name = "legacy estimator"
+    _signature_source: type[object]
 
     def _warn(self) -> None:
         warnings.warn(
@@ -112,12 +128,43 @@ class _LegacyFacade(PSANNRegressor):
             stacklevel=3,
         )
 
+    def _capture_legacy_params(self, supplied: Mapping[str, Any]) -> None:
+        values: dict[str, Any] = {}
+        for name, parameter in signature(self._signature_source.__init__).parameters.items():
+            if name == "self" or parameter.kind.name in {"VAR_KEYWORD", "VAR_POSITIONAL"}:
+                continue
+            value = supplied.get(name, parameter.default)
+            values[name] = value
+            # These compatibility attributes intentionally retain their original
+            # objects; sklearn.clone verifies constructor identity.
+            setattr(self, name, value)
+        self._legacy_params_ = values
+
+    def get_params(self, deep: bool = True) -> dict[str, object]:
+        return dict(self._legacy_params_)
+
+    def set_params(self, **params: object) -> "_LegacyFacade":
+        candidate = self.get_params(deep=False)
+        unknown = set(params) - set(candidate)
+        if unknown:
+            raise ValueError(
+                f"Invalid parameter {sorted(unknown)[0]!r} for {self.__class__.__name__}."
+            )
+        candidate.update(params)
+        rebuilt = self.__class__(**candidate)
+        self.__dict__.clear()
+        self.__dict__.update(rebuilt.__dict__)
+        return self
+
 
 class ResPSANNRegressor(_LegacyFacade):
     _legacy_name = "ResPSANNRegressor"
 
     def __init__(self, **kwargs: Any) -> None:
         self._warn()
+        supplied = dict(kwargs)
+        stateful = False
+        state = None
         architecture = kwargs.pop("architecture", None)
         if architecture is None:
             activation = _activation(kwargs)
@@ -134,8 +181,8 @@ class ResPSANNRegressor(_LegacyFacade):
                 kwargs.pop("w0_hidden", 1.0),
             )
             attention = _attention(kwargs)
-            kwargs.pop("stateful", False)
-            kwargs.pop("state", None)
+            stateful = kwargs.pop("stateful", False)
+            state = kwargs.pop("state", None)
             kwargs.pop("state_reset", None)
             kwargs.pop("stream_lr", None)
             if preserve_shape:
@@ -151,6 +198,9 @@ class ResPSANNRegressor(_LegacyFacade):
                 )
         kwargs.setdefault("hidden_layers", 8)
         super().__init__(architecture=architecture, **_common(kwargs))
+        if stateful or state is not None:
+            self._compat_runtime_warning_ = "ResidualPSANNNet does not currently support stateful configurations; ignoring state_cfg."
+        self._capture_legacy_params(supplied)
 
 
 class ResConvPSANNRegressor(_LegacyFacade):
@@ -158,6 +208,11 @@ class ResConvPSANNRegressor(_LegacyFacade):
 
     def __init__(self, **kwargs: Any) -> None:
         self._warn()
+        supplied = dict(kwargs)
+        if "attention" in kwargs:
+            raise TypeError(
+                "ResConvPSANNRegressor.__init__() got an unexpected keyword argument 'attention'"
+            )
         architecture = kwargs.pop("architecture", None)
         if architecture is None:
             activation = _activation(kwargs)
@@ -184,6 +239,7 @@ class ResConvPSANNRegressor(_LegacyFacade):
         kwargs.setdefault("hidden_layers", 6)
         kwargs.setdefault("batch_size", 64)
         super().__init__(architecture=architecture, **_common(kwargs))
+        self._capture_legacy_params(supplied)
 
 
 class WaveResNetRegressor(_LegacyFacade):
@@ -191,6 +247,10 @@ class WaveResNetRegressor(_LegacyFacade):
 
     def __init__(self, **kwargs: Any) -> None:
         self._warn()
+        supplied = dict(kwargs)
+        attention = None
+        stateful = False
+        state = None
         architecture = kwargs.pop("architecture", None)
         if architecture is None:
             activation = _activation(kwargs)
@@ -205,6 +265,8 @@ class WaveResNetRegressor(_LegacyFacade):
             warmup_hidden = kwargs.pop("hidden_w0_initial", 0.5)
             warmup_epochs = kwargs.pop("w0_warmup_epochs", 10)
             progressive_initial = kwargs.pop("progressive_depth_initial", None)
+            progressive_interval = kwargs.pop("progressive_depth_interval", 15)
+            progressive_growth = kwargs.pop("progressive_depth_growth", 1)
             wave = WaveConfig(
                 first_w0=kwargs.pop("first_layer_w0", 30.0),
                 hidden_w0=kwargs.pop("hidden_w0", 1.0),
@@ -215,8 +277,8 @@ class WaveResNetRegressor(_LegacyFacade):
                 progressive_depth=(
                     ProgressiveDepthConfig(
                         progressive_initial,
-                        kwargs.pop("progressive_depth_interval", 15),
-                        kwargs.pop("progressive_depth_growth", 1),
+                        progressive_interval,
+                        progressive_growth,
                     )
                     if progressive_initial is not None
                     else None
@@ -254,8 +316,10 @@ class WaveResNetRegressor(_LegacyFacade):
             if not use_spectral:
                 for name in ("k_fft", "gate_type", "gate_groups", "gate_init", "gate_strength"):
                     kwargs.pop(name, None)
-            for name in ("stateful", "state", "state_reset", "stream_lr"):
-                kwargs.pop(name, None)
+            stateful = kwargs.pop("stateful", False)
+            state = kwargs.pop("state", None)
+            kwargs.pop("state_reset", None)
+            kwargs.pop("stream_lr", None)
             architecture = ArchitectureConfig.for_wave(
                 activation=activation,
                 residual=residual,
@@ -271,6 +335,21 @@ class WaveResNetRegressor(_LegacyFacade):
             )
         kwargs.setdefault("hidden_layers", 6)
         super().__init__(architecture=architecture, **_common(kwargs))
+        if self.architecture.convolution is not None and self.lsm is not None:
+            raise ValueError(
+                "WaveResNetRegressor does not support lsm preprocessors when preserve_shape=True."
+            )
+        self._capture_legacy_params(supplied)
+        if stateful or state is not None:
+            warnings.warn(
+                "WaveResNetRegressor does not support stateful configurations; ignoring state/stateful.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.stateful = False
+            self.state = None
+            self._legacy_params_["stateful"] = False
+            self._legacy_params_["state"] = None
 
 
 class SGRPSANNRegressor(_LegacyFacade):
@@ -278,20 +357,24 @@ class SGRPSANNRegressor(_LegacyFacade):
 
     def __init__(self, **kwargs: Any) -> None:
         self._warn()
+        supplied = dict(kwargs)
+        attention = None
+        stateful = False
+        state = None
         architecture = kwargs.pop("architecture", None)
         if architecture is None:
             activation = _activation(kwargs)
             if activation.kind != "psann":
                 raise ValueError("SGRPSANNRegressor requires activation_type='psann'.")
+            attention = kwargs.pop("attention", None)
+            stateful = kwargs.pop("stateful", False)
+            state = kwargs.pop("state", None)
             for name in (
                 "preserve_shape",
                 "data_format",
                 "conv_kernel_size",
                 "conv_channels",
                 "per_element",
-                "attention",
-                "stateful",
-                "state",
                 "state_reset",
                 "stream_lr",
             ):
@@ -321,6 +404,28 @@ class SGRPSANNRegressor(_LegacyFacade):
                 ),
             )
         super().__init__(architecture=architecture, **_common(kwargs))
+        if attention is not None:
+            self._compat_runtime_warning_ = (
+                "SGRPSANNRegressor ignores attention; spectral gating uses the sequence axis."
+            )
+        self._capture_legacy_params(supplied)
+        if stateful or state is not None:
+            warnings.warn(
+                "SGRPSANNRegressor does not support stateful configurations; ignoring state/stateful.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.stateful = False
+            self.state = None
+            self._legacy_params_["stateful"] = False
+            self._legacy_params_["state"] = None
+        if self.lsm is not None:
+            warnings.warn(
+                "SGRPSANNRegressor does not support LSM preprocessors; ignoring lsm settings.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            self.lsm = None
 
 
 class GeoSparseRegressor(_LegacyFacade):
@@ -328,9 +433,19 @@ class GeoSparseRegressor(_LegacyFacade):
 
     def __init__(self, **kwargs: Any) -> None:
         self._warn()
+        supplied = dict(kwargs)
+        stateful = False
+        state = None
         architecture = kwargs.pop("architecture", None)
         if architecture is None:
             activation = _activation(kwargs)
+            ignored_attention = kwargs.get("attention")
+            if ignored_attention is not None:
+                warnings.warn(
+                    "GeoSparseRegressor ignores attention for now.", RuntimeWarning, stacklevel=2
+                )
+            stateful = kwargs.pop("stateful", False)
+            state = kwargs.pop("state", None)
             for name in (
                 "preserve_shape",
                 "data_format",
@@ -338,8 +453,6 @@ class GeoSparseRegressor(_LegacyFacade):
                 "conv_channels",
                 "per_element",
                 "attention",
-                "stateful",
-                "state",
                 "state_reset",
                 "stream_lr",
             ):
@@ -365,6 +478,11 @@ class GeoSparseRegressor(_LegacyFacade):
             )
         kwargs.setdefault("hidden_layers", 4)
         super().__init__(architecture=architecture, **_common(kwargs))
+        if stateful or state is not None:
+            self._compat_runtime_warning_ = (
+                "GeoSparseRegressor does not support stateful configurations; ignoring state_cfg."
+            )
+        self._capture_legacy_params(supplied)
 
 
 __all__ = [
@@ -374,3 +492,18 @@ __all__ = [
     "SGRPSANNRegressor",
     "GeoSparseRegressor",
 ]
+
+
+ResPSANNRegressor._signature_source = _Phase2ResPSANNRegressor
+ResConvPSANNRegressor._signature_source = _Phase2ResConvPSANNRegressor
+WaveResNetRegressor._signature_source = _Phase2WaveResNetRegressor
+SGRPSANNRegressor._signature_source = _Phase2SGRPSANNRegressor
+GeoSparseRegressor._signature_source = _Phase2GeoSparseRegressor
+for _facade in (
+    ResPSANNRegressor,
+    ResConvPSANNRegressor,
+    WaveResNetRegressor,
+    SGRPSANNRegressor,
+    GeoSparseRegressor,
+):
+    _facade.__init__.__signature__ = signature(_facade._signature_source.__init__)

@@ -375,6 +375,26 @@ class WaveLifecycle(ArchitectureLifecycle):
         if self.config.wave and self.config.wave.grad_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), self.config.wave.grad_clip_norm)
 
+    def _apply_warmup(self, model: nn.Module, step: int) -> None:
+        wave = self.config.wave
+        if wave is None or wave.warmup is None:
+            return
+        ratio = min(1.0, step / max(1, wave.warmup.epochs))
+        if hasattr(model, "stem_w0"):
+            model.stem_w0 = wave.warmup.first_initial + ratio * (
+                wave.first_w0 - wave.warmup.first_initial
+            )
+        if hasattr(model, "blocks"):
+            for block in model.blocks:
+                if hasattr(block, "w0"):
+                    block.w0 = wave.warmup.hidden_initial + ratio * (
+                        wave.hidden_w0 - wave.warmup.hidden_initial
+                    )
+
+    def on_model_built(self, *, model: nn.Module, runtime: dict[str, object]) -> None:
+        if self.warmup_step:
+            self._apply_warmup(model, self.warmup_step)
+
     def on_epoch_end(
         self,
         *,
@@ -387,17 +407,8 @@ class WaveLifecycle(ArchitectureLifecycle):
         wave = self.config.wave
         if wave and wave.warmup and self.warmup_active:
             self.warmup_step = epoch + 1
+            self._apply_warmup(model, self.warmup_step)
             ratio = min(1.0, self.warmup_step / max(1, wave.warmup.epochs))
-            if hasattr(model, "stem_w0"):
-                model.stem_w0 = wave.warmup.first_initial + ratio * (
-                    wave.first_w0 - wave.warmup.first_initial
-                )
-            if hasattr(model, "blocks"):
-                for block in model.blocks:
-                    if hasattr(block, "w0"):
-                        block.w0 = wave.warmup.hidden_initial + ratio * (
-                            wave.hidden_w0 - wave.warmup.hidden_initial
-                        )
             self.warmup_active = ratio < 1.0
         progressive = wave.progressive_depth if wave else None
         if (
