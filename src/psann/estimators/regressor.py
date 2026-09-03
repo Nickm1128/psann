@@ -35,7 +35,7 @@ from ..architectures import (
     architecture_to_mapping,
     normalize_architecture,
 )
-from ..architectures.config import replace_architecture_path, validate_architecture
+from ..architectures.config import _thaw, replace_architecture_path, validate_architecture
 from ..attention import AttentionConfig as LegacyAttentionConfig
 from ..state import StateConfig as LegacyStateConfig
 from ..nn import WithPreprocessor
@@ -659,7 +659,7 @@ class PSANNRegressor(_Phase2Regressor):
                 Any, canonical.context.builder if canonical.context else context_builder
             ),
             context_builder_params=(
-                dict(canonical.context.builder_params)
+                _thaw(canonical.context.builder_params)
                 if canonical.context and canonical.context.builder_params
                 else context_builder_params  # type: ignore[arg-type]
             ),
