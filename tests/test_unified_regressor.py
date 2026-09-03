@@ -8,6 +8,7 @@ from psann.architectures import (
     ConvolutionConfig,
     GeometryConfig,
     ResidualConfig,
+    SequenceConfig,
     W0WarmupConfig,
     WaveConfig,
 )
@@ -93,35 +94,52 @@ def test_sklearn_grid_search_and_joblib_round_trip(tmp_path):
     [
         (
             ResPSANNRegressor,
-            ArchitectureConfig.dense(residual=ResidualConfig()),
+            ArchitectureConfig.dense(residual=ResidualConfig(norm="layer", alpha_init=0.2)),
             np.ones((8, 2), dtype=np.float32),
-            {},
+            {"norm": "layer", "residual_alpha_init": 0.2},
         ),
         (
             ResConvPSANNRegressor,
             ArchitectureConfig.convolutional(
-                residual=ResidualConfig(), convolution=ConvolutionConfig(channels=4, kernel_size=3)
+                residual=ResidualConfig(norm="layer", alpha_init=0.2),
+                convolution=ConvolutionConfig(channels=4, kernel_size=3),
             ),
             np.ones((8, 1, 3, 3), dtype=np.float32),
-            {},
+            {"norm": "layer", "residual_alpha_init": 0.2},
         ),
         (
             WaveResNetRegressor,
-            ArchitectureConfig.for_wave(wave=WaveConfig(warmup=W0WarmupConfig())),
+            ArchitectureConfig.for_wave(
+                wave=WaveConfig(
+                    first_w0=31.0,
+                    hidden_w0=1.2,
+                    warmup=W0WarmupConfig(epochs=0),
+                )
+            ),
             np.ones((8, 2), dtype=np.float32),
-            {},
+            {"first_layer_w0": 31.0, "hidden_w0": 1.2, "w0_warmup_epochs": 0},
         ),
         (
             SGRPSANNRegressor,
-            ArchitectureConfig.for_sequence(),
+            ArchitectureConfig.for_sequence(
+                sequence=SequenceConfig(phase_init=0.25, phase_trainable=False, pool="mean"),
+                spectral=None,
+            ),
             np.ones((8, 2), dtype=np.float32),
-            {},
+            {
+                "phase_init": 0.25,
+                "phase_trainable": False,
+                "pool": "mean",
+                "use_spectral_gate": False,
+            },
         ),
         (
             GeoSparseRegressor,
-            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(1, 2))),
+            ArchitectureConfig.geometric_sparse(
+                geometry=GeometryConfig(shape=(1, 2), k=1, radius=0, bias=False)
+            ),
             np.ones((8, 2), dtype=np.float32),
-            {"shape": (1, 2)},
+            {"shape": (1, 2), "k": 1, "radius": 0, "bias": False},
         ),
     ],
 )
