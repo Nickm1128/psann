@@ -38,10 +38,14 @@ def multiplicative_return_reward(
     if trans_cost is not None:
         transition_penalty = trans_cost
     if actions.ndim != 3 or context.ndim != 3:
-        raise ValueError("reward actions and context must both be rank-3.")
+        raise ValueError(
+            "actions/context must be rank-3 (B, T, M); "
+            f"received actions.ndim={actions.ndim}, context.ndim={context.ndim}."
+        )
     if actions.shape != context.shape:
         raise ValueError(
-            f"reward actions/context shape mismatch: {tuple(actions.shape)} vs {tuple(context.shape)}."
+            "actions and context must align element-wise; "
+            f"received {tuple(actions.shape)} vs {tuple(context.shape)}."
         )
     if actions.shape[1] < 2:
         raise ValueError("reward episode_length must be at least 2.")
