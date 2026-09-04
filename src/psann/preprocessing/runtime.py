@@ -141,7 +141,16 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
                 "preprocessor.component.module cannot execute declared "
                 f"{component.input_topology!r} input topology."
             ) from exc
-        if produced.ndim != probe.ndim:
+        if not isinstance(produced, torch.Tensor):
+            raise ValueError("preprocessor.component.module must return a torch.Tensor.")
+        expected_rank = {
+            "flat": 2,
+            "tokens": 3,
+            "spatial-1d": 3,
+            "spatial-2d": 4,
+            "spatial-3d": 5,
+        }[component.output_topology]
+        if produced.ndim != expected_rank:
             raise ValueError(
                 "preprocessor.component.output_topology is incompatible with module output rank."
             )

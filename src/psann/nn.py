@@ -476,9 +476,9 @@ class WithPreprocessor(nn.Module):
         self.preproc = preproc if preproc is not None else None
         self.core = core
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, *args: torch.Tensor, **kwargs: object) -> torch.Tensor:
         z = x if self.preproc is None else self.preproc(x)
-        return self.core(z)
+        return self.core(z, *args, **kwargs)
 
     # Stateful helpers are delegated to core if available
     def reset_state(self) -> None:

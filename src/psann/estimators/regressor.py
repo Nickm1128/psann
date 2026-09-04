@@ -999,7 +999,8 @@ class PSANNRegressor(_Phase2Regressor):
         scorer = getattr(controller, "score_reconstruction", None)
         if not callable(scorer):
             raise RuntimeError("The fitted preprocessor has no reconstruction scoring controller.")
-        return float(scorer(X))
+        prepared, _, _ = self._prepare_inference_inputs(X)
+        return float(scorer(prepared))
 
     def _after_model_built(self) -> None:
         super()._after_model_built()
@@ -1211,14 +1212,13 @@ class PSANNRegressor(_Phase2Regressor):
             component_changes: dict[str, object] = {}
             training_changes: dict[str, object] = {}
             pretraining_changes: dict[str, object] = {}
+            replacement_component: LSMConfig | ModulePreprocessorConfig | None = None
             for key, value in preprocessor_nested.items():
                 path = key.split("__")[1:]
                 if path == ["component"]:
                     if not isinstance(value, (LSMConfig, ModulePreprocessorConfig)):
                         raise TypeError("preprocessor__component must be a component config.")
-                    component_changes = {
-                        field.name: getattr(value, field.name) for field in fields(value)
-                    }
+                    replacement_component = value
                 elif path == ["training"]:
                     if not isinstance(value, PreprocessorTrainingConfig):
                         raise TypeError(
@@ -1235,7 +1235,7 @@ class PSANNRegressor(_Phase2Regressor):
                     training_changes[path[1]] = value
                 else:
                     raise ValueError(f"Invalid parameter {key!r} for PSANNRegressor.")
-            component = preprocessor_candidate.component
+            component = replacement_component or preprocessor_candidate.component
             if pretraining_changes:
                 if not hasattr(component, "pretraining"):
                     raise ValueError(
@@ -1825,6 +1825,14 @@ class PSANNRegressor(_Phase2Regressor):
                 for key in ("input_topology", "output_topology", "output_dim"):
                     if key not in preprocessing:
                         raise ValueError(f"Schema-v2 fitted.preprocessing.{key} is missing.")
+                if not isinstance(preprocessing["input_topology"], str):
+                    raise TypeError("Schema-v2 fitted.preprocessing.input_topology must be a string.")
+                if not isinstance(preprocessing["output_topology"], str):
+                    raise TypeError("Schema-v2 fitted.preprocessing.output_topology must be a string.")
+                if isinstance(preprocessing["output_dim"], bool) or not isinstance(
+                    preprocessing["output_dim"], int
+                ):
+                    raise TypeError("Schema-v2 fitted.preprocessing.output_dim must be an integer.")
                 declared = declared_preprocessor_capabilities(estimator.preprocessor)
                 if preprocessing["input_topology"] != declared.input_topology:
                     raise ValueError(
