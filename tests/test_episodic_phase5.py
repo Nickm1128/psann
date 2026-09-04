@@ -124,3 +124,15 @@ def test_schema_v3_rejects_runtime_objects_in_portable_history_or_profile(tmp_pa
     trainer.estimator._episodic_profile_ = {"optimizer": object()}
     with pytest.raises(TypeError, match="Schema-v3 fitted.episodic.profile.optimizer"):
         trainer.save(tmp_path / "not-portable.pt")
+
+
+def test_schema_v3_requires_explicit_episodic_discriminator(tmp_path):
+    X = np.ones((8, 2), dtype=np.float32)
+    estimator = PSANNRegressor(epochs=1, batch_size=4, random_state=0).fit(X, X[:, 0])
+    path = tmp_path / "missing-episodic.pt"
+    estimator.save(path)
+    payload = torch.load(path, weights_only=False)
+    payload["fitted"].pop("episodic")
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match="Schema-v3 fitted.episodic is missing"):
+        PSANNRegressor.load(path)

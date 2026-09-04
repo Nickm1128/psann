@@ -2067,6 +2067,8 @@ class PSANNRegressor(_Phase2Regressor):
         if version == 3:
             if not isinstance(raw_fitted, Mapping):
                 raise TypeError("Schema-v3 fitted must be a mapping.")
+            if "episodic" not in raw_fitted:
+                raise ValueError("Schema-v3 fitted.episodic is missing.")
             episodic_strategy, episodic_history, episodic_profile = (
                 _schema_v3_episodic_with_artifacts(raw_fitted.get("episodic"), artifacts)
             )
