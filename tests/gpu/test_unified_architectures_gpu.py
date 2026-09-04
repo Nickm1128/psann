@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from psann.architectures import ArchitectureConfig, ConvolutionConfig, GeometryConfig
+from psann.architectures import ArchitectureConfig, ContextConfig, ConvolutionConfig, GeometryConfig
 from psann.estimators import PSANNRegressor
 from psann.lsm import LSMConv2dExpander
 from psann.preprocessing import (
@@ -166,3 +166,30 @@ def test_canonical_lsm_schema_v2_two_generations_survive_bidirectional_map_locat
     cpu_reloaded = PSANNRegressor.load(str(second), map_location="cpu")
     assert next(cpu_reloaded.model_.parameters()).device.type == "cpu"
     np.testing.assert_allclose(cpu_reloaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-5)
+
+
+def test_cuda_multichannel_channels_last_wave_context_keeps_sample_axis() -> None:
+    """CUDA covers the corrected context route independently of NHWC model layout."""
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    X_cf = np.arange(144, dtype=np.float32).reshape(8, 2, 3, 3) / 10
+    X = np.moveaxis(X_cf, 1, -1)
+    y = X_cf.mean(axis=(1, 2, 3))
+    estimator = PSANNRegressor(
+        architecture=ArchitectureConfig.for_wave(
+            convolution=ConvolutionConfig(channels=3, data_format="channels_last"),
+            context=ContextConfig(builder="cosine", builder_params={"include_sin": False}),
+        ),
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        device="cuda",
+        scaler="standard",
+        random_state=0,
+    ).fit(X, y, validation_data=(X[:2], y[:2]))
+    _, meta, context = estimator._prepare_inference_inputs(X[:2])
+    assert meta["n_samples"] == 2
+    assert context is not None and context.shape[0] == 2
+    assert estimator.predict(X[:2]).shape == (2,)
