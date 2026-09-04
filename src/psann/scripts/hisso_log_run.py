@@ -639,7 +639,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                         "reward_mean": history_metrics["reward_mean"],
                         "reward_std": history_metrics["reward_std"],
                         "episodes": episodes,
-                        "transition_penalty": getattr(trainer.cfg, "transition_penalty", None),
+                        "transition_penalty": (
+                            trainer.strategy.transition_penalty if trainer is not None else None
+                        ),
                         "throughput_eps_per_sec": throughput,
                         "profile": trainer_profile,
                     }
