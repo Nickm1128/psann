@@ -14,6 +14,7 @@ import torch
 
 from .diagnostics import jacobian_spectrum, mutual_info_proxy, ntk_eigens, participation_ratio
 from .linear_probe import encode_and_probe, fit_linear_probe
+from .hf_cache import cleanup_hf_cache
 from .synthetic import (
     make_context_rotating_moons,
     make_drift_series,
@@ -25,6 +26,7 @@ __all__ = [
     "choose_device",
     "seed_all",
     "init_siren_linear_",
+    "cleanup_hf_cache",
     "jacobian_spectrum",
     "mutual_info_proxy",
     "ntk_eigens",
