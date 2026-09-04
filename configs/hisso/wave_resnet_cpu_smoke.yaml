@@ -15,7 +15,7 @@ estimator:
     progressive_depth_initial: 2
     progressive_depth_interval: 5
 
-hisso:
+episodic:
   enabled: true
   window: 32
   primary_transform: softmax

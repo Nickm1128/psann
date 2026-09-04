@@ -489,7 +489,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
         estimator = EstimatorCls(**estimator_params)
 
-        hisso_cfg = config.get("hisso", {})
+        # ``episodic`` is the maintained configuration section.  Retain
+        # ``hisso`` only so archived 0.x logging payloads remain runnable.
+        hisso_cfg = config.get("episodic", config.get("hisso", {}))
         hisso_enabled = bool(hisso_cfg.get("enabled", True))
         mixed_precision = bool(hisso_cfg.get("mixed_precision", False))
         amp_dtype_name = hisso_cfg.get("amp_dtype", "float16")

@@ -9,7 +9,7 @@ estimator:
     random_state: 19
     device: cpu
 
-hisso:
+episodic:
   enabled: true
   window: 24
   primary_transform: softmax
