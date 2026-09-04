@@ -343,10 +343,10 @@ class _PSANNRegressorBuilderMixin:
             )
 
             preproc = lsm_module
-            if preproc is not None and not (
-                self.preprocessor.training.trainable
-                if getattr(self, "preprocessor", None) is not None
-                else self.lsm_train
+            if (
+                preproc is not None
+                and getattr(self, "preprocessor", None) is None
+                and not self.lsm_train
             ):
                 for param in preproc.parameters():
                     param.requires_grad = False
@@ -389,10 +389,10 @@ class _PSANNRegressorBuilderMixin:
             )
 
             preproc = lsm_module
-            if preproc is not None and not (
-                self.preprocessor.training.trainable
-                if getattr(self, "preprocessor", None) is not None
-                else self.lsm_train
+            if (
+                preproc is not None
+                and getattr(self, "preprocessor", None) is None
+                and not self.lsm_train
             ):
                 for param in preproc.parameters():
                     param.requires_grad = False
@@ -473,10 +473,10 @@ class _PSANNRegressorBuilderMixin:
                 input_shape=prepared_local.input_shape,
             )
             preproc = request.lsm_module
-            if preproc is not None and not (
-                self.preprocessor.training.trainable
-                if getattr(self, "preprocessor", None) is not None
-                else self.lsm_train
+            if (
+                preproc is not None
+                and getattr(self, "preprocessor", None) is None
+                and not self.lsm_train
             ):
                 for param in preproc.parameters():
                     param.requires_grad = False
