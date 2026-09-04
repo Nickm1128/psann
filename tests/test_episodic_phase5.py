@@ -20,7 +20,7 @@ from psann.episodic import (
     SupervisedWarmStartConfig,
     normalize_strategy,
 )
-from psann.episodic.rewards import FINANCE_PORTFOLIO_STRATEGY
+from psann.episodic.rewards import FINANCE_PORTFOLIO_STRATEGY, RewardStrategyBundle
 from psann.episodic.runtime import transform_actions
 from psann.episodic.runtime_loop import HISSOTrainer
 from psann.episodic.legacy_config import HISSOTrainerConfig
@@ -29,6 +29,10 @@ from psann.preprocessing import LSMConfig, PreprocessorConfig, PreprocessorTrain
 
 def _custom_reward(actions: torch.Tensor, context: torch.Tensor, **_kwargs: object) -> torch.Tensor:
     return -(actions - context.mean(dim=-1, keepdim=True)).square().mean(dim=(-1, -2))
+
+
+def _custom_context(inputs: torch.Tensor) -> torch.Tensor:
+    return inputs.reshape(inputs.shape[0], inputs.shape[1], -1).mean(dim=-1, keepdim=True)
 
 
 @pytest.mark.parametrize(
@@ -117,6 +121,39 @@ def test_canonical_trainer_schema_v3_custom_callable_two_generation_closure(tmp_
     again = EpisodicTrainer.load(second)
     assert again.strategy == strategy
     np.testing.assert_allclose(again.predict(X[:3]), trainer.predict(X[:3]), rtol=1e-6)
+
+
+def test_schema_v3_custom_context_callable_closes_two_generations(tmp_path):
+    X = np.arange(40, dtype=np.float32).reshape(20, 2) + 1
+    strategy = HISSOConfig(
+        schedule=EpisodeScheduleConfig(episode_length=4, batch_episodes=2, updates_per_epoch=1),
+        reward=_custom_reward,
+        context_extractor=_custom_context,
+    )
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=4, random_state=0), strategy=strategy
+    ).fit(X)
+    first, second = tmp_path / "context-1.pt", tmp_path / "context-2.pt"
+    trainer.save(first)
+    payload = torch.load(first, weights_only=False)
+    assert payload["fitted"]["episodic"]["config"]["context_extractor"] == {"kind": "callable"}
+    assert callable(payload["artifacts"]["episodic_context"])
+    restored = EpisodicTrainer.load(first)
+    restored.save(second)
+    again = EpisodicTrainer.load(second)
+    assert again.strategy.context_extractor is _custom_context
+    np.testing.assert_allclose(again.predict(X[:3]), trainer.predict(X[:3]), rtol=1e-6)
+
+
+def test_schema_v3_rejects_unregistered_reward_bundle_before_writing(tmp_path):
+    X = np.ones((8, 2), dtype=np.float32)
+    bundle = RewardStrategyBundle(_custom_reward, description="not registered")
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2), reward=bundle),
+    ).fit(X)
+    with pytest.raises(TypeError, match="unregistered RewardStrategyBundle"):
+        trainer.save(tmp_path / "unregistered.pt")
 
 
 @pytest.mark.parametrize("artifact", [None, 4])
