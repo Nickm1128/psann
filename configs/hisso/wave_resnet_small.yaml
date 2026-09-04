@@ -15,17 +15,20 @@ estimator:
 
 episodic:
   enabled: true
-  window: 48
-  batch_episodes: 8
-  updates_per_epoch: 4
-  primary_transform: softmax
-  transition_penalty: 0.02
-  mixed_precision: true
-  amp_dtype: float16
-  supervised:
-    y_key: y_train
-    epochs: 2
-    batch_size: 32
+  strategy:
+    kind: hisso
+    schedule:
+      episode_length: 48
+      batch_episodes: 8
+      updates_per_epoch: 4
+    primary_transform: softmax
+    transition_penalty: 0.02
+    mixed_precision: true
+    amp_dtype: float16
+    warm_start:
+      y_key: y_train
+      epochs: 2
+      batch_size: 32
 
 data:
   npz: ../../datasets/wave_resnet_small.npz

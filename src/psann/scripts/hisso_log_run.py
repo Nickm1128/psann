@@ -493,6 +493,23 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         # ``episodic`` is the maintained configuration section.  Retain
         # ``hisso`` only so archived 0.x logging payloads remain runnable.
         hisso_cfg = config.get("episodic", config.get("hisso", {}))
+        if isinstance(hisso_cfg.get("strategy"), Mapping):
+            # Tagged maintained input is normalized into the existing bounded
+            # consumer payload here; the old flat shape stays below as a
+            # compatibility adapter only.
+            tagged = dict(hisso_cfg["strategy"])
+            if tagged.pop("kind", "hisso") != "hisso":
+                raise ValueError("episodic.strategy.kind must be hisso.")
+            schedule = dict(tagged.pop("schedule", {}))
+            warm_start = tagged.pop("warm_start", None)
+            hisso_cfg = {
+                **dict(hisso_cfg),
+                **tagged,
+                "window": schedule.get("episode_length", 64),
+                "batch_episodes": schedule.get("batch_episodes", 32),
+                "updates_per_epoch": schedule.get("updates_per_epoch", 1),
+                "supervised": warm_start,
+            }
         hisso_enabled = bool(hisso_cfg.get("enabled", True))
         mixed_precision = bool(hisso_cfg.get("mixed_precision", False))
         amp_dtype_name = hisso_cfg.get("amp_dtype", "float16")
