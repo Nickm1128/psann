@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from psann import PSANNRegressor, portfolio_log_return_reward
-from psann.hisso import hisso_evaluate_reward, hisso_infer_series
+from psann import PSANNRegressor
+from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
 
@@ -53,38 +53,27 @@ if __name__ == "__main__":
         random_state=1,
         preprocessor=preprocessor,
     )
-    est.fit(
-        train,
-        y=None,
-        hisso=True,
-        hisso_window=hisso_window,
-        hisso_transition_penalty=trans_cost,
-        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(
-            alloc, ctx, trans_cost=trans_cost
+    trainer = EpisodicTrainer(
+        estimator=est,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=hisso_window),
+            reward="finance",
+            primary_transform="softmax",
+            transition_penalty=trans_cost,
         ),
-        verbose=1,
     )
+    trainer.fit(train, verbose=1)
 
-    reward_before = hisso_evaluate_reward(est, test)
+    reward_before = trainer.evaluate(test)
     print(f"Test log-return per episode after first run: {reward_before:.4f}")
 
     print("Continuing training with cached HISSO state...")
     est.epochs = 40
     est.lr = 4e-4
-    est.fit(
-        train,
-        y=None,
-        hisso=True,
-        hisso_window=hisso_window,
-        hisso_transition_penalty=trans_cost,
-        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(
-            alloc, ctx, trans_cost=trans_cost
-        ),
-        verbose=0,
-    )
+    trainer.fit(train, verbose=0)
 
-    reward_after = hisso_evaluate_reward(est, test)
-    alloc_test = hisso_infer_series(est, test)
+    reward_after = trainer.evaluate(test)
+    alloc_test = trainer.predict(test)
 
     print(f"Test log-return per episode after continuation: {reward_after:.4f}")
     print("Allocation sample (first 5 steps):")

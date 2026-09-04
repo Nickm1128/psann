@@ -1,8 +1,8 @@
 """Benchmark PSANN configurations (HISSO) with careful leakage control.
 
 Explores several PSANN setups and records validation reward, test metrics,
-and training time under a configurable time budget. Training is centered on
-PSANNRegressor.fit(hisso=True), and data leakage is avoided by using strictly
+and training time under a configurable time budget. Training uses the canonical
+EpisodicTrainer boundary, and data leakage is avoided by using strictly
 chronological train/val/test splits and never sampling windows from val/test.
 """
 
@@ -26,7 +26,7 @@ import numpy as np
 
 from psann import PSANNRegressor
 from psann.architectures import ActivationConfig, ArchitectureConfig
-from psann.hisso import hisso_infer_series
+from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 from psann.metrics import portfolio_metrics
 from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
@@ -103,16 +103,25 @@ def run_config(
     )
 
     t0 = time.perf_counter()
-    # HISSO episodic training on train only; y is ignored
-    est.fit(train, y=None, hisso=True, hisso_window=int(hisso_window), verbose=int(train_verbose))
+    # Episodic training samples train only; labels are intentionally omitted.
+    trainer = EpisodicTrainer(
+        estimator=est,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=int(hisso_window)),
+            reward="finance",
+            primary_transform="softmax",
+            transition_penalty=float(trans_cost),
+        ),
+    )
+    trainer.fit(train, verbose=int(train_verbose))
     train_time = time.perf_counter() - t0
 
     # Validation performance: use series rollout on val (no windows sampled during training)
-    alloc_val = hisso_infer_series(est, val)
+    alloc_val = trainer.predict(val)
     val_log_reward = eval_series_log_reward(alloc_val, val, trans_cost=trans_cost)
 
     # Test metrics on unseen data
-    alloc_test = hisso_infer_series(est, test)
+    alloc_test = trainer.predict(test)
     met = portfolio_metrics(alloc_test, test, trans_cost=trans_cost)
 
     row = {

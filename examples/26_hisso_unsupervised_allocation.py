@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from psann import PSANNRegressor, portfolio_log_return_reward
-from psann.hisso import hisso_evaluate_reward, hisso_infer_series
+from psann import PSANNRegressor
+from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 
 
 def make_prices(T: int = 4096, seed: int = 0) -> np.ndarray:
@@ -37,21 +37,20 @@ if __name__ == "__main__":
         random_state=0,
     )
 
-    est.fit(
-        train,
-        y=None,
-        hisso=True,
-        hisso_window=hisso_window,
-        hisso_transition_penalty=trans_cost,
-        hisso_reward_fn=lambda alloc, ctx: portfolio_log_return_reward(
-            alloc, ctx, trans_cost=trans_cost
+    trainer = EpisodicTrainer(
+        estimator=est,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=hisso_window),
+            reward="finance",
+            primary_transform="softmax",
+            transition_penalty=trans_cost,
         ),
-        verbose=1,
     )
+    trainer.fit(train, verbose=1)
 
-    val_reward = hisso_evaluate_reward(est, val)
-    test_reward = hisso_evaluate_reward(est, test)
-    alloc_test = hisso_infer_series(est, test)
+    val_reward = trainer.evaluate(val)
+    test_reward = trainer.evaluate(test)
+    alloc_test = trainer.predict(test)
 
     print(f"Validation log-return per episode: {val_reward:.4f}")
     print(f"Test log-return per episode:       {test_reward:.4f}")
