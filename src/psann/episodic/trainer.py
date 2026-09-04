@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, Callable, Mapping, cast
 
@@ -12,6 +12,12 @@ from .config import HISSOConfig, normalize_strategy, replace_strategy
 from .rewards import resolve_reward
 from .runtime import transform_actions, validate_reward_penalty
 from .runtime_loop import HISSOTrainer
+
+
+@dataclass(frozen=True)
+class _PreparedActions:
+    inputs: np.ndarray
+    actions: np.ndarray
 
 
 class EpisodicTrainer:
@@ -178,23 +184,27 @@ class EpisodicTrainer:
         return self.estimator_
 
     def predict(self, X: np.ndarray, *, context: np.ndarray | None = None) -> np.ndarray:
+        return self._prepare_actions(X, context=context).actions
+
+    def _prepare_actions(
+        self, X: np.ndarray, *, context: np.ndarray | None = None
+    ) -> _PreparedActions:
         estimator = self._fitted()
-        if getattr(estimator, "stateful", False) and hasattr(estimator, "predict_sequence"):
-            # Episodic inference always starts clean and never commits training
-            # state.  The sequence mixin provides that guarantee explicitly.
-            values = estimator.predict_sequence(
-                X, context=context, reset_state=True, return_sequence=True, update_state=False
-            )
-        else:
-            values = estimator.predict(X, context=context)
-        return transform_actions(
-            np.asarray(values), normalize_strategy(self.strategy).primary_transform
+        stateful = bool(estimator.stateful)
+        result = estimator._predict_with_prepared_inputs(
+            X, context=context, sequence=stateful, reset_state=stateful, update_state=False
+        )
+        return _PreparedActions(
+            result.inputs,
+            transform_actions(
+                result.predictions, normalize_strategy(self.strategy).primary_transform
+            ),
         )
 
     def evaluate(self, X: np.ndarray, *, context: np.ndarray | None = None) -> float:
         strategy = normalize_strategy(self.strategy)
         estimator = self._fitted()
-        prepared, _, _ = estimator._prepare_inference_inputs(X, context=context)
+        prepared = self._prepare_actions(X, context=context)
         runtime = getattr(estimator, "_hisso_trainer_", None)
         if runtime is None:
             runtime = HISSOTrainer(
@@ -209,14 +219,7 @@ class EpisodicTrainer:
                 state_reset=str(estimator.state_reset),
                 strict=True,
             )
-        # ``predict`` is the single caller-visible inference/action route.  It
-        # includes clean stateful sequence traversal, architecture context,
-        # output restoration, target inversion, and the primary transform.
-        # Evaluation must consume that exact action result rather than rebuild
-        # a superficially similar model call with different state or shape
-        # semantics.
-        actions = self.predict(X, context=context)
-        return runtime.evaluate_prepared(prepared, actions=actions)
+        return runtime.evaluate_prepared(prepared.inputs, actions=prepared.actions)
 
     def save(self, path: str | Path) -> None:
         self._fitted().save(str(path))

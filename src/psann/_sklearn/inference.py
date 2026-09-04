@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -7,6 +8,15 @@ import torch
 
 from .shared import _sk_r2_score
 from .scaling import context_features_from_channel_first
+from ..nn import WithPreprocessor
+
+
+@dataclass(frozen=True)
+class _PreparedPrediction:
+    """One request's scaled reward inputs and restored model predictions."""
+
+    inputs: np.ndarray
+    predictions: np.ndarray
 
 
 class _PSANNRegressorInferenceMixin:
@@ -148,6 +158,7 @@ class _PSANNRegressorInferenceMixin:
         *,
         context_np: Optional[np.ndarray] = None,
         state_updates: bool = False,
+        sequence: bool = False,
     ) -> np.ndarray:
         self._ensure_fitted()
         state_updates = bool(state_updates and self.stateful)
@@ -188,20 +199,61 @@ class _PSANNRegressorInferenceMixin:
                     context_tensor = torch.from_numpy(ctx_arr)
                     if device.type != "cpu":
                         context_tensor = context_tensor.to(device=device, dtype=torch.float32)
-                outputs = (
-                    model(tensor, context_tensor) if context_tensor is not None else model(tensor)
-                )
+                if sequence:
+                    # Prepare the whole request once, then visit the predictive
+                    # core in time order.  The preprocessor is not a stateful
+                    # predictor and must not be rerun for each sequence step.
+                    if isinstance(model, WithPreprocessor):
+                        tensor = tensor if model.preproc is None else model.preproc(tensor)
+                        model = model.core
+                    outputs = torch.cat(
+                        [
+                            (
+                                model(tensor[idx : idx + 1], context_tensor[idx : idx + 1])
+                                if context_tensor is not None
+                                else model(tensor[idx : idx + 1])
+                            )
+                            for idx in range(tensor.shape[0])
+                        ],
+                        dim=0,
+                    )
+                else:
+                    outputs = (
+                        model(tensor, context_tensor)
+                        if context_tensor is not None
+                        else model(tensor)
+                    )
                 return outputs.detach().cpu().numpy()
         finally:
+            model = self.model_
             model.train(prev_training)
             if hasattr(model, "set_state_updates"):
                 model.set_state_updates(bool(prev_training))
 
     def predict(self, X: np.ndarray, *, context: Optional[np.ndarray] = None) -> np.ndarray:
+        return self._predict_with_prepared_inputs(X, context=context).predictions
+
+    def _predict_with_prepared_inputs(
+        self,
+        X: np.ndarray,
+        *,
+        context: Optional[np.ndarray] = None,
+        sequence: bool = False,
+        reset_state: bool = False,
+        update_state: bool = False,
+    ) -> _PreparedPrediction:
+        if sequence:
+            X = self._coerce_sequence_inputs(X)
+            if len(X) == 0:
+                raise ValueError("predict_sequence requires at least one timestep.")
         inputs_np, meta, context_np = self._prepare_inference_inputs(X, context)
-        preds = self._run_model(inputs_np, context_np=context_np, state_updates=False)
+        if reset_state:
+            self.reset_state()
+        preds = self._run_model(
+            inputs_np, context_np=context_np, state_updates=update_state, sequence=sequence
+        )
         preds = self._inverse_fitted_target_scaler_like(preds)
-        return self._reshape_predictions(preds, meta)
+        return _PreparedPrediction(inputs_np, self._reshape_predictions(preds, meta))
 
     def score(self, X: np.ndarray, y: np.ndarray, *, context: Optional[np.ndarray] = None) -> float:
         y_true = np.asarray(y, dtype=np.float32)

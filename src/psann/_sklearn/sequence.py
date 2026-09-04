@@ -55,6 +55,11 @@ class _PSANNRegressorSequenceMixin:
         return_sequence: bool = False,
         update_state: bool = True,
     ) -> Any:
+        if not update_state:
+            result = self._predict_with_prepared_inputs(
+                X, context=context, sequence=True, reset_state=reset_state
+            ).predictions
+            return result if return_sequence else result[-1]
         return self._sequence_rollout(
             X,
             context_seq=context,
