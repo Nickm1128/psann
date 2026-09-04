@@ -11,6 +11,7 @@ from psann.architectures import (
     AttentionConfig,
     ContextConfig,
     ConvolutionConfig,
+    GeometryConfig,
 )
 from psann.estimators import PSANNRegressor
 from psann.preprocessing import (
@@ -262,6 +263,80 @@ def test_cross_kind_component_replacements_fit_in_both_directions() -> None:
     assert estimator.preprocessor_capabilities_.serializable_kind == "lsm"
 
 
+@pytest.mark.parametrize(
+    ("name", "architecture", "component", "conv_inputs"),
+    [
+        (
+            "convolutional-custom-spatial-2d",
+            ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3)),
+            ModulePreprocessorConfig(torch.nn.Conv2d(1, 2, 1), "spatial-2d", "spatial-2d", 2),
+            True,
+        ),
+        (
+            "wave-convolutional-custom-spatial-2d",
+            ArchitectureConfig.for_wave(convolution=ConvolutionConfig(channels=3)),
+            ModulePreprocessorConfig(torch.nn.Conv2d(1, 2, 1), "spatial-2d", "spatial-2d", 2),
+            True,
+        ),
+        (
+            "geometric-sparse-dense-lsm",
+            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(2, 2))),
+            LSMConfig.dense(output_dim=4),
+            False,
+        ),
+        (
+            "geometric-sparse-custom-flat",
+            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(2, 2))),
+            ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "flat", 4),
+            False,
+        ),
+    ],
+)
+def test_remaining_supported_canonical_preprocessor_matrix_cells_fit_predict(
+    name: str, architecture: ArchitectureConfig, component, conv_inputs: bool
+) -> None:
+    """Exercise the supported Phase-4 cells not covered by the token/Wave tests."""
+
+    del name
+    if conv_inputs:
+        X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+        y = X.mean(axis=(1, 2, 3))
+    else:
+        X, y = _dense_data()
+    estimator = _small_estimator(PreprocessorConfig(component), architecture=architecture).fit(X, y)
+    assert estimator.predict(X[:2]).shape == (2,)
+
+
+@pytest.mark.parametrize(
+    ("architecture", "component", "X", "y", "message"),
+    [
+        (
+            ArchitectureConfig.dense(),
+            ModulePreprocessorConfig(torch.nn.Identity(), "tokens", "flat", 3),
+            np.ones((8, 2, 3), dtype=np.float32),
+            np.ones(8, dtype=np.float32),
+            "input_topology",
+        ),
+        (
+            ArchitectureConfig.for_sequence(),
+            ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "tokens", 4),
+            np.ones((8, 3), dtype=np.float32),
+            np.ones(8, dtype=np.float32),
+            "input_topology",
+        ),
+    ],
+)
+def test_forbidden_canonical_topology_pairs_reject_before_training(
+    architecture: ArchitectureConfig,
+    component: ModulePreprocessorConfig,
+    X: np.ndarray,
+    y: np.ndarray,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        _small_estimator(PreprocessorConfig(component), architecture=architecture).fit(X, y)
+
+
 def test_custom_false_topology_and_non_tensor_output_reject_before_training() -> None:
     X = np.arange(48, dtype=np.float32).reshape(8, 2, 3) / 10
     y = X.sum(axis=(1, 2))
@@ -487,8 +562,10 @@ def test_custom_checkpoint_nested_metadata_errors_are_path_specific(
     estimator = _small_estimator(
         PreprocessorConfig(ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "flat", 4))
     ).fit(X, y)
-    path = tmp_path / "custom-nested.pt"
-    estimator.save(str(path))
+    first = tmp_path / "custom-nested-first.pt"
+    path = tmp_path / "custom-nested-second.pt"
+    estimator.save(str(first))
+    PSANNRegressor.load(str(first), map_location="cpu").save(str(path))
     payload = torch.load(path, weights_only=False)
     mutation(payload["estimator_params"]["preprocessor"])
     torch.save(payload, path)
