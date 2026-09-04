@@ -625,7 +625,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         )
 
         if trainer is not None:
-            trainer_profile = dict(getattr(trainer, "profile", {}))
+            trainer_profile = dict(getattr(trainer, "profile_", {}))
             history_metrics = _extract_history_metrics(history)
             episodes = trainer_profile.get("episodes_sampled")
             if episodes is None:
