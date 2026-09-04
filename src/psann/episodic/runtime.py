@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+from typing import Callable, cast
 
 import numpy as np
 import torch
@@ -51,7 +52,8 @@ def align_context(actions: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
 def call_reward(
     reward: object, actions: torch.Tensor, context: torch.Tensor, penalty: float
 ) -> torch.Tensor:
-    signature = inspect.signature(reward)
+    callable_reward = cast(Callable[..., object], reward)
+    signature = inspect.signature(callable_reward)
     kwargs: dict[str, object] = {}
     if "transition_penalty" in signature.parameters or any(
         p.kind == p.VAR_KEYWORD for p in signature.parameters.values()
@@ -63,7 +65,7 @@ def call_reward(
         raise ValueError(
             "strategy.transition_penalty requires a reward accepting transition_penalty or trans_cost."
         )
-    output = reward(actions, context, **kwargs)
+    output = callable_reward(actions, context, **kwargs)
     if not isinstance(output, torch.Tensor):
         raise TypeError("strategy.reward must return a torch.Tensor.")
     return output

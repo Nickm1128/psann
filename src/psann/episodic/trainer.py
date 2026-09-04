@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Callable, Mapping, cast
 
 import numpy as np
 import torch
@@ -18,7 +18,7 @@ class EpisodicTrainer:
     def __init__(
         self, *, estimator: object, strategy: HISSOConfig | Mapping[str, object] | str = "hisso"
     ) -> None:
-        self.estimator = estimator
+        self.estimator: Any = estimator
         self.strategy = strategy
 
     def get_params(self, deep: bool = True) -> dict[str, object]:
@@ -112,7 +112,7 @@ class EpisodicTrainer:
         self.estimator._episodic_profile_ = self.profile_
         return self
 
-    def _fitted(self) -> object:
+    def _fitted(self) -> Any:
         if not hasattr(self, "estimator_"):
             raise RuntimeError("EpisodicTrainer is not fitted.")
         return self.estimator_
@@ -140,7 +140,8 @@ class EpisodicTrainer:
         if strategy.context_extractor is None:
             reward_context = data.reshape(data.shape[0], -1)
         else:
-            reward_context = strategy.context_extractor(data)
+            extractor = cast(Callable[[torch.Tensor], torch.Tensor], strategy.context_extractor)
+            reward_context = extractor(data)
             if not isinstance(reward_context, torch.Tensor):
                 raise TypeError("strategy.context_extractor must return a torch.Tensor.")
         if reward_context.ndim == 1:

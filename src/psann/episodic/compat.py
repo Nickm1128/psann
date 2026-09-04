@@ -7,7 +7,7 @@ the estimator and the canonical strategy remains free of legacy option objects.
 from __future__ import annotations
 
 import warnings
-from typing import Mapping
+from typing import Any, Mapping, cast
 
 from .config import EpisodeScheduleConfig, HISSOConfig, SupervisedWarmStartConfig
 
@@ -70,7 +70,7 @@ def legacy_hisso_strategy(
                 raise ValueError("hisso_supervised.lsm_lr conflicts with preprocessor_lr.")
             raw["preprocessor_lr"] = raw.pop("lsm_lr")
         raw.pop("verbose", None)
-        warm_start = SupervisedWarmStartConfig(**raw)
+        warm_start = SupervisedWarmStartConfig(**cast(Any, raw))
     return HISSOConfig(
         schedule=schedule,
         reward="default" if reward is None else reward,

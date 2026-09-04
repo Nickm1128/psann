@@ -238,16 +238,21 @@ def replace_strategy(value: HISSOConfig, path: str, replacement: object) -> HISS
     schedule_fields = {field.name for field in fields(EpisodeScheduleConfig)}
     warm_start_fields = {field.name for field in fields(SupervisedWarmStartConfig)}
     if len(parts) == 2 and parts[1] in strategy_fields:
-        return replace(value, **{parts[1]: replacement})
+        return replace(value, **cast(Any, {parts[1]: replacement}))
     if len(parts) == 3 and parts[1] == "schedule" and parts[2] in schedule_fields:
-        return replace(value, schedule=replace(value.schedule, **{parts[2]: replacement}))
+        return replace(
+            value, schedule=replace(value.schedule, **cast(Any, {parts[2]: replacement}))
+        )
     if (
         len(parts) == 3
         and parts[1] == "warm_start"
         and value.warm_start is not None
         and parts[2] in warm_start_fields
     ):
-        return replace(value, warm_start=replace(value.warm_start, **{parts[2]: replacement}))
+        return replace(
+            value,
+            warm_start=replace(value.warm_start, **cast(Any, {parts[2]: replacement})),
+        )
     raise ValueError(f"Unknown parameter {path!r}.")
 
 

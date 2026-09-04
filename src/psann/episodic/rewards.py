@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Callable, Protocol, cast
 
 import torch
 
@@ -78,10 +78,11 @@ def get_reward_strategy(name: str) -> RewardStrategyBundle:
 
 
 register_reward_strategy(
-    "default", RewardStrategyBundle(default_reward, description="Activation penalty")
+    "default",
+    RewardStrategyBundle(cast(RewardStrategy, default_reward), description="Activation penalty"),
 )
 FINANCE_PORTFOLIO_STRATEGY = RewardStrategyBundle(
-    multiplicative_return_reward, description="Portfolio returns"
+    cast(RewardStrategy, multiplicative_return_reward), description="Portfolio returns"
 )
 register_reward_strategy("finance", FINANCE_PORTFOLIO_STRATEGY)
 register_reward_strategy("portfolio", FINANCE_PORTFOLIO_STRATEGY)
