@@ -1165,11 +1165,17 @@ class PSANNRegressor(_Phase2Regressor):
         )
 
     def fit(
-        self, X: np.ndarray, y: np.ndarray | None, *args: object, **kwargs: object
+        self, X: np.ndarray, y: np.ndarray | None = None, *args: object, **kwargs: object
     ) -> "PSANNRegressor":
         warning = getattr(self, "_compat_runtime_warning_", None)
         if warning:
             warnings.warn(str(warning), RuntimeWarning, stacklevel=2)
+        if kwargs.get("hisso") and not getattr(self, "_episodic_canonical_call_", False):
+            warnings.warn(
+                "fit(..., hisso=True) is deprecated; use EpisodicTrainer(estimator=..., strategy=...).",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         if getattr(self, "_compat_shaped_lsm_rejected_", False):
             raise ValueError(
                 "WaveResNetRegressor does not support LSM preprocessors for preserve_shape inputs."

@@ -79,22 +79,26 @@ class EpisodicTrainer:
             warm_start["y"] = y
             if warm_start.get("preprocessor_lr") is not None:
                 warm_start["lsm_lr"] = warm_start.pop("preprocessor_lr")
-        self.estimator.fit(
-            X,
-            y,
-            context=context,
-            verbose=verbose,
-            hisso=True,
-            hisso_window=strategy.schedule.episode_length,
-            hisso_batch_episodes=strategy.schedule.batch_episodes,
-            hisso_updates_per_epoch=strategy.schedule.updates_per_epoch,
-            hisso_reward_fn=reward,
-            hisso_context_extractor=strategy.context_extractor,
-            hisso_primary_transform=strategy.primary_transform,
-            hisso_transition_penalty=strategy.transition_penalty,
-            hisso_supervised=warm_start,
-            noisy=strategy.input_noise_std,
-        )
+        setattr(self.estimator, "_episodic_canonical_call_", True)
+        try:
+            self.estimator.fit(
+                X,
+                y,
+                context=context,
+                verbose=verbose,
+                hisso=True,
+                hisso_window=strategy.schedule.episode_length,
+                hisso_batch_episodes=strategy.schedule.batch_episodes,
+                hisso_updates_per_epoch=strategy.schedule.updates_per_epoch,
+                hisso_reward_fn=reward,
+                hisso_context_extractor=strategy.context_extractor,
+                hisso_primary_transform=strategy.primary_transform,
+                hisso_transition_penalty=strategy.transition_penalty,
+                hisso_supervised=warm_start,
+                noisy=strategy.input_noise_std,
+            )
+        finally:
+            self.estimator.__dict__.pop("_episodic_canonical_call_", None)
         self.estimator_ = self.estimator
         legacy = getattr(self.estimator, "_hisso_trainer_", None)
         self.history_ = list(getattr(legacy, "history", ()))
