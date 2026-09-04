@@ -8,8 +8,10 @@ import torch
 
 from psann import PSANNRegressor, StateConfig
 from psann.architectures import (
+    AttentionConfig,
     ArchitectureConfig,
     ConvolutionConfig,
+    ContextConfig,
     GeometryConfig,
     ResidualConfig,
 )
@@ -24,7 +26,12 @@ from psann.episodic.rewards import FINANCE_PORTFOLIO_STRATEGY, RewardStrategyBun
 from psann.episodic.runtime import transform_actions
 from psann.episodic.runtime_loop import HISSOTrainer
 from psann.episodic.legacy_config import HISSOTrainerConfig
-from psann.preprocessing import LSMConfig, PreprocessorConfig, PreprocessorTrainingConfig
+from psann.preprocessing import (
+    LSMConfig,
+    ModulePreprocessorConfig,
+    PreprocessorConfig,
+    PreprocessorTrainingConfig,
+)
 
 
 def _custom_reward(actions: torch.Tensor, context: torch.Tensor, **_kwargs: object) -> torch.Tensor:
@@ -388,6 +395,86 @@ def test_canonical_runtime_honors_schedule_clip_and_invalidation(monkeypatch):
         "_hisso_context_extractor_",
     ):
         assert name not in estimator.__dict__
+
+
+def test_canonical_invalidation_clears_replaced_and_refit_estimator_runtimes():
+    X = np.ones((8, 2), dtype=np.float32)
+    strategy = HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1))
+    first = PSANNRegressor(epochs=1, batch_size=2, random_state=0)
+    wrapper = EpisodicTrainer(estimator=first, strategy=strategy).fit(X)
+    old_runtime = first._hisso_trainer_
+    wrapper.fit(X)
+    assert first._hisso_trainer_ is not old_runtime
+
+    replacement = PSANNRegressor(epochs=1, batch_size=2, random_state=1)
+    EpisodicTrainer(estimator=replacement, strategy=strategy).fit(X)
+    wrapper.set_params(estimator=replacement)
+    for estimator in (first, replacement):
+        for name in (
+            "_episodic_strategy_",
+            "_episodic_history_",
+            "_episodic_profile_",
+            "_hisso_trainer_",
+            "_hisso_options_",
+            "_hisso_cfg_",
+            "_hisso_reward_fn_",
+            "_hisso_context_extractor_",
+        ):
+            assert name not in estimator.__dict__
+
+
+@pytest.mark.parametrize("state_reset", ["epoch", "none"], ids=["epoch", "none"])
+def test_canonical_stateful_warm_start_default_shuffle_is_resolved_before_training(
+    monkeypatch, state_reset
+):
+    from psann.estimators import _fit_utils as fit_utils
+
+    seen: list[bool | None] = []
+    original = fit_utils.run_hisso_supervised_warmstart
+
+    def capture(*args, **kwargs):
+        seen.append(kwargs["config"].shuffle)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(fit_utils, "run_hisso_supervised_warmstart", capture)
+    X = np.ones((8, 2), dtype=np.float32)
+    EpisodicTrainer(
+        estimator=PSANNRegressor(
+            epochs=1, batch_size=2, stateful=True, state_reset=state_reset, random_state=0
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2),
+            warm_start=SupervisedWarmStartConfig(epochs=1),
+        ),
+    ).fit(X, X[:, 0])
+    assert seen == [False]
+
+
+def test_canonical_unsupported_pairs_reject_before_episodic_optimization(monkeypatch):
+    from psann.episodic import runtime_loop
+
+    def unexpected_train(*_args, **_kwargs):
+        raise AssertionError("episodic optimization must not start")
+
+    monkeypatch.setattr(runtime_loop.HISSOTrainer, "train", unexpected_train)
+    token_lsm = PreprocessorConfig(LSMConfig.dense(output_dim=4))
+    attention = ArchitectureConfig.dense(attention=AttentionConfig(num_heads=1))
+    with pytest.raises(ValueError, match="tokens-to-tokens"):
+        EpisodicTrainer(
+            estimator=PSANNRegressor(
+                architecture=attention, preprocessor=token_lsm, epochs=1, batch_size=2
+            ),
+            strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2)),
+        ).fit(np.ones((8, 2, 3), dtype=np.float32))
+
+    per_element = ArchitectureConfig.convolutional(
+        convolution=ConvolutionConfig(channels=3, per_element=True), residual=ResidualConfig()
+    )
+    with pytest.raises(ValueError, match="per_element"):
+        EpisodicTrainer(
+            estimator=PSANNRegressor(architecture=per_element, epochs=1, batch_size=2),
+            strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2)),
+        ).fit(np.ones((8, 1, 3, 3), dtype=np.float32))
 
 
 def test_canonical_gradient_clip_none_is_effective_and_never_invokes_clipping(monkeypatch):
@@ -764,6 +851,128 @@ def test_canonical_episodic_architecture_runtime_matrix(architecture, X):
     assert trainer.predict(X[:2]).shape[0] == 2
     assert np.isfinite(trainer.evaluate(X[:4]))
     assert trainer.history_[0]["episodes"] == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "architecture", "preprocessor", "X"),
+    [
+        (
+            "dense-attention-custom-tokens",
+            ArchitectureConfig.dense(attention=AttentionConfig(num_heads=1)),
+            lambda: PreprocessorConfig(
+                ModulePreprocessorConfig(torch.nn.Linear(3, 4), "tokens", "tokens", 4)
+            ),
+            np.ones((8, 2, 3), dtype=np.float32),
+        ),
+        (
+            "wave-attention-custom-tokens",
+            ArchitectureConfig.for_wave(attention=AttentionConfig(num_heads=1)),
+            lambda: PreprocessorConfig(
+                ModulePreprocessorConfig(torch.nn.Linear(3, 4), "tokens", "tokens", 4)
+            ),
+            np.ones((8, 2, 3), dtype=np.float32),
+        ),
+        (
+            "sequence-custom-tokens",
+            ArchitectureConfig.for_sequence(),
+            lambda: PreprocessorConfig(
+                ModulePreprocessorConfig(torch.nn.Linear(3, 4), "tokens", "tokens", 4)
+            ),
+            np.ones((8, 2, 3), dtype=np.float32),
+        ),
+        (
+            "conv1d-channels-first",
+            ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3)),
+            lambda: None,
+            np.ones((8, 1, 4), dtype=np.float32),
+        ),
+        (
+            "conv1d-channels-last",
+            ArchitectureConfig.convolutional(
+                convolution=ConvolutionConfig(channels=3, data_format="channels_last")
+            ),
+            lambda: None,
+            np.ones((8, 4, 1), dtype=np.float32),
+        ),
+        (
+            "conv2d-channels-last",
+            ArchitectureConfig.convolutional(
+                convolution=ConvolutionConfig(channels=3, data_format="channels_last")
+            ),
+            lambda: None,
+            np.ones((8, 3, 3, 1), dtype=np.float32),
+        ),
+        (
+            "conv3d-channels-first",
+            ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3)),
+            lambda: None,
+            np.ones((8, 1, 2, 2, 2), dtype=np.float32),
+        ),
+        (
+            "residual-convolution",
+            ArchitectureConfig.convolutional(
+                convolution=ConvolutionConfig(channels=3), residual=ResidualConfig()
+            ),
+            lambda: None,
+            np.ones((8, 1, 3, 3), dtype=np.float32),
+        ),
+        (
+            "wave-convolution-context-channels-last",
+            ArchitectureConfig.for_wave(
+                convolution=ConvolutionConfig(channels=3, data_format="channels_last"),
+                context=ContextConfig(builder="cosine", builder_params={"include_sin": False}),
+            ),
+            lambda: None,
+            np.ones((8, 3, 3, 2), dtype=np.float32),
+        ),
+        (
+            "geometric-dense-lsm",
+            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(2, 2))),
+            lambda: PreprocessorConfig(LSMConfig.dense(output_dim=4)),
+            np.ones((8, 4), dtype=np.float32),
+        ),
+        (
+            "geometric-custom-flat",
+            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(2, 2))),
+            lambda: PreprocessorConfig(
+                ModulePreprocessorConfig(torch.nn.Linear(4, 4), "flat", "flat", 4)
+            ),
+            np.ones((8, 4), dtype=np.float32),
+        ),
+    ],
+    ids=[
+        "dense-attention-custom-tokens",
+        "wave-attention-custom-tokens",
+        "sequence-custom-tokens",
+        "conv1d-channels-first",
+        "conv1d-channels-last",
+        "conv2d-channels-last",
+        "conv3d-channels-first",
+        "residual-convolution",
+        "wave-convolution-context-channels-last",
+        "geometric-dense-lsm",
+        "geometric-custom-flat",
+    ],
+)
+def test_canonical_episodic_topology_and_preprocessor_matrix(name, architecture, preprocessor, X):
+    """Every retained Phase-5 topology executes wrapper fit/predict/evaluate."""
+
+    del name
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=architecture,
+            preprocessor=preprocessor(),
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=2,
+            random_state=0,
+            device="cpu",
+        ),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1)),
+    ).fit(X)
+    assert trainer.predict(X[:2]).shape[0] == 2
+    assert np.isfinite(trainer.evaluate(X[:4]))
 
 
 @pytest.mark.parametrize(

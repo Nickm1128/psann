@@ -46,28 +46,37 @@ class EpisodicTrainer:
             raise ValueError(f"Unknown parameter {unknown[0]!r}.")
         if "strategy" in params and any(name.startswith("strategy__") for name in params):
             raise ValueError("strategy conflicts with strategy__ nested updates.")
-        estimator = params.get("estimator", self.estimator)
+        previous_estimator = self.estimator
+        estimator = params.get("estimator", previous_estimator)
         strategy = normalize_strategy(params.get("strategy", self.strategy))  # type: ignore[arg-type]
         nested = [(name, value) for name, value in params.items() if name.startswith("strategy__")]
         nested.sort(key=lambda item: item[0].count("__"))
         for name, value in nested:
             strategy = replace_strategy(strategy, name, value)
         self.estimator, self.strategy = estimator, strategy
-        invalidate = getattr(self.estimator, "_clear_architecture_runtime", None)
-        if callable(invalidate):
-            invalidate()
-        else:
-            for name in (
-                "_episodic_strategy_",
-                "_episodic_history_",
-                "_episodic_profile_",
-                "_hisso_trainer_",
-                "_hisso_options_",
-                "_hisso_cfg_",
-                "_hisso_reward_fn_",
-                "_hisso_context_extractor_",
-            ):
-                getattr(self.estimator, "__dict__", {}).pop(name, None)
+        # A replacement must not leave a formerly wrapped estimator claiming a
+        # fitted episodic run.  Clear it as well as the new owner; the latter may
+        # already have its own stale runtime from a previous wrapper.
+        invalidated: set[int] = set()
+        for candidate in (previous_estimator, self.estimator):
+            if id(candidate) in invalidated:
+                continue
+            invalidated.add(id(candidate))
+            invalidate = getattr(candidate, "_clear_architecture_runtime", None)
+            if callable(invalidate):
+                invalidate()
+            else:
+                for name in (
+                    "_episodic_strategy_",
+                    "_episodic_history_",
+                    "_episodic_profile_",
+                    "_hisso_trainer_",
+                    "_hisso_options_",
+                    "_hisso_cfg_",
+                    "_hisso_reward_fn_",
+                    "_hisso_context_extractor_",
+                ):
+                    getattr(candidate, "__dict__", {}).pop(name, None)
         for name in ("estimator_", "history_", "profile_"):
             self.__dict__.pop(name, None)
         return self
