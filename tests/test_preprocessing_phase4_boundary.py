@@ -6,7 +6,12 @@ import numpy as np
 import pytest
 import torch
 
-from psann.architectures import ArchitectureConfig, AttentionConfig, ConvolutionConfig
+from psann.architectures import (
+    ArchitectureConfig,
+    AttentionConfig,
+    ContextConfig,
+    ConvolutionConfig,
+)
 from psann.estimators import PSANNRegressor
 from psann.preprocessing import (
     LSMConfig,
@@ -220,3 +225,51 @@ def test_custom_preprocessor_clone_and_parent_component_update_are_runtime_safe(
     ).fit(X, y)
     assert cloned.preprocessor_capabilities_.output_dim == 5
     assert cloned.predict(X[:2]).shape == (2,)
+
+
+@pytest.mark.parametrize("attention", [False, True], ids=["flat", "token-attention"])
+def test_wave_context_survives_canonical_preprocessor_wrapper(attention: bool) -> None:
+    context = np.ones((8, 1), dtype=np.float32)
+    if attention:
+        X = np.arange(48, dtype=np.float32).reshape(8, 2, 3) / 10
+        config = PreprocessorConfig(
+            ModulePreprocessorConfig(torch.nn.Linear(3, 4), "tokens", "tokens", 4)
+        )
+        architecture = ArchitectureConfig.for_wave(
+            attention=AttentionConfig(num_heads=1), context=ContextConfig(dim=1)
+        )
+        y = X.sum(axis=(1, 2))
+    else:
+        X, y = _dense_data()
+        config = PreprocessorConfig(LSMConfig.dense(output_dim=4))
+        architecture = ArchitectureConfig.for_wave(context=ContextConfig(dim=1))
+    estimator = _small_estimator(config, architecture=architecture).fit(X, y, context=context)
+    assert estimator.predict(X[:2], context=context[:2]).shape == (2,)
+
+
+def test_cross_kind_component_replacements_fit_in_both_directions() -> None:
+    X, y = _dense_data()
+    estimator = _small_estimator(PreprocessorConfig(LSMConfig.dense(output_dim=4)))
+    module = ModulePreprocessorConfig(torch.nn.Linear(3, 5), "flat", "flat", 5)
+    estimator.set_params(preprocessor__component=module).fit(X, y)
+    assert estimator.preprocessor_capabilities_.serializable_kind == "module"
+    estimator.set_params(preprocessor__component=LSMConfig.dense(output_dim=4)).fit(X, y)
+    assert estimator.preprocessor_capabilities_.serializable_kind == "lsm"
+
+
+def test_custom_false_topology_and_non_tensor_output_reject_before_training() -> None:
+    X = np.arange(48, dtype=np.float32).reshape(8, 2, 3) / 10
+    y = X.sum(axis=(1, 2))
+    false_flat = PreprocessorConfig(
+        ModulePreprocessorConfig(torch.nn.Identity(), "tokens", "flat", 3)
+    )
+    with pytest.raises(ValueError, match="output_topology"):
+        _small_estimator(false_flat).fit(X, y)
+
+    class NotATensor(torch.nn.Module):
+        def forward(self, value: torch.Tensor) -> object:
+            return value.tolist()
+
+    not_tensor = PreprocessorConfig(ModulePreprocessorConfig(NotATensor(), "flat", "flat", 3))
+    with pytest.raises(ValueError, match="torch.Tensor"):
+        _small_estimator(not_tensor).fit(*_dense_data())
