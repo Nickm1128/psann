@@ -20,11 +20,11 @@ def run_hisso_supervised_warmstart(
     primary_dim: int,
     config: Optional[HISSOWarmStartConfig],
     lsm_module: Optional[torch.nn.Module],
-) -> None:
+) -> Optional[torch.optim.Optimizer]:
     """Run a supervised warm start against primary targets before HISSO."""
 
     if config is None:
-        return
+        return None
 
     y_vec = np.asarray(config.targets, dtype=np.float32)
     if y_vec.ndim == 1:
@@ -54,7 +54,6 @@ def run_hisso_supervised_warmstart(
 
     optimizer = estimator._build_optimizer(estimator.model_)
     estimator._optimizer_ = optimizer
-    estimator._hisso_warmstart_optimizer_ = optimizer
     if config.lr is not None:
         for group in optimizer.param_groups:
             if group.get("psann_parameter_group") == "core":
@@ -92,3 +91,4 @@ def run_hisso_supervised_warmstart(
             cfg=loop_cfg,
         )
     estimator.model_.eval()
+    return optimizer

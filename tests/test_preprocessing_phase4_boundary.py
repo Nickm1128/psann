@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import torch
 
+from psann import ResPSANNRegressor
 from psann.architectures import (
     ArchitectureConfig,
     AttentionConfig,
@@ -279,6 +280,18 @@ def test_cross_kind_component_replacements_fit_in_both_directions() -> None:
             True,
         ),
         (
+            "wave-convolutional-lsm",
+            ArchitectureConfig.for_wave(convolution=ConvolutionConfig(channels=3)),
+            LSMConfig.convolutional(output_dim=2, hidden_units=3),
+            True,
+        ),
+        (
+            "wave-flat-custom",
+            ArchitectureConfig.for_wave(),
+            ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "flat", 4),
+            False,
+        ),
+        (
             "geometric-sparse-dense-lsm",
             ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(2, 2))),
             LSMConfig.dense(output_dim=4),
@@ -324,17 +337,69 @@ def test_remaining_supported_canonical_preprocessor_matrix_cells_fit_predict(
             np.ones(8, dtype=np.float32),
             "input_topology",
         ),
+        (
+            ArchitectureConfig.for_wave(attention=AttentionConfig(num_heads=1)),
+            LSMConfig.dense(output_dim=4),
+            np.ones((8, 2, 3), dtype=np.float32),
+            np.ones(8, dtype=np.float32),
+            "tokens-to-tokens",
+        ),
+        (
+            ArchitectureConfig.for_sequence(),
+            LSMConfig.dense(output_dim=4),
+            np.ones((8, 3), dtype=np.float32),
+            np.ones(8, dtype=np.float32),
+            "input_topology",
+        ),
+        (
+            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(2, 2))),
+            LSMConfig.dense(output_dim=3),
+            np.ones((8, 3), dtype=np.float32),
+            np.ones(8, dtype=np.float32),
+            "geometry.shape product",
+        ),
     ],
 )
 def test_forbidden_canonical_topology_pairs_reject_before_training(
     architecture: ArchitectureConfig,
-    component: ModulePreprocessorConfig,
+    component,
     X: np.ndarray,
     y: np.ndarray,
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
         _small_estimator(PreprocessorConfig(component), architecture=architecture).fit(X, y)
+
+
+def test_custom_spatial_checkpoint_and_unserializable_module_boundaries(tmp_path) -> None:
+    X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+    y = X.mean(axis=(1, 2, 3))
+    architecture = ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3))
+    spatial = _small_estimator(
+        PreprocessorConfig(
+            ModulePreprocessorConfig(torch.nn.Conv2d(1, 2, 1), "spatial-2d", "spatial-2d", 2)
+        ),
+        architecture=architecture,
+    ).fit(X, y)
+    assert {parameter.device.type for parameter in spatial.preprocessor_.parameters()} == {"cpu"}
+    path = tmp_path / "spatial-custom.pt"
+    spatial.save(str(path))
+    restored = PSANNRegressor.load(str(path), map_location="cpu")
+    np.testing.assert_allclose(restored.predict(X[:2]), spatial.predict(X[:2]), rtol=1e-6)
+
+    class UnserializableModule(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.transform = lambda value: value
+
+        def forward(self, value: torch.Tensor) -> torch.Tensor:
+            return self.transform(value)
+
+    bad = _small_estimator(
+        PreprocessorConfig(ModulePreprocessorConfig(UnserializableModule(), "flat", "flat", 3))
+    ).fit(*_dense_data())
+    with pytest.raises(TypeError, match="preprocessor_module could not be serialized"):
+        bad.save(str(tmp_path / "unserializable.pt"))
 
 
 def test_custom_false_topology_and_non_tensor_output_reject_before_training() -> None:
@@ -464,7 +529,9 @@ def test_canonical_preprocessor_hisso_uses_separate_core_and_preprocessor_groups
     from psann.estimators import _fit_utils as fit_utils
 
     snapshots: list[list[torch.Tensor]] = []
-    warm_snapshots: list[list[torch.Tensor]] = []
+    warm_before: list[list[torch.Tensor]] = []
+    warm_after: list[list[torch.Tensor]] = []
+    warm_optimizers: list[torch.optim.Optimizer] = []
     original_hisso = fit_utils.run_hisso_training
     original_warmstart = fit_utils.run_hisso_supervised_warmstart
 
@@ -475,10 +542,12 @@ def test_canonical_preprocessor_hisso_uses_separate_core_and_preprocessor_groups
 
     def capture_warmstart(*args, **kwargs):
         model = args[0].model_
-        warm_snapshots.append(
-            [parameter.detach().clone() for parameter in model.preproc.parameters()]
-        )
-        return original_warmstart(*args, **kwargs)
+        warm_before.append([parameter.detach().clone() for parameter in model.preproc.parameters()])
+        optimizer = original_warmstart(*args, **kwargs)
+        assert optimizer is not None
+        warm_optimizers.append(optimizer)
+        warm_after.append([parameter.detach().clone() for parameter in model.preproc.parameters()])
+        return optimizer
 
     monkeypatch.setattr(fit_utils, "run_hisso_training", capture_hisso)
     monkeypatch.setattr(fit_utils, "run_hisso_supervised_warmstart", capture_warmstart)
@@ -523,18 +592,80 @@ def test_canonical_preprocessor_hisso_uses_separate_core_and_preprocessor_groups
         hisso_supervised={"y": y, "epochs": 1, "batch_size": 4, "lr": 0.02},
     )
     warm_groups = {
-        group["psann_parameter_group"]: group
-        for group in warm._hisso_warmstart_optimizer_.param_groups
+        group["psann_parameter_group"]: group for group in warm_optimizers[0].param_groups
     }
     assert warm_groups["core"]["lr"] == pytest.approx(0.02)
     if trainable:
         assert warm_groups["preprocessor"]["lr"] == pytest.approx(0.123 if separate_rate else 0.001)
         assert any(
-            not torch.equal(before, after)
-            for before, after in zip(warm_snapshots[0], warm.preprocessor_.parameters())
+            not torch.equal(before, after) for before, after in zip(warm_before[0], warm_after[0])
         )
     else:
         assert "preprocessor" not in warm_groups
+
+
+@pytest.mark.parametrize("optimizer_name", ["adamw", "sgd"])
+@pytest.mark.parametrize("case", ["canonical-none", "canonical-preprocessor", "legacy-wrapper"])
+def test_hisso_keeps_adam_algorithm_for_non_adam_supervised_optimizers(
+    optimizer_name: str, case: str
+) -> None:
+    X, y = _dense_data()
+    common = {
+        "hidden_layers": 1,
+        "hidden_units": 4,
+        "epochs": 1,
+        "batch_size": 4,
+        "optimizer": optimizer_name,
+        "random_state": 0,
+        "device": "cpu",
+    }
+    if case == "canonical-none":
+        estimator = PSANNRegressor(**common)
+    elif case == "canonical-preprocessor":
+        estimator = PSANNRegressor(
+            preprocessor=PreprocessorConfig(
+                LSMConfig.dense(output_dim=4), PreprocessorTrainingConfig(trainable=True)
+            ),
+            **common,
+        )
+    else:
+        estimator = ResPSANNRegressor(
+            lsm={"output_dim": 4, "hidden_layers": 1, "hidden_units": 4},
+            lsm_train=True,
+            **common,
+        )
+    estimator.fit(X, y, hisso=True, hisso_window=4)
+    assert isinstance(estimator._hisso_trainer_.optimizer, torch.optim.Adam)
+    assert not isinstance(estimator._hisso_trainer_.optimizer, torch.optim.AdamW)
+
+
+def test_nested_preprocessor_update_clears_all_hisso_warmstart_runtime_cache() -> None:
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(
+            LSMConfig.dense(output_dim=4), PreprocessorTrainingConfig(trainable=True, lr=0.01)
+        )
+    ).fit(
+        X,
+        y,
+        hisso=True,
+        hisso_window=4,
+        hisso_supervised={"y": y, "epochs": 1, "batch_size": 4},
+    )
+    # This was a test-only persisted optimizer in the preceding correction.
+    # Simulate a legacy in-memory instance and require transactional invalidation.
+    estimator.__dict__["_hisso_warmstart_optimizer_"] = estimator._optimizer_
+    estimator.set_params(preprocessor__training__lr=0.02)
+    for name in (
+        "model_",
+        "_optimizer_",
+        "_hisso_trainer_",
+        "_hisso_warmstart_optimizer_",
+        "preprocessor_",
+        "preprocessor_capabilities_",
+        "preprocessor_controller_",
+    ):
+        assert name not in estimator.__dict__
 
 
 @pytest.mark.parametrize(
@@ -544,6 +675,8 @@ def test_canonical_preprocessor_hisso_uses_separate_core_and_preprocessor_groups
             lambda preprocessor: preprocessor["training"].update({"surprise": 1}),
             "training.surprise",
         ),
+        (lambda preprocessor: preprocessor.pop("kind"), "preprocessor.kind is missing"),
+        (lambda preprocessor: preprocessor.__setitem__("kind", "lsm"), "preprocessor.kind must"),
         (
             lambda preprocessor: preprocessor.__setitem__("training", []),
             "training must be a mapping",

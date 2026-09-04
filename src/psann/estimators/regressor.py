@@ -1194,6 +1194,7 @@ class PSANNRegressor(_Phase2Regressor):
             "_context_builder_callable_",
             "_hisso_cache_",
             "_hisso_trainer_",
+            "_hisso_warmstart_optimizer_",
             "_architecture_lifecycle_",
             "_architecture_capabilities_",
             "_architecture_structure_",
@@ -1825,8 +1826,13 @@ class PSANNRegressor(_Phase2Regressor):
         if map_location is not None:
             raw_params["device"] = torch.device(map_location)
         raw_preprocessor = raw_params.get("preprocessor")
-        if isinstance(raw_preprocessor, Mapping) and raw_preprocessor.get("kind") == "module":
-            module = dict(payload.get("artifacts", {})).get("preprocessor_module")
+        artifacts = dict(payload.get("artifacts", {}))
+        if (
+            version == 2
+            and isinstance(raw_preprocessor, Mapping)
+            and "preprocessor_module" in artifacts
+        ):
+            module = artifacts.get("preprocessor_module")
             if not isinstance(module, nn.Module):
                 raise ValueError("Schema-v2 artifacts.preprocessor_module is missing or invalid.")
             raw_params["preprocessor"] = _normalise_schema_module_preprocessor(

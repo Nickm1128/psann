@@ -146,11 +146,10 @@ def run_hisso_stage(
     estimator._hisso_reward_fn_ = plan.options.reward_fn
     estimator._hisso_context_extractor_ = plan.options.context_extractor
 
-    # HISSO uses the exact same canonical groups as supervised optimisation:
-    # core parameters retain ``estimator.lr`` and a trainable preprocessor gets
-    # its own configured (or inherited) rate.  Passing one scalar here would
-    # silently train both components at the preprocessing rate.
-    hisso_optimizer = _build_optimizer(estimator, estimator.model_)
+    # HISSO shares canonical parameter groups with supervised optimisation, but
+    # retains its historical Adam algorithm.  Optimizer selection is an episodic
+    # compatibility contract, not an estimator-level preprocessing policy.
+    hisso_optimizer = _build_hisso_optimizer(estimator, estimator.model_)
     estimator._optimizer_ = hisso_optimizer
     trainer = run_hisso_training(
         estimator,
@@ -320,7 +319,11 @@ def run_supervised_training(
     }
 
 
-def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.optim.Optimizer:
+def _build_optimizer_parameter_groups(
+    estimator: "PSANNRegressor", model: nn.Module
+) -> list[dict[str, object]]:
+    """Return labeled canonical groups without choosing an optimizer algorithm."""
+
     training = getattr(getattr(estimator, "preprocessor", None), "training", None)
     joint_preprocessor = bool(getattr(training, "trainable", False))
     legacy_joint = training is None and bool(getattr(estimator, "lsm_train", False))
@@ -329,7 +332,7 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
         and isinstance(model, WithPreprocessor)
         and model.preproc is not None
     ):
-        params = [
+        return [
             {
                 "params": [p for p in model.core.parameters() if p.requires_grad],
                 "lr": float(estimator.lr),
@@ -349,12 +352,6 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
                 "psann_parameter_group": "preprocessor",
             },
         ]
-        opt_name = str(estimator.optimizer).lower()
-        if opt_name == "adamw":
-            return torch.optim.AdamW(params, weight_decay=float(estimator.weight_decay))
-        if opt_name == "sgd":
-            return torch.optim.SGD(params, momentum=0.9)
-        return torch.optim.Adam(params, weight_decay=float(estimator.weight_decay))
     trainable_params = [parameter for parameter in model.parameters() if parameter.requires_grad]
     params = [
         {
@@ -363,6 +360,13 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
             "psann_parameter_group": "core",
         }
     ]
+    return params
+
+
+def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.optim.Optimizer:
+    """Construct the supervised optimizer using the estimator-selected algorithm."""
+
+    params = _build_optimizer_parameter_groups(estimator, model)
     if str(estimator.optimizer).lower() == "adamw":
         return torch.optim.AdamW(
             params,
@@ -376,6 +380,12 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
     )
 
 
+def _build_hisso_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.optim.Optimizer:
+    """Construct the retained Adam HISSO optimizer over canonical groups."""
+
+    return torch.optim.Adam(_build_optimizer_parameter_groups(estimator, model))
+
+
 __all__ = [
     "FitVariantHooks",
     "HISSOTrainingPlan",
@@ -384,6 +394,7 @@ __all__ = [
     "PreparedInputState",
     "ValidationInput",
     "_build_optimizer",
+    "_build_hisso_optimizer",
     "_prepare_noise_tensor",
     "_prepare_validation_tensors",
     "build_hisso_training_plan",
