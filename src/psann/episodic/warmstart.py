@@ -7,7 +7,7 @@ import torch
 
 from ..training import TrainingLoopConfig, run_training_loop
 from .amp import _guard_cuda_capture
-from .._hisso.config import HISSOWarmStartConfig
+from .legacy_config import HISSOWarmStartConfig
 
 if TYPE_CHECKING:
     from ..sklearn import PSANNRegressor

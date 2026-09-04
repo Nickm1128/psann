@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 import torch
 
-from .._hisso.config import HISSOOptions, HISSOTrainerConfig
+from .legacy_config import HISSOOptions, HISSOTrainerConfig
 from .context import _call_context_extractor
 from .reward import _align_context_for_reward, _compute_reward, _resolve_reward_kwarg
 
