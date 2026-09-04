@@ -249,6 +249,34 @@ def test_vanilla_activation_is_observable(activation):
     assert not torch.allclose(model(TOKENS), other(TOKENS))
 
 
+@pytest.mark.parametrize(
+    "field,parameter", [("amp_range", "_A"), ("freq_range", "_f"), ("damp_range", "_d")]
+)
+@pytest.mark.parametrize("bounds", [(0.2, 1.4), (1.4, 0.2), (0.6, 0.6)])
+def test_sine_range_sampling_order_and_reversed_equal_neighbors(field, parameter, bounds):
+    model = seeded_model("respsann", sine=SineConfig(**{field: bounds})).eval()
+    reference_rng = random.Random(137)
+    lo, hi = sorted(bounds)
+    for block in model.blocks:
+        expected = reference_rng.uniform(lo, hi)
+        actual = nn.functional.softplus(getattr(block.mlp.act, parameter))
+        torch.testing.assert_close(actual, torch.full_like(actual, expected), rtol=1e-6, atol=1e-7)
+    standard = seeded_model("respsann", sine=SineConfig()).eval()
+    assert not torch.allclose(model(TOKENS), standard(TOKENS))
+    model(TOKENS).square().sum().backward()
+    assert torch.count_nonzero(getattr(model.blocks[0].mlp.act, parameter).grad) > 1
+
+
+@pytest.mark.parametrize("field", ["amp_init_std", "freq_init_std", "damp_init_std"])
+@pytest.mark.parametrize("spread", [-0.2, 0.0])
+def test_sine_nonpositive_spread_retains_scalar_runtime(field, spread):
+    model = seeded_model("respsann", sine=SineConfig(**{field: spread})).eval()
+    reference = seeded_model("respsann", sine=SineConfig()).eval()
+    torch.testing.assert_close(model(TOKENS), reference(TOKENS), rtol=0, atol=0)
+    for key, value in model.state_dict().items():
+        torch.testing.assert_close(value, reference.state_dict()[key], rtol=0, atol=0)
+
+
 def test_trainer_checkpoint_real_optimizer_step_and_resume(tmp_path, monkeypatch):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     data = psannLMDataPrep(
