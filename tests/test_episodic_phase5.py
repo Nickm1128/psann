@@ -7,7 +7,12 @@ import pytest
 import torch
 
 from psann import PSANNRegressor
-from psann.architectures import ArchitectureConfig, ConvolutionConfig
+from psann.architectures import (
+    ArchitectureConfig,
+    ConvolutionConfig,
+    GeometryConfig,
+    ResidualConfig,
+)
 from psann.episodic import (
     EpisodeScheduleConfig,
     EpisodicTrainer,
@@ -132,6 +137,29 @@ def test_schema_v3_callable_descriptor_requires_callable_artifact(tmp_path, arti
         payload["artifacts"]["episodic_reward"] = artifact
     torch.save(payload, path)
     with pytest.raises(ValueError, match="Schema-v3 artifacts.episodic_reward"):
+        PSANNRegressor.load(path)
+
+
+@pytest.mark.parametrize(
+    ("field", "descriptor", "artifact_key"),
+    [
+        ("reward", "default", "episodic_reward"),
+        ("context_extractor", None, "episodic_context"),
+    ],
+)
+def test_schema_v3_rejects_unexpected_callable_artifacts(tmp_path, field, descriptor, artifact_key):
+    X = np.ones((8, 2), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=4, random_state=0),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2)),
+    ).fit(X)
+    path = tmp_path / f"unexpected-{field}.pt"
+    trainer.save(path)
+    payload = torch.load(path, weights_only=False)
+    payload["fitted"]["episodic"]["config"][field] = descriptor
+    payload["artifacts"][artifact_key] = _custom_reward
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match=f"Schema-v3 artifacts.{artifact_key} is unexpected"):
         PSANNRegressor.load(path)
 
 
@@ -347,6 +375,37 @@ def test_schema_v3_registered_bundle_closes_two_generations(tmp_path):
     assert EpisodicTrainer.load(second).strategy.reward == "finance"
 
 
+@pytest.mark.parametrize("legacy_version", [1, 2])
+def test_legacy_episodic_schema_migration_closes_two_v3_generations(tmp_path, legacy_version):
+    """v1/v2 HISSO metadata is rehydrated before the first new-format save."""
+
+    X = np.arange(20, dtype=np.float32).reshape(10, 2) + 1
+    legacy = PSANNRegressor(epochs=1, batch_size=2, random_state=5).fit(
+        X,
+        hisso=True,
+        hisso_window=2,
+        hisso_batch_episodes=2,
+        hisso_updates_per_epoch=1,
+    )
+    source, first, second = (
+        tmp_path / f"legacy-v{legacy_version}.pt",
+        tmp_path / f"migrated-v{legacy_version}-1.pt",
+        tmp_path / f"migrated-v{legacy_version}-2.pt",
+    )
+    legacy.save(source)
+    payload = torch.load(source, weights_only=False)
+    payload["schema_version"] = legacy_version
+    payload["fitted"].pop("episodic")
+    torch.save(payload, source)
+    migrated = PSANNRegressor.load(source)
+    migrated.save(first)
+    loaded = EpisodicTrainer.load(first)
+    loaded.save(second)
+    assert loaded.strategy.schedule.episode_length == 2
+    assert torch.load(second, weights_only=False)["schema_version"] == 3
+    np.testing.assert_allclose(loaded.predict(X[:3]), EpisodicTrainer.load(second).predict(X[:3]))
+
+
 def test_legacy_episode_facade_delegates_training_and_evaluation_to_runtime():
     """The deprecated facade is a warning-only adapter, not another runtime."""
 
@@ -383,3 +442,114 @@ def test_strict_runtime_propagates_state_lifecycle_failures():
         runtime.train(
             np.ones((4, 2), dtype=np.float32), epochs=1, verbose=0, lr_max=None, lr_min=None
         )
+
+
+@pytest.mark.parametrize(
+    ("architecture", "X"),
+    [
+        (ArchitectureConfig.dense(), np.ones((8, 2), dtype=np.float32)),
+        (
+            ArchitectureConfig.dense(residual=ResidualConfig()),
+            np.ones((8, 2), dtype=np.float32),
+        ),
+        (
+            ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3)),
+            np.ones((8, 1, 3, 3), dtype=np.float32),
+        ),
+        (ArchitectureConfig.for_wave(), np.ones((8, 2), dtype=np.float32)),
+        (ArchitectureConfig.for_sequence(), np.ones((8, 2), dtype=np.float32)),
+        (
+            ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(1, 2))),
+            np.ones((8, 2), dtype=np.float32),
+        ),
+    ],
+)
+def test_canonical_episodic_architecture_runtime_matrix(architecture, X):
+    """Each retained topology reaches canonical fit, transform, prediction and reward."""
+
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=architecture,
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=2,
+            random_state=3,
+            device="cpu",
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=2),
+            primary_transform="tanh",
+        ),
+    ).fit(X)
+    assert trainer.predict(X[:2]).shape[0] == 2
+    assert np.isfinite(trainer.evaluate(X[:4]))
+    assert trainer.history_[0]["episodes"] == 2
+
+
+@pytest.mark.parametrize(
+    ("state_reset", "expected_resets"),
+    [("batch", 4), ("epoch", 2), ("none", 0)],
+)
+def test_canonical_runtime_state_cadence_and_commit_counts(state_reset, expected_resets):
+    class CountingState(torch.nn.Linear):
+        def __init__(self) -> None:
+            super().__init__(2, 1)
+            self.resets = 0
+            self.commits = 0
+
+        def reset_state(self) -> None:
+            self.resets += 1
+
+        def commit_state_updates(self) -> None:
+            self.commits += 1
+
+    model = CountingState()
+    runtime = HISSOTrainer(
+        model,
+        cfg=HISSOTrainerConfig(
+            episode_length=2,
+            episodes_per_batch=2,
+            episode_batch_size=1,
+            updates_per_epoch=2,
+        ),
+        device=torch.device("cpu"),
+        lr=0.01,
+        reward_fn=None,
+        context_extractor=None,
+        input_noise_std=None,
+        stateful=True,
+        state_reset=state_reset,
+        strict=True,
+    )
+    runtime.train(np.ones((6, 2), dtype=np.float32), epochs=2, verbose=0, lr_max=None, lr_min=None)
+    assert model.resets == expected_resets
+    assert model.commits == 4
+    assert runtime.profile["episodes_sampled"] == 4
+
+
+def test_canonical_and_legacy_schedule_counts_are_explicit_and_deterministic():
+    X = np.arange(32, dtype=np.float32).reshape(16, 2) + 1
+    canonical = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=17, device="cpu"),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(
+                episode_length=3, batch_episodes=2, updates_per_epoch=2, random_state=17
+            )
+        ),
+    ).fit(X)
+    with pytest.warns(DeprecationWarning, match=r"fit\(\.\.\., hisso=True\)"):
+        legacy = PSANNRegressor(epochs=1, batch_size=2, random_state=17, device="cpu").fit(
+            X,
+            hisso=True,
+            hisso_window=3,
+            hisso_batch_episodes=2,
+            hisso_updates_per_epoch=2,
+        )
+    assert (
+        canonical.profile_["episodes_sampled"]
+        == legacy._hisso_trainer_.profile["episodes_sampled"]
+        == 4
+    )
+    assert canonical.estimator._hisso_cfg_.random_state == legacy._hisso_cfg_.random_state == 17
+    assert canonical.history_[0]["episodes"] == legacy._hisso_trainer_.history[0]["episodes"] == 4
