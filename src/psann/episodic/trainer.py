@@ -37,17 +37,21 @@ class EpisodicTrainer:
         return params
 
     def set_params(self, **params: object) -> "EpisodicTrainer":
-        strategy = normalize_strategy(self.strategy)
-        estimator = self.estimator
-        for name, value in params.items():
-            if name == "estimator":
-                estimator = value
-            elif name == "strategy":
-                strategy = normalize_strategy(value)  # type: ignore[arg-type]
-            elif name.startswith("strategy__"):
-                strategy = replace_strategy(strategy, name, value)
-            else:
-                raise ValueError(f"Unknown parameter {name!r}.")
+        unknown = [
+            name
+            for name in params
+            if name not in {"estimator", "strategy"} and not name.startswith("strategy__")
+        ]
+        if unknown:
+            raise ValueError(f"Unknown parameter {unknown[0]!r}.")
+        if "strategy" in params and any(name.startswith("strategy__") for name in params):
+            raise ValueError("strategy conflicts with strategy__ nested updates.")
+        estimator = params.get("estimator", self.estimator)
+        strategy = normalize_strategy(params.get("strategy", self.strategy))  # type: ignore[arg-type]
+        nested = [(name, value) for name, value in params.items() if name.startswith("strategy__")]
+        nested.sort(key=lambda item: item[0].count("__"))
+        for name, value in nested:
+            strategy = replace_strategy(strategy, name, value)
         self.estimator, self.strategy = estimator, strategy
         for name in ("estimator_", "history_", "profile_"):
             self.__dict__.pop(name, None)

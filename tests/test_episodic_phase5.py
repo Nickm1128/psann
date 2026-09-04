@@ -68,6 +68,21 @@ def test_width_one_softmax_preserves_samples_not_batch_axis():
     np.testing.assert_allclose(actions, np.ones(3, dtype=np.float32))
 
 
+def test_set_params_rebuilds_frozen_parents_transactionally():
+    trainer = EpisodicTrainer(estimator=PSANNRegressor(), strategy="hisso")
+    trainer.set_params(
+        strategy__warm_start=SupervisedWarmStartConfig(epochs=1),
+        strategy__warm_start__epochs=2,
+        strategy__schedule__batch_episodes=3,
+    )
+    assert normalize_strategy(trainer.strategy).warm_start == SupervisedWarmStartConfig(epochs=2)
+    assert normalize_strategy(trainer.strategy).schedule.batch_episodes == 3
+    before = trainer.strategy
+    with pytest.raises(ValueError, match="Unknown parameter"):
+        trainer.set_params(strategy__schedule__missing=1)
+    assert trainer.strategy == before
+
+
 def test_canonical_trainer_schema_v3_custom_callable_two_generation_closure(tmp_path):
     X = np.arange(40, dtype=np.float32).reshape(20, 2) + 1
     strategy = HISSOConfig(
