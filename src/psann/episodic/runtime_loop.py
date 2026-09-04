@@ -11,8 +11,8 @@ from torch.nn.utils import clip_grad_norm_
 from ..types import ContextExtractor, RewardFn
 from .amp import _autocast_context, _guard_cuda_capture
 from .._hisso.config import HISSOTrainerConfig
-from .._hisso.context import _call_context_extractor
-from .._hisso.reward import (
+from .context import _call_context_extractor
+from .reward import (
     _align_context_for_reward,
     _compute_reward,
     _default_reward_fn,
