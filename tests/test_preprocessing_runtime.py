@@ -74,7 +74,11 @@ def test_lsm_pretraining_changes_deterministic_module_weights_and_records_readou
 
     untrained = build(0)
     pretrained = build(1)
-    assert untrained.capabilities.serializable_kind == pretrained.capabilities.serializable_kind == "lsm"
+    assert (
+        untrained.capabilities.serializable_kind
+        == pretrained.capabilities.serializable_kind
+        == "lsm"
+    )
     assert "ols_readout" in untrained.diagnostics
     assert "ols_readout" in pretrained.diagnostics
     assert any(
@@ -132,7 +136,9 @@ def test_dense_lsm_pretraining_and_training_policy_reach_fit(
     if trainable:
         assert len(estimator._optimizer_.param_groups) == 2
         assert optimizer_groups["preprocessor"]["lr"] == pytest.approx(0.002)
-        assert {id(parameter) for parameter in optimizer_groups["preprocessor"]["params"]} == preprocessor_ids
+        assert {
+            id(parameter) for parameter in optimizer_groups["preprocessor"]["params"]
+        } == preprocessor_ids
     else:
         assert len(estimator._optimizer_.param_groups) == 1
         assert preprocessor_ids.isdisjoint(optimizer_ids)
@@ -224,9 +230,7 @@ def test_conv_lsm_pretraining_and_joint_policy_keep_weight_and_optimizer_invaria
     preprocessor_parameters = list(estimator.preprocessor_.parameters())
     preprocessor_ids = {id(parameter) for parameter in preprocessor_parameters}
     core_ids = {id(parameter) for parameter in estimator.model_.parameters()} - preprocessor_ids
-    groups = {
-        group["psann_parameter_group"]: group for group in estimator._optimizer_.param_groups
-    }
+    groups = {group["psann_parameter_group"]: group for group in estimator._optimizer_.param_groups}
     assert estimator.predict(X[:2]).shape == (2,)
     assert all(parameter.requires_grad is trainable for parameter in preprocessor_parameters)
     assert {id(parameter) for parameter in groups["core"]["params"]} == core_ids

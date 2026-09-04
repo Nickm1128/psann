@@ -80,9 +80,7 @@ class _PSANNRegressorInferenceMixin:
                 inputs_np = X_cf.astype(np.float32, copy=False)
             else:
                 model_layout = (
-                    np.moveaxis(X_cf, 1, -1)
-                    if self.data_format == "channels_last"
-                    else X_cf
+                    np.moveaxis(X_cf, 1, -1) if self.data_format == "channels_last" else X_cf
                 )
                 inputs_np = self._flatten(model_layout).astype(np.float32, copy=False)
 
