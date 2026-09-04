@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from ..training import TrainingLoopConfig, run_training_loop
-from .._hisso.amp import _guard_cuda_capture
+from .amp import _guard_cuda_capture
 from .._hisso.config import HISSOWarmStartConfig
 
 if TYPE_CHECKING:
