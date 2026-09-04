@@ -26,7 +26,6 @@ episodic:
     mixed_precision: true
     amp_dtype: float16
     warm_start:
-      y_key: y_train
       epochs: 2
       batch_size: 32
 

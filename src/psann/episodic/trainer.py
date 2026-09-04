@@ -41,6 +41,11 @@ class EpisodicTrainer:
         return params
 
     def set_params(self, **params: object) -> "EpisodicTrainer":
+        # sklearn treats an empty parameter update as a strict no-op.  In
+        # particular, it must not invalidate a fitted estimator merely because
+        # a caller forwards an empty grid-search/update mapping.
+        if not params:
+            return self
         unknown = [
             name
             for name in params
@@ -128,6 +133,17 @@ class EpisodicTrainer:
             raise ValueError("strategy.warm_start requires fit targets y.")
         if not hasattr(self.estimator, "fit"):
             raise TypeError("estimator must provide fit.")
+        target_scaler = getattr(self.estimator, "target_scaler", None)
+        if target_scaler is not None and not isinstance(target_scaler, str):
+            raise ValueError(
+                "Canonical episodic training does not support opaque custom "
+                "target_scaler objects; use None, 'standard', or 'minmax'."
+            )
+        output_shape = getattr(self.estimator, "output_shape", None)
+        if output_shape is not None and len(tuple(output_shape)) > 1:
+            raise ValueError(
+                "Canonical episodic training does not support structured output_shape actions."
+            )
         validate_reward_penalty(resolve_reward(strategy.reward), strategy.transition_penalty)
         # The estimator still owns construction/scaling/preprocessing, but the
         # typed request is consumed by its episodic stage directly. Do not
@@ -178,7 +194,7 @@ class EpisodicTrainer:
     def evaluate(self, X: np.ndarray, *, context: np.ndarray | None = None) -> float:
         strategy = normalize_strategy(self.strategy)
         estimator = self._fitted()
-        prepared, _, model_context = estimator._prepare_inference_inputs(X, context=context)
+        prepared, _, _ = estimator._prepare_inference_inputs(X, context=context)
         runtime = getattr(estimator, "_hisso_trainer_", None)
         if runtime is None:
             runtime = HISSOTrainer(
@@ -193,13 +209,14 @@ class EpisodicTrainer:
                 state_reset=str(estimator.state_reset),
                 strict=True,
             )
-        # Inference owns preprocessing, model context, output validation and
-        # inverse target scaling.  Reward evaluation consumes precisely those
-        # caller-visible values, while the runtime still owns strategy context,
-        # alignment and reward dispatch over the prepared feature tensor.
-        raw_outputs = estimator._run_model(prepared, context_np=model_context, state_updates=False)
-        values = estimator._inverse_fitted_target_scaler_like(raw_outputs)
-        return runtime.evaluate_prepared(prepared, actions=values)
+        # ``predict`` is the single caller-visible inference/action route.  It
+        # includes clean stateful sequence traversal, architecture context,
+        # output restoration, target inversion, and the primary transform.
+        # Evaluation must consume that exact action result rather than rebuild
+        # a superficially similar model call with different state or shape
+        # semantics.
+        actions = self.predict(X, context=context)
+        return runtime.evaluate_prepared(prepared, actions=actions)
 
     def save(self, path: str | Path) -> None:
         self._fitted().save(str(path))

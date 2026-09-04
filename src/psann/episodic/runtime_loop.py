@@ -375,7 +375,10 @@ class HISSOTrainer:
         else:
             action_tensor = torch.as_tensor(actions, dtype=data.dtype, device=self.device)
             action_tensor = action_tensor.reshape(1, data.shape[0], -1)
-            action_tensor = self._apply_primary_transform(action_tensor, apply_postprocessor=False)
+            # Supplied actions are the public ``EpisodicTrainer.predict``
+            # result: target-inverted and transformed exactly once already.
+            # Applying the transform here would make evaluate differ from
+            # predict (notably for softmax).
         return float(self._coerce_reward(action_tensor, context).mean().detach().cpu())
 
     def _reset_state_if_needed(self, cadence: str) -> None:

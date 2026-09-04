@@ -1144,6 +1144,49 @@ def test_canonical_stateful_prediction_uses_clean_noncommitting_sequence_route(m
     ]
 
 
+def test_canonical_stateful_evaluation_consumes_the_same_sequence_actions(monkeypatch):
+    """Evaluation cannot bypass the clean stateful caller-visible route."""
+
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    estimator = PSANNRegressor(
+        epochs=1,
+        batch_size=2,
+        random_state=0,
+        stateful=True,
+        state=StateConfig(rho=0.9),
+        state_reset="batch",
+    )
+    trainer = EpisodicTrainer(
+        estimator=estimator,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1),
+            reward=lambda actions, _context, **_kwargs: actions.mean(dim=(-1, -2)),
+        ),
+    ).fit(X)
+    calls: list[dict[str, object]] = []
+
+    def sentinel(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return np.full(len(args[0]), 42.0, dtype=np.float32)
+
+    monkeypatch.setattr(estimator, "predict_sequence", sentinel)
+    np.testing.assert_allclose(trainer.predict(X[:3]), 42.0)
+    assert trainer.evaluate(X[:3]) == pytest.approx(42.0)
+    assert calls == [
+        {"context": None, "reset_state": True, "return_sequence": True, "update_state": False},
+        {"context": None, "reset_state": True, "return_sequence": True, "update_state": False},
+    ]
+
+
+def test_canonical_episodic_rejects_structured_actions_before_optimizer_construction():
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    estimator = PSANNRegressor(epochs=1, batch_size=2, output_shape=(2, 2), random_state=0)
+    trainer = EpisodicTrainer(estimator=estimator, strategy="hisso")
+    with pytest.raises(ValueError, match="structured output_shape"):
+        trainer.fit(X)
+    assert not hasattr(estimator, "model_")
+
+
 @pytest.mark.parametrize(
     ("state_reset", "expected_resets"),
     [("batch", 2), ("epoch", 1), ("none", 0)],
@@ -1218,6 +1261,52 @@ def test_canonical_actions_use_target_units_in_training_prediction_and_evaluatio
     # The training action is target-inverted too: raw standardized output near
     # zero would not be in the user-facing hundred-scale target range.
     assert abs(float(seen[0].mean())) > 20.0
+
+
+@pytest.mark.parametrize(
+    ("target_scaler", "expected_kind"),
+    [(None, None), ("standard", "standard"), ("minmax", "minmax")],
+)
+def test_canonical_episodic_supported_target_scalers_keep_one_action_unit(
+    target_scaler, expected_kind
+):
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) + 1
+    y = np.linspace(100.0, 180.0, len(X), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            epochs=1, batch_size=2, random_state=0, target_scaler=target_scaler
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=len(X)),
+            reward=lambda actions, _context, **_kwargs: actions.mean(dim=(-1, -2)),
+        ),
+    ).fit(X, y)
+    actions = trainer.predict(X[:3])
+    assert trainer.estimator._target_scaler_kind_ == expected_kind
+    assert trainer.evaluate(X[:3]) == pytest.approx(float(actions.mean()), rel=1e-6)
+
+
+def test_canonical_episodic_rejects_opaque_custom_target_scaler_before_training():
+    class _OffsetScaler:
+        fitted = False
+
+        def fit(self, values):
+            self.fitted = True
+            return self
+
+        def transform(self, values):
+            return values - 100.0
+
+        def inverse_transform(self, values):
+            return values + 100.0
+
+    X = np.arange(16, dtype=np.float32).reshape(8, 2)
+    scaler = _OffsetScaler()
+    estimator = PSANNRegressor(epochs=1, batch_size=2, target_scaler=scaler, random_state=0)
+    with pytest.raises(ValueError, match="opaque custom target_scaler"):
+        EpisodicTrainer(estimator=estimator, strategy="hisso").fit(X, X[:, 0] + 100.0)
+    assert scaler.fitted is False
+    assert not hasattr(estimator, "model_")
 
 
 def test_canonical_wave_context_changes_training_prediction_and_evaluation_actions():
@@ -1323,6 +1412,24 @@ def test_canonical_wrapper_rolls_back_partially_mutating_estimator_updates():
         )
     assert estimator.value == "original"
     assert trainer.strategy is previous_strategy
+
+
+def test_canonical_wrapper_empty_set_params_preserves_fitted_state():
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=0), strategy="hisso"
+    ).fit(X)
+    before_actions = trainer.predict(X[:3])
+    before_estimator = trainer.estimator
+    before_strategy = trainer.strategy
+    before_history = trainer.history_
+    before_profile = trainer.profile_
+    assert trainer.set_params() is trainer
+    assert trainer.estimator is before_estimator
+    assert trainer.strategy is before_strategy
+    assert trainer.history_ is before_history
+    assert trainer.profile_ is before_profile
+    np.testing.assert_allclose(trainer.predict(X[:3]), before_actions)
 
 
 def test_canonical_short_series_profile_and_schema_effective_metadata_are_truthful(tmp_path):

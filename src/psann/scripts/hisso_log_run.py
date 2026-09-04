@@ -451,6 +451,8 @@ def _episodes_from_history(history: list[dict]) -> int:
 def _normalise_canonical_cli_strategy(value: object) -> HISSOConfig:
     """Resolve the maintained tagged strategy without a legacy round trip."""
 
+    if isinstance(value, str):
+        return normalize_strategy(value)
     if not isinstance(value, Mapping):
         raise TypeError("episodic.strategy must be a tagged mapping or the hisso preset.")
     raw = dict(value)

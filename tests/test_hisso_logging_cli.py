@@ -192,6 +192,21 @@ def test_hisso_logging_cli_rejects_target_selection_inside_canonical_warm_start(
         )
 
 
+def test_hisso_logging_cli_accepts_hisso_preset_and_all_maintained_templates():
+    assert isinstance(
+        hisso_log_run._normalise_canonical_cli_strategy("hisso"), hisso_log_run.HISSOConfig
+    )
+    configs_dir = Path(__file__).resolve().parents[1] / "configs" / "hisso"
+    config_paths = sorted(configs_dir.glob("*.yaml"))
+    assert config_paths
+    for path in config_paths:
+        config = hisso_log_run._load_config(path)
+        assert isinstance(
+            hisso_log_run._normalise_canonical_cli_strategy(config["episodic"]["strategy"]),
+            hisso_log_run.HISSOConfig,
+        )
+
+
 def test_hisso_logging_cli_respects_output_dir(tmp_path):
     config_path = tmp_path / "config.json"
     _write_config(config_path)

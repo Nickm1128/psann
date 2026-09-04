@@ -474,9 +474,9 @@ class _PSANNRegressorScalingMixin:
 
         Canonical episodic rewards are expressed in the same user-facing target
         units as ``predict``.  The built-in scaler state is affine, so retaining
-        the operation in torch preserves the reward gradient.  A custom scaler
-        cannot promise that property; it is deliberately left unchanged here,
-        matching its opaque estimator-level contract.
+        the operation in torch preserves the reward gradient.  Opaque custom
+        target scalers are rejected by ``EpisodicTrainer.fit`` before training;
+        this fallback only preserves the ordinary estimator contract.
         """
 
         kind = getattr(self, "_target_scaler_kind_", None)
