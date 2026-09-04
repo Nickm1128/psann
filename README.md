@@ -387,51 +387,46 @@ print("Conv WaveResNet R^2:", conv_wave.score(frames, targets))
 The canonical configuration keeps the WaveResNet backbone while inserting a learnable
 convolutional stem and attention before the dense WaveResNet readout.
 
-### Episodic HISSO with `HISSOOptions`
+### Episodic HISSO with `EpisodicTrainer`
 
 ```python
 import numpy as np
-from psann import PSANNRegressor, get_reward_strategy, HISSOOptions
+from psann import PSANNRegressor
+from psann.episodic import (
+    EpisodeScheduleConfig,
+    EpisodicTrainer,
+    HISSOConfig,
+    SupervisedWarmStartConfig,
+)
 
 rng = np.random.default_rng(7)
 X = rng.normal(size=(512, 4)).astype(np.float32)
 targets = np.sin(X.sum(axis=1, keepdims=True)).astype(np.float32)
 
 model = PSANNRegressor(hidden_layers=2, hidden_units=48, epochs=40, batch_size=64)
-model.fit(X, targets, verbose=1)  # supervised warm start
-
-finance = get_reward_strategy("finance")
-options = HISSOOptions.from_kwargs(
-    window=64,
-    batch_episodes=8,
-    updates_per_epoch=4,
-    reward_fn=finance.reward_fn,
-    context_extractor=finance.context_extractor,
-    primary_transform="softmax",
-    transition_penalty=0.05,
-    input_noise=0.0,
-    supervised={"y": targets},
+trainer = EpisodicTrainer(
+    estimator=model,
+    strategy=HISSOConfig(
+        schedule=EpisodeScheduleConfig(episode_length=64, batch_episodes=8, updates_per_epoch=4),
+        reward="finance",
+        primary_transform="softmax",
+        transition_penalty=0.05,
+        warm_start=SupervisedWarmStartConfig(epochs=2),
+    ),
 )
-
-model.fit(
+trainer.fit(
     X,
-    y=None,
-    hisso=True,
-    hisso_window=options.episode_length,
-    hisso_batch_episodes=options.batch_episodes,
-    hisso_updates_per_epoch=options.updates_per_epoch,
-    hisso_reward_fn=options.reward_fn,
-    hisso_context_extractor=options.context_extractor,
-    hisso_primary_transform=options.primary_transform,
-    hisso_transition_penalty=options.transition_penalty,
-    hisso_supervised=options.supervised,
+    y=targets,
     verbose=1,
 )
 ```
 
-`HISSOOptions` keeps reward, context, noise, and transformation choices in one place. The estimator records the resolved options after fitting so helpers such as `psann.hisso_infer_series` and `psann.hisso_evaluate_reward` can reuse them.
-Suggested HISSO schedule presets: CPU start with `hisso_batch_episodes=8` / `hisso_updates_per_epoch=4`; CUDA start with `hisso_batch_episodes=16` / `hisso_updates_per_epoch=4` and scale batch episodes with available VRAM.
-If a custom `hisso_context_extractor` only accepts NumPy arrays, HISSO emits a one-time warning because the fallback path can introduce host/device transfers.
+`HISSOConfig` keeps reward, context, schedule, warm-start, and transformation choices
+immutable in one place. `trainer.predict(...)` returns transformed actions and
+`trainer.evaluate(...)` applies the configured reward to a complete observed series.
+Suggested starting schedules are `batch_episodes=8, updates_per_epoch=4` on CPU and
+`batch_episodes=16, updates_per_epoch=4` on CUDA. Custom context extractors are
+tensor-native and must return an aligned tensor.
 
 ### Context builders
 

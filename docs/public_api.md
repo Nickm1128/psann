@@ -13,13 +13,12 @@ These are the identifiers exported from `psann.__init__` and are safe to import 
   `.for_sequence`, or `.geometric_sparse` for new code.
 
 ### Episodic training (HISSO)
-- `HISSOOptions`
-- `EpisodeTrainer`, `EpisodeConfig`
-- `hisso_infer_series`, `hisso_evaluate_reward`
-- `get_reward_strategy`, `register_reward_strategy`
-- `RewardStrategyBundle`, `FINANCE_PORTFOLIO_STRATEGY`
-- `multiplicative_return_reward`, `portfolio_log_return_reward`
-- `make_episode_trainer_from_estimator`
+- `EpisodicTrainer`, `HISSOConfig`, `EpisodeScheduleConfig`, and
+  `SupervisedWarmStartConfig` from `psann.episodic`.
+- `RewardStrategy`, `RewardStrategyBundle`, `get_reward_strategy`, and
+  `register_reward_strategy` from `psann.episodic`.
+- The 0.x `HISSOOptions`, `EpisodeTrainer`, `hisso_infer_series`, and related
+  episode/HISSO helpers remain explicit deprecated compatibility imports.
 
 ### Expanders and activation config
 - `PreprocessorConfig`, `LSMConfig`, `LSMPretrainingConfig`,
