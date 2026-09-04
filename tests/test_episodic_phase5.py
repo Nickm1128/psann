@@ -316,6 +316,61 @@ def test_canonical_runtime_honors_schedule_clip_and_invalidation(monkeypatch):
         assert name not in estimator.__dict__
 
 
+def test_canonical_gradient_clip_none_is_effective_and_never_invokes_clipping(monkeypatch):
+    from psann.episodic import runtime_loop
+
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("gradient clipping must be disabled")
+
+    monkeypatch.setattr(runtime_loop, "clip_grad_norm_", fail_if_called)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=0, device="cpu"),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1), gradient_clip=None
+        ),
+    ).fit(np.ones((6, 2), dtype=np.float32))
+    assert trainer.profile_["gradient_clip"] is None
+
+
+def test_canonical_stateful_warm_start_rejects_explicit_shuffle():
+    X = np.ones((6, 2), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            epochs=1, batch_size=2, stateful=True, state_reset="epoch", device="cpu"
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2),
+            warm_start=SupervisedWarmStartConfig(epochs=1, shuffle=True),
+        ),
+    )
+    with pytest.raises(ValueError, match="warm_start.shuffle=True"):
+        trainer.fit(X, X[:, 0])
+
+
+def test_canonical_transform_is_applied_once_in_training_prediction_and_evaluation():
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) + 1
+    observed: list[torch.Tensor] = []
+
+    def reward(actions, context, **_kwargs):
+        observed.append(actions.detach().cpu())
+        return -(actions - context).square().mean(dim=(-1, -2))
+
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=0, device="cpu"),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1),
+            reward=reward,
+            primary_transform="softmax",
+        ),
+    ).fit(X, np.ones((len(X), 2), dtype=np.float32))
+    raw = trainer.estimator.predict(X[:3])
+    np.testing.assert_allclose(trainer.predict(X[:3]), transform_actions(raw, "softmax"), rtol=1e-6)
+    assert np.isfinite(trainer.evaluate(X[:3]))
+    assert len(observed) >= 2
+    for actions in observed:
+        torch.testing.assert_close(actions.sum(dim=-1), torch.ones_like(actions[..., 0]))
+
+
 @pytest.mark.parametrize(
     "extractor, message",
     [
