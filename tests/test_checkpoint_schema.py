@@ -17,7 +17,7 @@ from psann.architectures import (
 from psann.lsm import LSMConv2dExpander, LSMExpander
 
 
-def test_schema_v2_round_trip_does_not_store_final_module(tmp_path):
+def test_schema_v3_round_trip_does_not_store_final_module(tmp_path):
     X = np.ones((8, 2), dtype=np.float32)
     estimator = PSANNRegressor(epochs=1, batch_size=4, random_state=0).fit(
         X, np.ones(8, dtype=np.float32)
@@ -26,7 +26,8 @@ def test_schema_v2_round_trip_does_not_store_final_module(tmp_path):
     estimator.save(str(path))
     payload = torch.load(path, weights_only=False)
     assert payload["schema"] == "psann.regressor"
-    assert payload["schema_version"] == 2
+    assert payload["schema_version"] == 3
+    assert payload["fitted"]["episodic"] is None
     assert "model" not in payload
     loaded = PSANNRegressor.load(str(path))
     np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]))
@@ -60,7 +61,7 @@ def test_schema_v1_round_trip_reconstructs_lsm_preprocessor(tmp_path):
     np.testing.assert_allclose(loaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
 
 
-def test_schema_v1_legacy_lsm_mapping_migrates_to_v2(tmp_path):
+def test_schema_v1_legacy_lsm_mapping_migrates_to_v3(tmp_path):
     """A schema-v1 mapping rebuilds its module before strict state loading."""
 
     X = np.arange(24, dtype=np.float32).reshape(8, 3) / 10
@@ -101,7 +102,7 @@ def test_schema_v1_legacy_lsm_mapping_migrates_to_v2(tmp_path):
     torch.save(payload, legacy)
     restored = PSANNRegressor.load(str(legacy), map_location="cpu")
     restored.save(str(migrated))
-    assert torch.load(migrated, weights_only=False)["schema_version"] == 2
+    assert torch.load(migrated, weights_only=False)["schema_version"] == 3
     np.testing.assert_allclose(restored.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
 
 

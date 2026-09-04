@@ -158,6 +158,131 @@ def _schema_v2_preprocessor_with_artifact(value: object, artifacts: Mapping[str,
     return value
 
 
+def _schema_v3_episodic_with_artifacts(
+    value: object, artifacts: Mapping[str, object]
+) -> tuple[object | None, list[object], dict[str, object]]:
+    """Validate and reconstruct the schema-v3 episodic cross-field contract.
+
+    Callable metadata deliberately has no import-path escape hatch.  It is either
+    paired with its serialized callable artifact or rejected at the field that is
+    malformed, before estimator reconstruction can report an unrelated topology
+    diagnostic.
+    """
+
+    metadata_path = "Schema-v3 fitted.episodic"
+    callable_fields = {
+        "reward": "episodic_reward",
+        "context_extractor": "episodic_context",
+    }
+    present_artifacts = [key for key in callable_fields.values() if key in artifacts]
+    if value is None:
+        if present_artifacts:
+            raise ValueError(
+                f"Schema-v3 artifacts.{present_artifacts[0]} is unexpected without "
+                "fitted.episodic metadata."
+            )
+        return None, [], {}
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{metadata_path} must be a mapping or None.")
+    raw = dict(value)
+    allowed = {"kind", "config", "effective", "history", "profile"}
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise ValueError(f"{metadata_path}.{unknown[0]} is unknown.")
+    for key in ("kind", "config", "effective", "history", "profile"):
+        if key not in raw:
+            raise ValueError(f"{metadata_path}.{key} is missing.")
+    if raw["kind"] != "hisso":
+        raise ValueError(f"{metadata_path}.kind must be hisso.")
+    if not isinstance(raw["config"], Mapping):
+        raise TypeError(f"{metadata_path}.config must be a mapping.")
+    config = dict(raw["config"])
+    if config.get("kind") != "hisso":
+        raise ValueError(f"{metadata_path}.config.kind must be hisso.")
+    for field, artifact_key in callable_fields.items():
+        descriptor = config.get(field)
+        artifact_path = f"Schema-v3 artifacts.{artifact_key}"
+        if isinstance(descriptor, Mapping):
+            descriptor_raw = dict(descriptor)
+            if set(descriptor_raw) != {"kind"}:
+                raise ValueError(f"{metadata_path}.config.{field} callable descriptor is invalid.")
+            if descriptor_raw["kind"] != "callable":
+                raise ValueError(f"{metadata_path}.config.{field}.kind must be callable.")
+            artifact = artifacts.get(artifact_key)
+            if not callable(artifact):
+                raise ValueError(f"{artifact_path} is missing or invalid.")
+            config[field] = artifact
+        else:
+            if artifact_key in artifacts:
+                raise ValueError(
+                    f"{artifact_path} is unexpected without callable "
+                    f"{metadata_path}.config.{field} metadata."
+                )
+            if field == "reward" and not isinstance(descriptor, str):
+                raise TypeError(f"{metadata_path}.config.reward must be a registered name or callable descriptor.")
+            if field == "context_extractor" and descriptor is not None:
+                raise TypeError(f"{metadata_path}.config.context_extractor must be null or a callable descriptor.")
+    if not isinstance(raw["effective"], Mapping):
+        raise TypeError(f"{metadata_path}.effective must be a mapping.")
+    if not isinstance(raw["history"], list):
+        raise TypeError(f"{metadata_path}.history must be a list.")
+    if not isinstance(raw["profile"], Mapping):
+        raise TypeError(f"{metadata_path}.profile must be a mapping.")
+    try:
+        from ..episodic import normalize_strategy
+
+        strategy = normalize_strategy(config)
+    except (TypeError, ValueError) as exc:
+        message = str(exc).replace("strategy", f"{metadata_path}.config", 1)
+        raise type(exc)(message) from exc
+    return strategy, list(raw["history"]), dict(raw["profile"])
+
+
+def _migrate_legacy_hisso_strategy(fitted: Mapping[str, object], artifacts: Mapping[str, object]) -> object | None:
+    """Translate v1/v2 HISSO metadata into the canonical immutable strategy."""
+
+    if not fitted.get("hisso_trained"):
+        return None
+    options = fitted.get("hisso_options") or {}
+    cfg = fitted.get("hisso_cfg") or {}
+    if not isinstance(options, Mapping):
+        options = vars(options) if hasattr(options, "__dict__") else {}
+    if not isinstance(cfg, Mapping):
+        cfg = vars(cfg) if hasattr(cfg, "__dict__") else {}
+    if not options:
+        return None
+    episode_length = options.get("episode_length", cfg.get("episode_length", 64))
+    batch = options.get("batch_episodes", 32)
+    updates = options.get("updates_per_epoch")
+    if updates is None:
+        batch, updates = 1, batch
+    reward = options.get("reward_fn", artifacts.get("hisso_reward_fn", "default"))
+    # Historical default functions have no stable public import path; migrate
+    # their known names to the durable registry discriminator.
+    if getattr(reward, "__name__", "") in {"_default_reward_fn", "default_reward"}:
+        reward = "default"
+    elif getattr(reward, "__name__", "") == "multiplicative_return_reward":
+        reward = "finance"
+    try:
+        from ..episodic import HISSOConfig, EpisodeScheduleConfig
+
+        return HISSOConfig(
+            schedule=EpisodeScheduleConfig(
+                episode_length=cast(int, episode_length),
+                batch_episodes=cast(int, batch),
+                updates_per_epoch=cast(int, updates),
+                random_state=cfg.get("random_state"),
+            ),
+            primary_transform=cast(str, options.get("primary_transform", "identity")),
+            transition_penalty=cast(float, options.get("transition_penalty", 0.0)),
+            reward=reward,
+            context_extractor=options.get("context_extractor"),
+            input_noise_std=options.get("input_noise_std"),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _activation_mapping(config: ArchitectureConfig) -> dict[str, object]:
     activation = config.activation
     return {
@@ -1498,9 +1623,35 @@ class PSANNRegressor(_Phase2Regressor):
         structure = dict(getattr(self, "_architecture_structure_", {}) or {})
         if self._architecture_lifecycle_:
             structure.update(self._architecture_lifecycle_.structure_metadata())
+        episodic_strategy = getattr(self, "_episodic_strategy_", None)
+        if episodic_strategy is None:
+            episodic_strategy = _migrate_legacy_hisso_strategy(fitted, artifacts)
+        if episodic_strategy is None:
+            fitted["episodic"] = None
+        else:
+            from ..episodic import strategy_to_mapping
+
+            episodic_mapping = strategy_to_mapping(episodic_strategy)
+            reward_descriptor = episodic_mapping["reward"]
+            if isinstance(reward_descriptor, Mapping):
+                artifacts["episodic_reward"] = episodic_strategy.reward
+            context_descriptor = episodic_mapping["context_extractor"]
+            if isinstance(context_descriptor, Mapping):
+                artifacts["episodic_context"] = episodic_strategy.context_extractor
+            fitted["episodic"] = {
+                "kind": "hisso",
+                "config": episodic_mapping,
+                "effective": {
+                    "episode_length": episodic_strategy.schedule.episode_length,
+                    "batch_episodes": episodic_strategy.schedule.batch_episodes,
+                    "updates_per_epoch": episodic_strategy.schedule.updates_per_epoch,
+                },
+                "history": list(getattr(self, "_episodic_history_", ())),
+                "profile": dict(getattr(self, "_episodic_profile_", {})),
+            }
         payload = {
             "schema": "psann.regressor",
-            "schema_version": 2,
+            "schema_version": 3,
             "package_version": "0.12.4",
             "estimator_params": params,
             "fitted": fitted,
@@ -1515,6 +1666,11 @@ class PSANNRegressor(_Phase2Regressor):
                 raise TypeError(
                     "Schema-v2 artifacts.preprocessor_module could not be serialized; "
                     "use an importable torch.nn.Module class."
+                ) from exc
+            if "episodic_reward" in artifacts or "episodic_context" in artifacts:
+                raise TypeError(
+                    "Schema-v3 episodic callable artifacts could not be serialized; "
+                    "use a registered reward name or an importable callable."
                 ) from exc
             raise
 
@@ -1859,8 +2015,11 @@ class PSANNRegressor(_Phase2Regressor):
             ).capabilities
             return migrated
         version = payload.get("schema_version")
-        if version not in {1, 2}:
+        if version not in {1, 2, 3}:
             raise ValueError(f"Unsupported psann.regressor schema version {version!r}.")
+        raw_artifacts = payload.get("artifacts", {})
+        if version == 3 and not isinstance(raw_artifacts, Mapping):
+            raise TypeError("Schema-v3 artifacts must be a mapping.")
         raw_params = dict(payload.get("estimator_params", {}))
         # Device selection is a reconstruction input, not a post-load cosmetic
         # update.  Otherwise a CUDA-saved payload attempts CUDA construction on
@@ -1868,8 +2027,18 @@ class PSANNRegressor(_Phase2Regressor):
         if map_location is not None:
             raw_params["device"] = torch.device(map_location)
         raw_preprocessor = raw_params.get("preprocessor")
-        artifacts = dict(payload.get("artifacts", {}))
-        if version == 2:
+        artifacts = dict(cast(Mapping[str, object], raw_artifacts))
+        episodic_strategy: object | None = None
+        episodic_history: list[object] = []
+        episodic_profile: dict[str, object] = {}
+        raw_fitted = payload.get("fitted", {})
+        if version == 3:
+            if not isinstance(raw_fitted, Mapping):
+                raise TypeError("Schema-v3 fitted must be a mapping.")
+            episodic_strategy, episodic_history, episodic_profile = (
+                _schema_v3_episodic_with_artifacts(raw_fitted.get("episodic"), artifacts)
+            )
+        if version in {2, 3}:
             raw_params["preprocessor"] = _schema_v2_preprocessor_with_artifact(
                 raw_preprocessor, artifacts
             )
@@ -1877,6 +2046,8 @@ class PSANNRegressor(_Phase2Regressor):
             raise ValueError("Schema-v1 checkpoint is missing estimator_params.architecture.")
         estimator = cls(**raw_params)
         fitted: dict[str, Any] = dict(payload.get("fitted", {}))
+        if version in {1, 2}:
+            episodic_strategy = _migrate_legacy_hisso_strategy(fitted, artifacts)
         estimator._legacy_flattened_preserve_shape_ = bool(
             fitted.get("legacy_flattened_preserve_shape", False)
         )
@@ -1892,11 +2063,11 @@ class PSANNRegressor(_Phase2Regressor):
         has_preprocessor = state_dict and any(str(key).startswith("preproc.") for key in state_dict)
         if estimator.preprocessor is not None:
             preprocessing = fitted.get("preprocessing")
-            if version == 2 and not isinstance(preprocessing, Mapping):
+            if version in {2, 3} and not isinstance(preprocessing, Mapping):
                 raise ValueError("Schema-v2 checkpoint is missing fitted.preprocessing metadata.")
             if not isinstance(preprocessing, Mapping):
                 preprocessing = {}
-            if version == 2:
+            if version in {2, 3}:
                 for key in ("input_topology", "output_topology", "output_dim"):
                     if key not in preprocessing:
                         raise ValueError(f"Schema-v2 fitted.preprocessing.{key} is missing.")
@@ -2073,7 +2244,10 @@ class PSANNRegressor(_Phase2Regressor):
                 )
         estimator._optimizer_ = None
         estimator._hisso_trainer_ = None
-        estimator._hisso_reward_fn_ = dict(payload.get("artifacts", {})).get("hisso_reward_fn")
+        estimator._hisso_reward_fn_ = artifacts.get("hisso_reward_fn")
+        estimator._episodic_strategy_ = episodic_strategy
+        estimator._episodic_history_ = episodic_history
+        estimator._episodic_profile_ = episodic_profile
         return estimator
 
 

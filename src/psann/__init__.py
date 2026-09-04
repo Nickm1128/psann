@@ -11,6 +11,10 @@ __all__ = [
     # Estimators
     "AttentionConfig",
     "PSANNRegressor",
+    "EpisodicTrainer",
+    "EpisodeScheduleConfig",
+    "HISSOConfig",
+    "SupervisedWarmStartConfig",
     # Expanders / activation configs
     "LSM",
     "LSMExpander",
@@ -74,6 +78,10 @@ _LAZY_ATTRS = {
     # Estimator surfaces
     "AttentionConfig": ".attention",
     "PSANNRegressor": ".sklearn",
+    "EpisodicTrainer": ".episodic",
+    "EpisodeScheduleConfig": ".episodic",
+    "HISSOConfig": ".episodic",
+    "SupervisedWarmStartConfig": ".episodic",
     "ResPSANNRegressor": ".sklearn",
     "ResConvPSANNRegressor": ".sklearn",
     "SGRPSANNRegressor": ".sklearn",
