@@ -37,7 +37,11 @@ Issues = "https://github.com/psann-project/psann/issues"
 Documentation = "https://github.com/psann-project/psann/tree/main/docs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["psannlm"]
+only-include = ["__init__.py", "__main__.py", "cli.py", "train.py", "sft.py", "eval_adapter.py", "data_loader.py", "data_stream.py", "lm", "_train", "architectures"]
+sources = {"" = "psannlm"}
+
+[tool.hatch.build.targets.sdist]
+only-include = ["__init__.py", "__main__.py", "cli.py", "train.py", "sft.py", "eval_adapter.py", "data_loader.py", "data_stream.py", "lm", "_train", "architectures", "pyproject.toml", "README.md", "LICENSE"]
 
 [tool.hatch.build]
 exclude = [
