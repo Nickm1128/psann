@@ -113,6 +113,7 @@ def test_dense_lsm_pretraining_and_training_policy_reach_fit(
         epochs=1,
         batch_size=4,
         random_state=0,
+        warm_start=True,
     ).fit(X, y)
     assert estimator.model_.preproc is estimator.preprocessor_
     assert estimator.preprocessor_capabilities_.output_dim == 4
@@ -142,6 +143,18 @@ def test_dense_lsm_pretraining_and_training_policy_reach_fit(
     else:
         assert len(estimator._optimizer_.param_groups) == 1
         assert preprocessor_ids.isdisjoint(optimizer_ids)
+    before_second_fit = [
+        parameter.detach().clone() for parameter in estimator.preprocessor_.parameters()
+    ]
+    estimator.fit(X, y)
+    after_second_fit = list(estimator.preprocessor_.parameters())
+    assert (
+        any(
+            not torch.equal(before, after.detach())
+            for before, after in zip(before_second_fit, after_second_fit)
+        )
+        is trainable
+    )
 
 
 def test_canonical_preprocessor_shallow_params_exclude_legacy_lsm_names() -> None:

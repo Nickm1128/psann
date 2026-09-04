@@ -9,6 +9,7 @@ from psann.preprocessing import (
     LSMPretrainingConfig,
     PreprocessorConfig,
     PreprocessorTrainingConfig,
+    normalize_legacy_lsm,
     normalize_preprocessor,
     preprocessor_to_mapping,
 )
@@ -89,6 +90,61 @@ def test_canonical_mapping_alias_matrix_normalizes_without_mutation(
 
 
 @pytest.mark.parametrize(
+    ("value", "expected_topology", "expected_field"),
+    [
+        ({"type": "lsm", "hidden_width": 6}, "dense", "hidden_units"),
+        ({"type": "lsmconv2d", "out_channels": 6}, "conv2d", "output_dim"),
+        ({"type": "lsmconv2d", "hidden_channels": 6}, "conv2d", "hidden_units"),
+    ],
+    ids=["dense-hidden-width", "conv2d-out-channels", "conv2d-hidden-channels"],
+)
+def test_legacy_mapping_topology_specific_aliases_normalize(
+    value: dict[str, object], expected_topology: str, expected_field: str
+) -> None:
+    source = dict(value)
+    normalized = normalize_legacy_lsm(source)
+    assert normalized is not None
+    assert normalized.component.topology == expected_topology
+    assert getattr(normalized.component, expected_field) == 6
+    assert source == value
+
+
+@pytest.mark.parametrize(
+    ("value", "path"),
+    [
+        ({"kind": "lsm", "lsm": {"topology": "dense", "out_channels": 4}}, "out_channels"),
+        (
+            {"kind": "lsm", "lsm": {"topology": "dense", "hidden_channels": 4}},
+            "hidden_channels",
+        ),
+        ({"kind": "lsm", "lsm": {"topology": "conv2d", "hidden_width": 4}}, "hidden_width"),
+    ],
+    ids=["dense-out-channels", "dense-hidden-channels", "conv2d-hidden-width"],
+)
+def test_canonical_mapping_rejects_topology_inapplicable_aliases(
+    value: dict[str, object], path: str
+) -> None:
+    with pytest.raises(ValueError, match=rf"preprocessor\.lsm\.{path}"):
+        normalize_preprocessor(value)
+
+
+@pytest.mark.parametrize(
+    ("value", "path"),
+    [
+        ({"type": "lsm", "out_channels": 4}, "out_channels"),
+        ({"type": "lsm", "hidden_channels": 4}, "hidden_channels"),
+        ({"type": "lsmconv2d", "hidden_width": 4}, "hidden_width"),
+    ],
+    ids=["dense-out-channels", "dense-hidden-channels", "conv2d-hidden-width"],
+)
+def test_legacy_mapping_rejects_topology_inapplicable_aliases(
+    value: dict[str, object], path: str
+) -> None:
+    with pytest.raises(ValueError, match=rf"lsm\.{path}"):
+        normalize_legacy_lsm(value)
+
+
+@pytest.mark.parametrize(
     ("value", "path"),
     [
         ({"kind": "lsm", "lsm": [], "training": {}}, "preprocessor.lsm"),
@@ -102,7 +158,13 @@ def test_canonical_mapping_alias_matrix_normalizes_without_mutation(
         ({"kind": "lsm", "lsm": {"pretraining": {"epochs": "1"}}}, "epochs"),
         ({"kind": "lsm", "lsm": {"pretraining": {"noisy": [0.1, "bad"]}}}, "noisy"),
         ({"kind": "lsm", "lsm": {"output_dim": 4}, "training": {"lr": "0.1"}}, "lr"),
-        ({"kind": "lsm", "lsm": {"output_dim": 4, "out_channels": 5}}, "conflicting"),
+        (
+            {
+                "kind": "lsm",
+                "lsm": {"topology": "conv2d", "output_dim": 4, "out_channels": 5},
+            },
+            "conflicting",
+        ),
     ],
 )
 def test_canonical_mapping_adversarial_type_and_domain_matrix(

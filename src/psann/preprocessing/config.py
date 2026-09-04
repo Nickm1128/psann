@@ -335,11 +335,20 @@ def normalize_preprocessor(value: PreprocessorLike) -> PreprocessorConfig | None
     if not isinstance(lsm, Mapping):
         raise TypeError("preprocessor.lsm must be a mapping.")
     lsm_raw = dict(lsm)
-    aliases = {
-        "out_channels": "output_dim",
-        "hidden_width": "hidden_units",
-        "hidden_channels": "hidden_units",
-    }
+    topology = _name(lsm_raw.get("topology", "dense"), "preprocessor.lsm.topology")
+    if topology not in {"dense", "conv2d"}:
+        raise ValueError("preprocessor.lsm.topology must be dense or conv2d.")
+    aliases = (
+        {"hidden_width": "hidden_units"}
+        if topology == "dense"
+        else {"out_channels": "output_dim", "hidden_channels": "hidden_units"}
+    )
+    invalid_aliases = (
+        {"out_channels", "hidden_channels"} if topology == "dense" else {"hidden_width"}
+    )
+    for alias in invalid_aliases:
+        if alias in lsm_raw:
+            raise ValueError(f"preprocessor.lsm.{alias} is not valid for {topology} topology.")
     for old, new in aliases.items():
         if old in lsm_raw:
             if new in lsm_raw and lsm_raw[old] != lsm_raw[new]:
@@ -399,13 +408,24 @@ def normalize_legacy_lsm(
         conv = True
     elif tag not in {"lsm", "lsmexpander"}:
         raise ValueError(f"lsm.kind {tag!r} is unknown.")
-    aliases = {
-        "out_channels": "output_dim",
-        "hidden_width": "hidden_units",
-        "hidden_channels": "hidden_units",
-    }
-    if conv:
-        aliases["conv_channels"] = "hidden_units"
+    topology = "conv2d" if conv else "dense"
+    aliases = (
+        {"hidden_width": "hidden_units"}
+        if topology == "dense"
+        else {
+            "out_channels": "output_dim",
+            "hidden_channels": "hidden_units",
+            "conv_channels": "hidden_units",
+        }
+    )
+    invalid_aliases = (
+        {"out_channels", "hidden_channels", "conv_channels"}
+        if topology == "dense"
+        else {"hidden_width"}
+    )
+    for alias in invalid_aliases:
+        if alias in raw:
+            raise ValueError(f"lsm.{alias} is not valid for {topology} topology.")
     for old, new in aliases.items():
         if old in raw:
             if raw[old] is None:
