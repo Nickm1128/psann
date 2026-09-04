@@ -6,6 +6,17 @@ from pathlib import Path
 from psann.scripts import hisso_log_run
 
 
+def test_hisso_logging_cli_remains_included_in_the_wheel_package_definition():
+    """The public module CLI must survive the clean-wheel boundary."""
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    wheel_config = pyproject.read_text(encoding="utf-8").split(
+        "[tool.hatch.build.targets.sdist]", 1
+    )[0]
+    assert 'packages = ["src/psann"]' in wheel_config
+    assert '"scripts",' not in wheel_config
+
+
 def _write_config(path: Path) -> None:
     config = {
         "estimator": {
