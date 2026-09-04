@@ -23,7 +23,7 @@ package-registry release.
 
 - **Primary-output pipeline** - predictive extras and growth schedules were removed. Constructors ignore legacy `extras_*` arguments and emit warnings so downstream projects can detect stale configuration.
 - **Shared fit helpers** - all estimators route through `normalise_fit_args`, `prepare_inputs_and_scaler`, `build_model_from_hooks`, and `run_supervised_training`. Custom loops should import these helpers instead of copying logic from `PSANNRegressor.fit`.
-- **HISSO options** - episodic runs resolve reward, transform, noise, and warm-start settings via `HISSOOptions`. The public API still uses familiar keyword arguments (`hisso_window`, `hisso_reward_fn`, etc.), but the resolved options are now stored for evaluation helpers.
+- **Canonical episodic boundary** - use frozen `HISSOConfig`, `EpisodeScheduleConfig`, and `EpisodicTrainer`. Flat `hisso_*` keywords and `HISSOOptions` are deprecated compatibility adapters only.
 - **Neutral terminology** - episodic configs standardise on `transition_penalty`. The legacy aliases (`transition_cost`, `trans_cost`) remain temporarily and trigger deprecation warnings.
 
 ## Helper replacement table
@@ -39,7 +39,7 @@ package-registry release.
 ## Primary-output workflow
 
 - Remove extra heads: drop `extras`, `extras_growth`, and `extras_*` kwargs from estimator construction and calls to `fit`. Any remaining references will raise warnings so you can locate stale code.
-- HISSO warm starts use `hisso_supervised={"y": targets}`. Provide `hisso_window`, `hisso_reward_fn`, and optional `hisso_context_extractor` as before; the helpers consolidate them into `HISSOOptions` and persist the configuration for evaluation utilities.
+- HISSO warm starts use `HISSOConfig(warm_start=SupervisedWarmStartConfig(...))` and targets supplied to `EpisodicTrainer.fit(X, y)`. This persists the canonical strategy for save/load closure.
 - If you previously inspected `_extras_cache_` or other extras-specific attributes, switch to the HISSO helpers (`hisso_infer_series`, `hisso_evaluate_reward`) or the shared prepared-input metadata.
 
 ## Upgrade checklist

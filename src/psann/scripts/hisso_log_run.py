@@ -24,6 +24,12 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 import numpy as np
 import torch
 
+from psann.episodic import (
+    EpisodeScheduleConfig,
+    EpisodicTrainer,
+    HISSOConfig,
+    SupervisedWarmStartConfig,
+)
 from psann.metrics import portfolio_metrics
 from psann.utils import seed_all
 
@@ -474,7 +480,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         estimator_params = dict(estimator_cfg.get("params", {}))
         if args.device is not None:
             estimator_params["device"] = args.device
-        device_override = estimator_params.get("device")
         resolved["estimator"] = {
             "target": str(target),
             "params": estimator_params,
@@ -488,7 +493,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         hisso_enabled = bool(hisso_cfg.get("enabled", True))
         mixed_precision = bool(hisso_cfg.get("mixed_precision", False))
         amp_dtype_name = hisso_cfg.get("amp_dtype", "float16")
-        amp_dtype = getattr(torch, amp_dtype_name, torch.float16)
 
         reward_spec = hisso_cfg.get("reward")
         reward_fn = None
@@ -516,8 +520,6 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             "context": dataset.context_train,
             "validation_data": None,
             "verbose": int(config.get("training", {}).get("verbose", 0)),
-            "noisy": hisso_cfg.get("input_noise"),
-            "hisso": hisso_enabled,
         }
 
         if dataset.X_val is not None and dataset.y_val is not None:
@@ -526,42 +528,39 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             else:
                 fit_kwargs["validation_data"] = (dataset.X_val, dataset.y_val)
 
+        episodic_trainer: EpisodicTrainer | None = None
         if hisso_enabled:
-            fit_kwargs.update(
-                {
-                    "hisso_window": hisso_cfg.get("window"),
-                    "hisso_batch_episodes": hisso_cfg.get(
-                        "batch_episodes", hisso_cfg.get("episodes_per_batch")
-                    ),
-                    "hisso_updates_per_epoch": hisso_cfg.get("updates_per_epoch"),
-                    "hisso_reward_fn": reward_fn,
-                    "hisso_context_extractor": context_extractor,
-                    "hisso_primary_transform": hisso_cfg.get("primary_transform"),
-                    "hisso_transition_penalty": hisso_cfg.get("transition_penalty"),
-                    "hisso_trans_cost": hisso_cfg.get("trans_cost"),
-                    "hisso_supervised": supervised_payload,
-                    "lr_max": hisso_cfg.get("lr_max"),
-                    "lr_min": hisso_cfg.get("lr_min"),
-                }
+            warm_start = None
+            if supervised_payload is not None:
+                warm_start = SupervisedWarmStartConfig(
+                    **{
+                        key: value
+                        for key, value in supervised_payload.items()
+                        if key != "y" and value is not None
+                    }
+                )
+            schedule = EpisodeScheduleConfig(
+                episode_length=int(hisso_cfg.get("window") or 64),
+                batch_episodes=int(
+                    hisso_cfg.get("batch_episodes", hisso_cfg.get("episodes_per_batch", 32)) or 32
+                ),
+                updates_per_epoch=int(hisso_cfg.get("updates_per_epoch") or 1),
+                random_state=args.seed,
             )
-        else:
-            fit_kwargs.update({"hisso": False})
-
-        if hisso_enabled and mixed_precision and device_override:
-            dev = torch.device(device_override)
-            if dev.type == "cuda" and torch.cuda.is_available():
-                setattr(estimator, "_hisso_use_amp", True)
-                setattr(estimator, "_hisso_amp_dtype", amp_dtype)
-                logger.info(
-                    "mixed_precision.enabled device=%s amp_dtype=%s",
-                    dev,
-                    amp_dtype_name,
-                )
-            else:
-                logger.warning(
-                    "mixed_precision requested but CUDA device not available (device=%s).",
-                    dev,
-                )
+            strategy = HISSOConfig(
+                schedule=schedule,
+                reward=reward_fn or "default",
+                context_extractor=context_extractor,
+                primary_transform=hisso_cfg.get("primary_transform") or "identity",
+                transition_penalty=float(
+                    hisso_cfg.get("transition_penalty", hisso_cfg.get("trans_cost", 0.0)) or 0.0
+                ),
+                input_noise_std=hisso_cfg.get("input_noise"),
+                warm_start=warm_start,
+                mixed_precision=mixed_precision,
+                amp_dtype=amp_dtype_name,
+            )
+            episodic_trainer = EpisodicTrainer(estimator=estimator, strategy=strategy)
 
         stateful = bool(getattr(estimator, "stateful", False))
         state_reset = getattr(estimator, "state_reset", "batch")
@@ -581,11 +580,19 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             raise ValueError("Supervised training requires 'y_train' targets.")
 
         start = time.perf_counter()
-        estimator.fit(X_train, y_train, **fit_kwargs)
+        if episodic_trainer is None:
+            estimator.fit(X_train, y_train, **fit_kwargs)
+        else:
+            episodic_trainer.fit(
+                X_train,
+                y_train,
+                context=dataset.context_train,
+                verbose=int(config.get("training", {}).get("verbose", 0)),
+            )
         duration = time.perf_counter() - start
 
-        trainer = getattr(estimator, "_hisso_trainer_", None)
-        history = getattr(estimator, "history_", []) or []
+        trainer = episodic_trainer
+        history = getattr(trainer, "history_", []) or []
         if trainer is not None and history:
             for entry in history:
                 if not isinstance(entry, Mapping):
@@ -597,9 +604,10 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     entry.get("episodes"),
                 )
 
-        preds_train = estimator.predict(X_train)
-        preds_val = estimator.predict(dataset.X_val) if dataset.X_val is not None else None
-        preds_test = estimator.predict(dataset.X_test) if dataset.X_test is not None else None
+        predict = trainer.predict if trainer is not None else estimator.predict
+        preds_train = predict(X_train)
+        preds_val = predict(dataset.X_val) if dataset.X_val is not None else None
+        preds_test = predict(dataset.X_test) if dataset.X_test is not None else None
 
         train_loss = _compute_mse(y_train, preds_train)
         val_loss = _compute_mse(dataset.y_val, preds_val)

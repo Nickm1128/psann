@@ -6,11 +6,8 @@ small transaction cost.
 
 import numpy as np
 
-from psann import (
-    EpisodeConfig,
-    PSANNRegressor,
-    make_episode_trainer_from_estimator,
-)
+from psann import PSANNRegressor
+from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 from psann.preprocessing import LSMConfig, PreprocessorConfig
 
 
@@ -29,18 +26,12 @@ if __name__ == "__main__":
 
     # Baseline PSANN producing M allocations
     base = PSANNRegressor(hidden_layers=2, hidden_width=64, epochs=1, output_shape=(M,))
-    y_dummy = np.zeros((len(X), M), dtype=np.float32)
-    base.fit(X, y_dummy)
-
-    cfg = EpisodeConfig(
-        episode_length=64,
-        batch_episodes=32,
+    cfg = HISSOConfig(
+        schedule=EpisodeScheduleConfig(episode_length=64, batch_episodes=32, random_state=0),
         transition_penalty=0.001,
-        random_state=0,
     )
-    tr_base = make_episode_trainer_from_estimator(base, ep_cfg=cfg, lr=1e-3)
-    print("[Base] Before:", tr_base.evaluate(X, n_batches=8))
-    tr_base.train(X, epochs=50, verbose=1)
+    tr_base = EpisodicTrainer(estimator=base, strategy=cfg)
+    tr_base.fit(X, verbose=1)
     print("[Base] After:", tr_base.evaluate(X, n_batches=8))
 
     # LSM + PSANN
@@ -54,9 +45,6 @@ if __name__ == "__main__":
         output_shape=(M,),
         preprocessor=preprocessor,
     )
-    with_lsm.fit(X, y_dummy)
-
-    tr_lsm = make_episode_trainer_from_estimator(with_lsm, ep_cfg=cfg, lr=1e-3)
-    print("[LSM] Before:", tr_lsm.evaluate(X, n_batches=8))
-    tr_lsm.train(X, epochs=50, verbose=1)
+    tr_lsm = EpisodicTrainer(estimator=with_lsm, strategy=cfg)
+    tr_lsm.fit(X, verbose=1)
     print("[LSM] After:", tr_lsm.evaluate(X, n_batches=8))

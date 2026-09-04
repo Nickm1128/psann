@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig, ConvolutionConfig
 from psann.episodic import (
     EpisodeScheduleConfig,
     EpisodicTrainer,
@@ -15,6 +16,7 @@ from psann.episodic import (
     normalize_strategy,
 )
 from psann.episodic.runtime import transform_actions
+from psann.preprocessing import LSMConfig, PreprocessorConfig, PreprocessorTrainingConfig
 
 
 def _custom_reward(actions: torch.Tensor, context: torch.Tensor, **_kwargs: object) -> torch.Tensor:
@@ -151,3 +153,94 @@ def test_schema_v3_requires_explicit_episodic_discriminator(tmp_path):
     torch.save(payload, path)
     with pytest.raises(ValueError, match="Schema-v3 fitted.episodic is missing"):
         PSANNRegressor.load(path)
+
+
+@pytest.mark.parametrize("topology", ["dense", "conv2d"])
+@pytest.mark.parametrize("trainable", [False, True])
+def test_canonical_hisso_preprocessor_weight_policy_and_optimizer_membership(
+    topology, trainable, monkeypatch
+):
+    """The canonical trainer retains Phase-4 group policy during real updates."""
+
+    if topology == "dense":
+        X = np.arange(48, dtype=np.float32).reshape(12, 4) / 10
+        y = X.mean(axis=1)
+        architecture = ArchitectureConfig.dense()
+        component = LSMConfig.dense(output_dim=4, hidden_layers=1, hidden_units=4)
+    else:
+        X = np.arange(108, dtype=np.float32).reshape(12, 1, 3, 3) / 10
+        y = X.mean(axis=(1, 2, 3))
+        architecture = ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3))
+        component = LSMConfig.convolutional(output_dim=2, hidden_units=3)
+    estimator = PSANNRegressor(
+        architecture=architecture,
+        preprocessor=PreprocessorConfig(
+            component, PreprocessorTrainingConfig(trainable=trainable, lr=0.02)
+        ),
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        lr=0.01,
+        random_state=0,
+        device="cpu",
+    )
+    trainer = EpisodicTrainer(
+        estimator=estimator,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=4, batch_episodes=2),
+            warm_start=SupervisedWarmStartConfig(epochs=1, batch_size=4),
+        ),
+    )
+    from psann.estimators import _fit_utils as fit_utils
+
+    before: list[torch.Tensor] = []
+    after: list[torch.Tensor] = []
+    original_warm_start = fit_utils.run_hisso_supervised_warmstart
+
+    def capture_warm_start(*args, **kwargs):
+        model = args[0].model_
+        before.extend(parameter.detach().clone() for parameter in model.preproc.parameters())
+        result = original_warm_start(*args, **kwargs)
+        after.extend(parameter.detach().clone() for parameter in model.preproc.parameters())
+        return result
+
+    monkeypatch.setattr(fit_utils, "run_hisso_supervised_warmstart", capture_warm_start)
+    trainer.fit(X, y)
+    groups = {
+        group["psann_parameter_group"]: group
+        for group in estimator._hisso_trainer_.optimizer.param_groups
+    }
+    preprocessor_ids = {id(parameter) for parameter in estimator.preprocessor_.parameters()}
+    optimizer_ids = {
+        id(parameter)
+        for group in estimator._hisso_trainer_.optimizer.param_groups
+        for parameter in group["params"]
+    }
+    assert all(
+        parameter.requires_grad is trainable for parameter in estimator.preprocessor_.parameters()
+    )
+    if trainable:
+        assert groups["preprocessor"]["lr"] == pytest.approx(0.02)
+        assert preprocessor_ids <= optimizer_ids
+        assert any(not torch.equal(left, right) for left, right in zip(before, after))
+    else:
+        assert "preprocessor" not in groups
+        assert preprocessor_ids.isdisjoint(optimizer_ids)
+        assert all(torch.equal(left, right) for left, right in zip(before, after))
+
+
+def test_legacy_facades_warn_once_at_the_user_call_site():
+    from psann.hisso import hisso_infer_series
+    from psann.rewards import get_reward_strategy
+
+    estimator = PSANNRegressor(epochs=1, batch_size=2).fit(
+        np.ones((4, 2), dtype=np.float32), np.ones(4, dtype=np.float32)
+    )
+    with pytest.warns(DeprecationWarning) as caught:
+        hisso_infer_series(estimator, np.ones((2, 2), dtype=np.float32))
+    assert len(caught) == 1
+    assert caught[0].filename.replace("\\", "/").endswith("tests/test_episodic_phase5.py")
+    with pytest.warns(DeprecationWarning) as caught:
+        get_reward_strategy("default")
+    assert len(caught) == 1

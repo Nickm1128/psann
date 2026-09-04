@@ -9,7 +9,8 @@ global averaging spatial dimensions per channel.
 import numpy as np
 import torch
 
-from psann import EpisodeConfig, PSANNRegressor, make_episode_trainer_from_estimator
+from psann import PSANNRegressor
+from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 
 
 def make_spatial_prices(T=4000, H=8, W=8, seed=1):
@@ -47,21 +48,13 @@ if __name__ == "__main__":
         per_element=False,
         output_shape=(M,),
     )
-    # Initialize by one pass fit
-    y_dummy = np.zeros((T, M), dtype=np.float32)
-    est.fit(X, y_dummy)
-
-    cfg = EpisodeConfig(
-        episode_length=32,
-        batch_episodes=32,
-        transition_penalty=0.001,
-        spatial_pool="mean",
-        random_state=0,
+    trainer = EpisodicTrainer(
+        estimator=est,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=32, batch_episodes=32, random_state=0),
+            transition_penalty=0.001,
+            context_extractor=price_extractor_channels_first,
+        ),
     )
-    trainer = make_episode_trainer_from_estimator(est, ep_cfg=cfg, lr=1e-3)
-    # Attach price extractor
-    trainer.price_extractor = price_extractor_channels_first
-
-    print("[Conv] Before:", trainer.evaluate(X, n_batches=8))
-    trainer.train(X, epochs=50, verbose=1)
+    trainer.fit(X, verbose=1)
     print("[Conv] After:", trainer.evaluate(X, n_batches=8))

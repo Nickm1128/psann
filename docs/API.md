@@ -53,8 +53,9 @@ Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variant
 - `scaler: str | object | None` - string alias (`"standard"`/`"minmax"`) or any transformer exposing `fit`/`transform`.
 - `scaler_params: dict | None` - keyword arguments forwarded to the built-in scalers.
 
-**HISSO configuration**
-- `hisso_window: int | None` - episode length when training with `hisso=True` (defaults to 64).
+**Deprecated HISSO compatibility configuration**
+- Prefer `psann.episodic.EpisodicTrainer(estimator=..., strategy=HISSOConfig(...))`.
+- `hisso_window: int | None` - deprecated episode length alias when training with `hisso=True`.
 - `hisso_batch_episodes: int | None` - number of episodes sampled per HISSO optimizer update (defaults to 32 when omitted).
 - `hisso_updates_per_epoch: int | None` - number of HISSO optimizer updates per epoch (defaults to compatibility behavior when omitted).
 - `hisso_reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None` - reward callback that consumes transformed primary outputs and context.

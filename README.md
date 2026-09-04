@@ -137,8 +137,8 @@ At a glance, the main things you import from `psann` are:
     architecture policy such as `ArchitectureConfig.for_wave()` or
     `ArchitectureConfig.geometric_sparse(...)`.
 - HISSO and episodic training:
-  - `from psann import HISSOOptions, hisso_infer_series, hisso_evaluate_reward`
-  - `from psann import EpisodeTrainer, EpisodeConfig, get_reward_strategy, RewardStrategyBundle`
+  - `from psann.episodic import EpisodicTrainer, HISSOConfig, EpisodeScheduleConfig`
+  - `from psann.episodic import get_reward_strategy, RewardStrategyBundle`
 - Diagnostics and utilities:
   - `from psann import jacobian_spectrum, ntk_eigens, participation_ratio, mutual_info_proxy`
   - `from psann import encode_and_probe, fit_linear_probe`
@@ -471,10 +471,10 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 
 ## HISSO at a glance
 
-1. Call `HISSOOptions.from_kwargs(...)` (or supply equivalent kwargs to `fit`) to resolve episode length, schedule knobs (`batch_episodes`, `updates_per_epoch`), reward function, primary transform, transition penalty, context extractor, and optional noise.
-2. Provide `hisso_supervised` to run a warm-start supervised phase before episodic optimisation.
-3. `PSANNRegressor.fit(..., hisso=True, ...)` builds the episodic trainer using the shared fit pipeline.
-4. After training, `hisso_infer_series(estimator, series)` and `hisso_evaluate_reward(estimator, series, targets=None)` reuse the cached configuration to score new data.
+1. Build frozen `HISSOConfig` and `EpisodeScheduleConfig` values for the reward, schedule, transform, context, and optional warm start.
+2. Construct `EpisodicTrainer(estimator=estimator, strategy=strategy)` and call `fit`.
+3. Call `trainer.predict(...)` or `trainer.evaluate(...)`; the same canonical transform/context route is used for both.
+4. `fit(..., hisso=True, ...)` and `psann.hisso` remain deprecated 0.x compatibility façades.
 
 The project ships CPU benchmark baselines (`docs/benchmarks/`) and CI scripts (`scripts/benchmark_hisso_variants.py`, `scripts/compare_hisso_benchmarks.py`) to catch HISSO regressions.
 

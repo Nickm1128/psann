@@ -1,6 +1,7 @@
 import numpy as np
 
-from psann import EpisodeConfig, PSANNRegressor, make_episode_trainer_from_estimator
+from psann import PSANNRegressor
+from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 
 
 # Synthetic two-asset price series
@@ -22,19 +23,14 @@ if __name__ == "__main__":
         output_shape=(2,),
         stateful=False,
     )
-    # Initialize underlying model by a dummy fit with zero targets
     X = prices
-    y = np.zeros((len(X), 2), dtype=np.float32)
-    est.fit(X, y)
-
-    cfg = EpisodeConfig(
-        episode_length=64,
-        batch_episodes=24,
-        allocation_transform="softmax",
-        transition_penalty=0.001,
-        random_state=0,
+    trainer = EpisodicTrainer(
+        estimator=est,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=64, batch_episodes=24, random_state=0),
+            primary_transform="softmax",
+            transition_penalty=0.001,
+        ),
     )
-    trainer = make_episode_trainer_from_estimator(est, ep_cfg=cfg, lr=1e-3)
-    print("Before training, eval reward:", trainer.evaluate(prices, n_batches=8))
-    trainer.train(prices, epochs=25, verbose=1)
-    print("After training, eval reward:", trainer.evaluate(prices, n_batches=8))
+    trainer.fit(X, verbose=1)
+    print("After training, eval reward:", trainer.evaluate(prices))

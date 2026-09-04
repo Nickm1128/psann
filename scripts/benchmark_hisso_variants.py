@@ -22,6 +22,12 @@ import torch
 
 from psann import PSANNRegressor
 from psann.architectures import ArchitectureConfig, ConvolutionConfig, ResidualConfig
+from psann.episodic import (
+    EpisodeScheduleConfig,
+    EpisodicTrainer,
+    HISSOConfig,
+    SupervisedWarmStartConfig,
+)
 
 # ---------------------------------------------------------------------------
 # Synthetic datasets
@@ -381,42 +387,32 @@ def _benchmark_variant(
 
         primary_dim = int(y.shape[1]) if y.ndim > 1 else 1
         batch_size = min(128, X.shape[0]) if X.shape[0] > 0 else 1
-        hisso_supervised = {
-            "y": y,
-            "epochs": max(1, warmstart_epochs),
-            "batch_size": max(1, batch_size),
-        }
+        strategy = HISSOConfig(
+            schedule=EpisodeScheduleConfig(
+                episode_length=window,
+                batch_episodes=int(schedule.batch_episodes),
+                updates_per_epoch=int(schedule.updates_per_epoch),
+                random_state=seed,
+            ),
+            reward=_reward_fn,
+            primary_transform="tanh",
+            transition_penalty=transition_penalty,
+            warm_start=SupervisedWarmStartConfig(
+                epochs=max(1, warmstart_epochs), batch_size=max(1, batch_size)
+            ),
+        )
+        trainer = EpisodicTrainer(estimator=estimator, strategy=strategy)
 
         start = time.perf_counter()
-        estimator.fit(
-            X,
-            y,
-            hisso=True,
-            hisso_window=window,
-            hisso_batch_episodes=int(schedule.batch_episodes),
-            hisso_updates_per_epoch=int(schedule.updates_per_epoch),
-            hisso_reward_fn=_reward_fn,
-            hisso_primary_transform="tanh",
-            hisso_transition_penalty=transition_penalty,
-            hisso_supervised=hisso_supervised,
-            verbose=0,
-        )
+        trainer.fit(X, y, verbose=0)
         if device == "cuda" and torch.cuda.is_available():
             torch.cuda.synchronize()
         elapsed = time.perf_counter() - start
 
-        trainer = getattr(estimator, "_hisso_trainer_", None)
-        if trainer is None:
-            raise RuntimeError("HISSO trainer was not attached after fit().")
-
-        cfg = getattr(estimator, "_hisso_cfg_", None)
-        if cfg is None:
-            raise RuntimeError("HISSO configuration missing after fit().")
-
-        reward_trend = _nan_series(entry.get("reward") for entry in trainer.history)
-        episodes = [int(entry.get("episodes", 0) or 0) for entry in trainer.history]
+        reward_trend = _nan_series(entry.get("reward") for entry in trainer.history_)
+        episodes = [int(entry.get("episodes", 0) or 0) for entry in trainer.history_]
         episodes_total = int(sum(episodes))
-        profile_time = float(trainer.profile.get("total_time_s", float("nan")))
+        profile_time = float(trainer.profile_.get("total_time_s", float("nan")))
         wall_throughput = float(episodes_total / max(float(elapsed), 1e-9))
         profile_throughput = (
             float(episodes_total / max(profile_time, 1e-9))
@@ -424,16 +420,16 @@ def _benchmark_variant(
             else math.nan
         )
 
-        allow_full_window = allow_full_window and getattr(cfg, "episode_length", window) == window
-        episode_length_seen = getattr(cfg, "episode_length", window)
+        allow_full_window = allow_full_window and strategy.schedule.episode_length == window
+        episode_length_seen = strategy.schedule.episode_length
         feature_shape = tuple(int(dim) for dim in X.shape[1:])
         resolved_episode_batch_size = int(
-            trainer.profile.get("episode_batch_size", getattr(cfg, "episode_batch_size", 1) or 1)
+            trainer.profile_.get("episode_batch_size", strategy.schedule.batch_episodes)
         )
         resolved_updates_per_epoch = int(
-            trainer.profile.get("updates_per_epoch", getattr(cfg, "updates_per_epoch", 1) or 1)
+            trainer.profile_.get("updates_per_epoch", strategy.schedule.updates_per_epoch)
         )
-        resolved_episodes_per_epoch = int(getattr(cfg, "episodes_per_batch", episodes_total))
+        resolved_episodes_per_epoch = int(sum(episodes))
 
         run_stats.append(
             {
@@ -446,7 +442,7 @@ def _benchmark_variant(
                 "profile_throughput_eps_per_s": profile_throughput,
                 "final_reward": float(reward_trend[-1]) if reward_trend else math.nan,
                 "series_length": int(X.shape[0]),
-                "episode_length": int(getattr(cfg, "episode_length", window)),
+                "episode_length": int(strategy.schedule.episode_length),
                 "primary_dim": primary_dim,
                 "feature_shape": feature_shape,
             }
