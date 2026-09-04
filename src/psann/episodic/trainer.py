@@ -81,6 +81,8 @@ class EpisodicTrainer:
         verbose: int = 0,
     ) -> "EpisodicTrainer":
         strategy = normalize_strategy(self.strategy)
+        if np.asarray(X).shape[0] == 0:
+            raise ValueError("Canonical episodic training requires non-empty inputs.")
         if strategy.warm_start is not None and y is None:
             raise ValueError("strategy.warm_start requires fit targets y.")
         if not hasattr(self.estimator, "fit"):

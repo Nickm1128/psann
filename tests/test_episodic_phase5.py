@@ -421,6 +421,27 @@ def test_canonical_stateful_warm_start_rejects_explicit_shuffle():
         trainer.fit(X, X[:, 0])
 
 
+def test_canonical_wrapper_rejects_empty_input_before_episode_optimization():
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2)),
+    )
+    with pytest.raises(ValueError, match="non-empty"):
+        trainer.fit(np.empty((0, 2), dtype=np.float32))
+
+
+def test_canonical_warm_start_rejects_target_length_before_episodic_updates():
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2),
+            warm_start=SupervisedWarmStartConfig(epochs=1),
+        ),
+    )
+    with pytest.raises(ValueError, match="length must match X"):
+        trainer.fit(np.ones((6, 2), dtype=np.float32), np.ones(5, dtype=np.float32))
+
+
 def test_canonical_transform_is_applied_once_in_training_prediction_and_evaluation():
     X = np.arange(16, dtype=np.float32).reshape(8, 2) + 1
     observed: list[torch.Tensor] = []
