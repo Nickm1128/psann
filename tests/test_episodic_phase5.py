@@ -119,6 +119,21 @@ def test_set_params_rebuilds_frozen_parents_transactionally():
     assert trainer.strategy == before
 
 
+def test_canonical_wrapper_clone_and_deep_parameters_are_strategy_safe():
+    from sklearn.base import clone
+
+    strategy = HISSOConfig(
+        schedule=EpisodeScheduleConfig(episode_length=3, batch_episodes=2, updates_per_epoch=1),
+        warm_start=SupervisedWarmStartConfig(epochs=1, shuffle=False),
+    )
+    trainer = EpisodicTrainer(estimator=PSANNRegressor(epochs=1, batch_size=2), strategy=strategy)
+    cloned = clone(trainer)
+    assert cloned is not trainer
+    assert cloned.strategy == strategy
+    assert cloned.get_params(deep=True)["strategy__schedule__episode_length"] == 3
+    assert cloned.get_params(deep=True)["strategy__warm_start__shuffle"] is False
+
+
 def test_canonical_trainer_schema_v3_custom_callable_two_generation_closure(tmp_path):
     X = np.arange(40, dtype=np.float32).reshape(20, 2) + 1
     strategy = HISSOConfig(
@@ -738,3 +753,21 @@ def test_canonical_and_legacy_schedule_counts_are_explicit_and_deterministic():
     )
     assert canonical.estimator._hisso_cfg_.random_state == legacy._hisso_cfg_.random_state == 17
     assert canonical.history_[0]["episodes"] == legacy._hisso_trainer_.history[0]["episodes"] == 4
+
+
+def test_canonical_short_series_schedule_uses_local_rng_and_preserves_episode_count():
+    X = np.arange(6, dtype=np.float32).reshape(3, 2) + 1
+    strategy = HISSOConfig(
+        schedule=EpisodeScheduleConfig(
+            episode_length=8, batch_episodes=3, updates_per_epoch=2, random_state=29
+        )
+    )
+    first = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=1), strategy=strategy
+    ).fit(X)
+    second = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=1), strategy=strategy
+    ).fit(X)
+    assert first.history_ == second.history_
+    assert first.history_[0]["episodes"] == 1
+    assert first.profile_["episodes_sampled"] == 1
