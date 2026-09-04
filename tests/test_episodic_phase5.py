@@ -553,6 +553,40 @@ def test_canonical_transform_is_applied_once_in_training_prediction_and_evaluati
         torch.testing.assert_close(actions.sum(dim=-1), torch.ones_like(actions[..., 0]))
 
 
+def test_canonical_scalers_preprocessor_and_target_scaler_survive_all_lifecycle_routes(tmp_path):
+    """Input preparation is shared by training/evaluation; prediction keeps target inversion."""
+
+    X = np.arange(32, dtype=np.float32).reshape(16, 2) + 1
+    y = np.stack((X[:, 0] * 2, X[:, 1] * 3), axis=1)
+    preprocessor = PreprocessorConfig(LSMConfig.dense(output_dim=4))
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            preprocessor=preprocessor,
+            scaler="standard",
+            target_scaler="standard",
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=2,
+            random_state=0,
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=3, batch_episodes=1),
+            primary_transform="tanh",
+        ),
+    ).fit(X, y)
+    assert trainer.estimator._scaler_kind_ == "standard"
+    assert trainer.estimator._target_scaler_kind_ == "standard"
+    raw = trainer.estimator.predict(X[:3])
+    np.testing.assert_allclose(trainer.predict(X[:3]), transform_actions(raw, "tanh"), rtol=1e-6)
+    assert np.isfinite(trainer.evaluate(X[:4]))
+    path = tmp_path / "scaled-episodic.pt"
+    trainer.save(path)
+    loaded = EpisodicTrainer.load(path)
+    np.testing.assert_allclose(loaded.predict(X[:3]), trainer.predict(X[:3]), rtol=1e-6)
+    assert np.isfinite(loaded.evaluate(X[:4]))
+
+
 def test_canonical_evaluation_reuses_scaled_rank3_context_runtime_path():
     X = np.arange(24, dtype=np.float32).reshape(12, 2) + 2
     observed: list[tuple[int, float]] = []
