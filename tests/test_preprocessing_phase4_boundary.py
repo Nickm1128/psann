@@ -298,3 +298,21 @@ def test_reconstruction_score_uses_fitted_scaling_and_conv_layout() -> None:
         ),
     ).fit(X_nhwc, y_nhwc)
     assert isinstance(conv.score_reconstruction(X_nhwc), float)
+
+
+def test_preprocessor_nested_gridsearch_and_joblib_round_trip(tmp_path) -> None:
+    import joblib
+    from sklearn.model_selection import GridSearchCV
+
+    X, y = _dense_data()
+    estimator = _small_estimator(PreprocessorConfig(LSMConfig.dense(output_dim=3)))
+    search = GridSearchCV(
+        estimator,
+        {"preprocessor__component__output_dim": [3, 4]},
+        cv=2,
+        error_score="raise",
+    ).fit(X, y)
+    restored_path = tmp_path / "canonical.joblib"
+    joblib.dump(search.best_estimator_, restored_path)
+    restored = joblib.load(restored_path)
+    assert restored.predict(X[:2]).shape == (2,)
