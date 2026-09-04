@@ -1108,3 +1108,47 @@ def test_canonical_stateful_prediction_uses_clean_noncommitting_sequence_route(m
     assert calls == [
         {"context": None, "reset_state": True, "return_sequence": True, "update_state": False}
     ]
+
+
+@pytest.mark.parametrize(
+    ("state_reset", "expected_resets"),
+    [("batch", 2), ("epoch", 1), ("none", 0)],
+    ids=["batch", "epoch", "none"],
+)
+def test_canonical_wrapper_state_lifecycle_cadence_and_commit_counts(
+    monkeypatch, state_reset, expected_resets
+):
+    """The wrapper carries state policy into the one runtime, not a facade loop."""
+
+    resets: list[str] = []
+    commits: list[None] = []
+    original_reset = HISSOTrainer._reset_state_if_needed
+    original_commit = HISSOTrainer._commit_state_if_any
+
+    def record_reset(self, cadence):
+        if self.stateful and self.state_reset == cadence:
+            resets.append(cadence)
+        return original_reset(self, cadence)
+
+    def record_commit(self):
+        commits.append(None)
+        return original_commit(self)
+
+    monkeypatch.setattr(HISSOTrainer, "_reset_state_if_needed", record_reset)
+    monkeypatch.setattr(HISSOTrainer, "_commit_state_if_any", record_commit)
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    EpisodicTrainer(
+        estimator=PSANNRegressor(
+            epochs=1,
+            batch_size=2,
+            random_state=0,
+            stateful=True,
+            state=StateConfig(rho=0.9),
+            state_reset=state_reset,
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1, updates_per_epoch=2)
+        ),
+    ).fit(X)
+    assert len(resets) == expected_resets
+    assert len(commits) == 2
