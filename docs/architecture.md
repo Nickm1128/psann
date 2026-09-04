@@ -15,7 +15,8 @@ psann/
   activations.py            -> PSANN/ResPSANN/SGR activations + configs
   layers/                   -> building blocks (sine residual, geo_sparse, etc.)
   nn_geo_sparse.py          -> GeoSparseNet backbone (experimental)
-  hisso/                    -> episodic training + reward utilities
+  episodic/                 -> canonical episodic runtime, configuration, and rewards
+  hisso/, episodes/, rewards/ -> deprecated 0.x compatibility façades
   utils/                    -> diagnostics + small helpers
   lm/                       -> LM library code (experimental; may move to psannlm)
 ```
@@ -45,7 +46,9 @@ psannlm/                     -> separate distribution (LM training/CLI utilities
 
 - `HISSOConfig` and `EpisodeScheduleConfig` are frozen canonical episodic configuration.
 - `EpisodicTrainer` runs canonical episodes on the estimator’s device and logs rewards.
-- `hisso_infer_series` and `hisso_evaluate_reward` reuse the stored episode config.
+- Deprecated `hisso_infer_series` and `hisso_evaluate_reward` delegate to the
+  fitted canonical strategy; new code calls `EpisodicTrainer.predict` and
+  `EpisodicTrainer.evaluate`.
 
 ## LM flow (experimental)
 
