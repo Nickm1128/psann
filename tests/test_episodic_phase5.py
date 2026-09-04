@@ -56,6 +56,28 @@ def test_normalize_strategy_typed_mapping_and_preset_are_frozen(strategy):
         resolved.schedule.episode_length = 9  # type: ignore[misc]
 
 
+def test_typed_hisso_config_normalizes_nested_mappings_without_mutating_callers():
+    schedule = {"episode_length": 3, "batch_episodes": 2, "updates_per_epoch": 1}
+    warm_start = {"epochs": 1, "shuffle": False}
+    strategy = HISSOConfig(schedule=schedule, warm_start=warm_start)
+    assert strategy.schedule == EpisodeScheduleConfig(**schedule)
+    assert strategy.warm_start == SupervisedWarmStartConfig(**warm_start)
+    assert schedule == {"episode_length": 3, "batch_episodes": 2, "updates_per_epoch": 1}
+    assert warm_start == {"epochs": 1, "shuffle": False}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "path"),
+    [
+        ({"schedule": []}, "strategy.schedule"),
+        ({"warm_start": {"bad": 1}}, "strategy.warm_start.bad"),
+    ],
+)
+def test_typed_hisso_config_rejects_invalid_nested_mappings_with_paths(kwargs, path):
+    with pytest.raises((TypeError, ValueError), match=path):
+        HISSOConfig(**kwargs)
+
+
 @pytest.mark.parametrize(
     "value, path",
     [
@@ -408,6 +430,28 @@ def test_canonical_transform_is_applied_once_in_training_prediction_and_evaluati
         torch.testing.assert_close(actions.sum(dim=-1), torch.ones_like(actions[..., 0]))
 
 
+def test_canonical_evaluation_reuses_scaled_rank3_context_runtime_path():
+    X = np.arange(24, dtype=np.float32).reshape(12, 2) + 2
+    observed: list[tuple[int, float]] = []
+
+    def context(inputs: torch.Tensor) -> torch.Tensor:
+        assert inputs.ndim == 3
+        observed.append((inputs.ndim, float(inputs.mean())))
+        return inputs
+
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, scaler="standard", random_state=0),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=3, batch_episodes=1),
+            context_extractor=context,
+        ),
+    ).fit(X)
+    assert np.isfinite(trainer.evaluate(X))
+    assert len(observed) >= 2
+    assert all(rank == 3 for rank, _ in observed)
+    assert abs(observed[-1][1]) < 1e-5
+
+
 @pytest.mark.parametrize(
     "extractor, message",
     [
@@ -465,6 +509,55 @@ def test_schema_v3_registered_bundle_closes_two_generations(tmp_path):
     restored = EpisodicTrainer.load(first)
     restored.save(second)
     assert EpisodicTrainer.load(second).strategy.reward == "finance"
+
+
+def test_schema_v3_portfolio_alias_persists_as_finance_across_generations(tmp_path):
+    X = np.arange(20, dtype=np.float32).reshape(10, 2) + 1
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2), reward="PoRtFoLiO"),
+    ).fit(X)
+    first, second = tmp_path / "portfolio-1.pt", tmp_path / "portfolio-2.pt"
+    trainer.save(first)
+    assert (
+        torch.load(first, weights_only=False)["fitted"]["episodic"]["config"]["reward"] == "finance"
+    )
+    loaded = EpisodicTrainer.load(first)
+    loaded.save(second)
+    assert (
+        torch.load(second, weights_only=False)["fitted"]["episodic"]["config"]["reward"]
+        == "finance"
+    )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda payload: payload["fitted"]["episodic"]["effective"].update(
+                {"unknown": torch.tensor(1)}
+            ),
+            "effective.unknown",
+        ),
+        (
+            lambda payload: payload["fitted"]["episodic"]["profile"].update({"bad": object()}),
+            "profile.bad",
+        ),
+    ],
+)
+def test_schema_v3_rejects_nonportable_or_unknown_episodic_metadata(tmp_path, mutate, message):
+    X = np.ones((8, 2), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2)),
+    ).fit(X)
+    path = tmp_path / "bad-metadata.pt"
+    trainer.save(path)
+    payload = torch.load(path, weights_only=False)
+    mutate(payload)
+    torch.save(payload, path)
+    with pytest.raises((TypeError, ValueError), match=message):
+        PSANNRegressor.load(path)
 
 
 @pytest.mark.parametrize("legacy_version", [1, 2])

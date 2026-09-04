@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, cast
 
 import numpy as np
-import torch
 
 from .config import HISSOConfig, normalize_strategy, replace_strategy
 from .rewards import resolve_reward
-from .runtime import align_context, call_reward, transform_actions, validate_reward_penalty
+from .runtime import transform_actions, validate_reward_penalty
+from .runtime_loop import HISSOTrainer
 
 
 class EpisodicTrainer:
@@ -135,31 +135,22 @@ class EpisodicTrainer:
     def evaluate(self, X: np.ndarray, *, context: np.ndarray | None = None) -> float:
         strategy = normalize_strategy(self.strategy)
         estimator = self._fitted()
-        device = estimator._device()
-        actions = torch.as_tensor(
-            self.predict(X, context=context), dtype=torch.float32, device=device
-        )
-        if actions.ndim == 1:
-            actions = actions[:, None]
-        data = torch.as_tensor(np.asarray(X), dtype=actions.dtype, device=device)
-        if strategy.context_extractor is None:
-            reward_context = data.reshape(data.shape[0], -1)
-        else:
-            extractor = cast(Callable[[torch.Tensor], torch.Tensor], strategy.context_extractor)
-            reward_context = extractor(data)
-            if not isinstance(reward_context, torch.Tensor):
-                raise TypeError("strategy.context_extractor must return a torch.Tensor.")
-            reward_context = reward_context.to(device=device, dtype=actions.dtype)
-        if reward_context.ndim == 1:
-            reward_context = reward_context[:, None]
-        reward_context = align_context(actions.unsqueeze(0), reward_context.unsqueeze(0))
-        reward = call_reward(
-            resolve_reward(strategy.reward),
-            actions.unsqueeze(0),
-            reward_context,
-            strategy.transition_penalty,
-        )
-        return float(reward.mean().detach().cpu())
+        prepared, _, _ = estimator._prepare_inference_inputs(X, context=context)
+        runtime = getattr(estimator, "_hisso_trainer_", None)
+        if runtime is None:
+            runtime = HISSOTrainer(
+                estimator.model_,
+                cfg=estimator._hisso_cfg_,
+                device=estimator._device(),
+                lr=0.0,
+                reward_fn=resolve_reward(strategy.reward),
+                context_extractor=cast(Callable | None, strategy.context_extractor),
+                input_noise_std=None,
+                stateful=bool(estimator.stateful),
+                state_reset=str(estimator.state_reset),
+                strict=True,
+            )
+        return runtime.evaluate_prepared(prepared)
 
     def save(self, path: str | Path) -> None:
         self._fitted().save(str(path))

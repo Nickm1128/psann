@@ -112,7 +112,11 @@ class HISSOConfig:
     amp_dtype: str = "float16"
 
     def __post_init__(self) -> None:
-        if not isinstance(self.schedule, EpisodeScheduleConfig):
+        schedule = self.schedule
+        if isinstance(schedule, Mapping):
+            schedule = _nested(schedule, EpisodeScheduleConfig, "strategy.schedule")
+            object.__setattr__(self, "schedule", schedule)
+        if not isinstance(schedule, EpisodeScheduleConfig):
             raise TypeError("strategy.schedule must be an EpisodeScheduleConfig.")
         transform = _name(self.primary_transform, "strategy.primary_transform")
         if transform not in {"identity", "softmax", "tanh"}:
@@ -139,9 +143,11 @@ class HISSOConfig:
             object.__setattr__(
                 self, "input_noise_std", _finite(self.input_noise_std, "strategy.input_noise_std")
             )
-        if self.warm_start is not None and not isinstance(
-            self.warm_start, SupervisedWarmStartConfig
-        ):
+        warm_start = self.warm_start
+        if isinstance(warm_start, Mapping):
+            warm_start = _nested(warm_start, SupervisedWarmStartConfig, "strategy.warm_start")
+            object.__setattr__(self, "warm_start", warm_start)
+        if warm_start is not None and not isinstance(warm_start, SupervisedWarmStartConfig):
             raise TypeError("strategy.warm_start must be a SupervisedWarmStartConfig or None.")
         if self.gradient_clip is not None:
             object.__setattr__(
@@ -200,9 +206,14 @@ def strategy_to_mapping(value: HISSOConfig) -> dict[str, object]:
     if not isinstance(value, HISSOConfig):
         raise TypeError("strategy must be a HISSOConfig.")
     reward: object = value.reward
-    if not isinstance(reward, str):
-        from .rewards import registered_reward_name
+    from .rewards import get_reward_strategy, registered_reward_name
 
+    if isinstance(reward, str):
+        registered = registered_reward_name(get_reward_strategy(reward))
+        if registered is None:  # pragma: no cover - registry integrity guard
+            raise ValueError(f"strategy.reward {reward!r} has no canonical registry discriminator.")
+        reward = registered
+    else:
         registered = registered_reward_name(reward)
         if registered is not None:
             reward = registered

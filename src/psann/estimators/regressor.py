@@ -226,19 +226,39 @@ def _schema_v3_episodic_with_artifacts(
                 raise TypeError(
                     f"{metadata_path}.config.context_extractor must be null or a callable descriptor."
                 )
-    if not isinstance(raw["effective"], Mapping):
-        raise TypeError(f"{metadata_path}.effective must be a mapping.")
-    if not isinstance(raw["history"], list):
-        raise TypeError(f"{metadata_path}.history must be a list.")
-    if not isinstance(raw["profile"], Mapping):
-        raise TypeError(f"{metadata_path}.profile must be a mapping.")
     try:
         from ..episodic import normalize_strategy
 
         strategy = normalize_strategy(config)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, KeyError) as exc:
         message = str(exc).replace("strategy", f"{metadata_path}.config", 1)
         raise type(exc)(message) from exc
+    if not isinstance(raw["effective"], Mapping):
+        raise TypeError(f"{metadata_path}.effective must be a mapping.")
+    effective = dict(raw["effective"])
+    expected_effective = {
+        "episode_length": strategy.schedule.episode_length,
+        "batch_episodes": strategy.schedule.batch_episodes,
+        "updates_per_epoch": strategy.schedule.updates_per_epoch,
+    }
+    unknown_effective = sorted(set(effective) - set(expected_effective))
+    if unknown_effective:
+        raise ValueError(f"{metadata_path}.effective.{unknown_effective[0]} is unknown.")
+    for key, expected in expected_effective.items():
+        path = f"{metadata_path}.effective.{key}"
+        if key not in effective:
+            raise ValueError(f"{path} is missing.")
+        if isinstance(effective[key], bool) or not isinstance(effective[key], int):
+            raise TypeError(f"{path} must be an integer.")
+        if effective[key] != expected:
+            raise ValueError(f"{path} conflicts with {metadata_path}.config.schedule.{key}.")
+    if not isinstance(raw["history"], list):
+        raise TypeError(f"{metadata_path}.history must be a list.")
+    if not isinstance(raw["profile"], Mapping):
+        raise TypeError(f"{metadata_path}.profile must be a mapping.")
+    _require_portable_schema_value(raw["effective"], f"{metadata_path}.effective")
+    _require_portable_schema_value(raw["history"], f"{metadata_path}.history")
+    _require_portable_schema_value(raw["profile"], f"{metadata_path}.profile")
     return strategy, list(raw["history"]), dict(raw["profile"])
 
 

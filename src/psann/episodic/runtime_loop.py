@@ -318,6 +318,23 @@ class HISSOTrainer:
             )
         return float(np.mean(values))
 
+    @torch.no_grad()
+    def evaluate_prepared(self, inputs: np.ndarray) -> float:
+        """Evaluate one complete prepared series through the training reward path."""
+
+        data = torch.as_tensor(np.asarray(inputs, dtype=np.float32), device=self.device)
+        if data.ndim < 2 or data.shape[0] == 0:
+            raise ValueError("HISSO evaluation requires non-empty prepared inputs.")
+        self.model.eval()
+        context = self._extract_context(data.unsqueeze(0))
+        outputs = self.model(data)
+        if isinstance(outputs, tuple):
+            outputs = outputs[0]
+        if outputs.ndim == 1:
+            outputs = outputs[:, None]
+        actions = self._apply_primary_transform(outputs.reshape(1, data.shape[0], -1))
+        return float(self._coerce_reward(actions, context).mean().detach().cpu())
+
     def _reset_state_if_needed(self, cadence: str) -> None:
         if not self.stateful or self.state_reset != cadence:
             return

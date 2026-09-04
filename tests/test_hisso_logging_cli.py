@@ -108,9 +108,10 @@ def test_hisso_logging_cli_emits_metrics(tmp_path):
     assert latest_ckpt.exists()
 
     resolved_yaml = resolved_path.read_text(encoding="utf-8")
-    assert "hisso:" in resolved_yaml
-    assert "batch_episodes:" in resolved_yaml
-    assert "updates_per_epoch:" in resolved_yaml
+    assert "episodic:" in resolved_yaml
+    assert "strategy:" in resolved_yaml
+    assert "kind: hisso" in resolved_yaml
+    assert "schedule:" in resolved_yaml
     assert "output_dir" in resolved_yaml
 
 
