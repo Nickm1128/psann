@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch.nn.utils import clip_grad_norm_
 
-from ..types import ContextExtractor, NoiseSpec, RewardFn
+from ..types import ContextExtractor, RewardFn
 from .amp import _autocast_context, _guard_cuda_capture
 from .config import HISSOTrainerConfig
 from .context import _call_context_extractor
