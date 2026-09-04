@@ -116,6 +116,48 @@ def _normalise_schema_module_preprocessor(value: object, module: nn.Module) -> P
         raise type(exc)(message) from exc
 
 
+def _schema_v2_preprocessor_with_artifact(value: object, artifacts: Mapping[str, object]) -> object:
+    """Validate the schema-v2 custom-module discriminator/artifact pair.
+
+    A module prototype establishes graph structure, while metadata establishes the
+    portable configuration.  Neither is meaningful without the other, so validate
+    their presence and discriminant before generic configuration normalization can
+    route malformed payloads into unrelated topology errors.
+    """
+
+    artifact_key = "preprocessor_module"
+    has_artifact = artifact_key in artifacts
+    metadata_path = _SCHEMA_MODULE_PREPROCESSOR_PATH
+    artifact_path = f"Schema-v2 artifacts.{artifact_key}"
+
+    if value is None:
+        if has_artifact:
+            raise ValueError(f"{artifact_path} is unexpected without module metadata.")
+        return value
+    if not isinstance(value, Mapping):
+        if has_artifact:
+            raise TypeError(f"{metadata_path} must be a mapping.")
+        return value
+
+    kind = value.get("kind")
+    if has_artifact:
+        if "kind" not in value:
+            raise ValueError(f"{metadata_path}.kind is missing.")
+        if kind != "module":
+            raise ValueError(
+                f"{artifact_path} is unexpected for {metadata_path}.kind={kind!r}; "
+                f"{metadata_path}.kind must be module."
+            )
+        module = artifacts[artifact_key]
+        if not isinstance(module, nn.Module):
+            raise ValueError(f"{artifact_path} is missing or invalid.")
+        return _normalise_schema_module_preprocessor(value, module)
+
+    if kind == "module":
+        raise ValueError(f"{artifact_path} is missing for module metadata.")
+    return value
+
+
 def _activation_mapping(config: ArchitectureConfig) -> dict[str, object]:
     activation = config.activation
     return {
@@ -1827,16 +1869,9 @@ class PSANNRegressor(_Phase2Regressor):
             raw_params["device"] = torch.device(map_location)
         raw_preprocessor = raw_params.get("preprocessor")
         artifacts = dict(payload.get("artifacts", {}))
-        if (
-            version == 2
-            and isinstance(raw_preprocessor, Mapping)
-            and "preprocessor_module" in artifacts
-        ):
-            module = artifacts.get("preprocessor_module")
-            if not isinstance(module, nn.Module):
-                raise ValueError("Schema-v2 artifacts.preprocessor_module is missing or invalid.")
-            raw_params["preprocessor"] = _normalise_schema_module_preprocessor(
-                raw_preprocessor, module
+        if version == 2:
+            raw_params["preprocessor"] = _schema_v2_preprocessor_with_artifact(
+                raw_preprocessor, artifacts
             )
         if "architecture" not in raw_params:
             raise ValueError("Schema-v1 checkpoint is missing estimator_params.architecture.")

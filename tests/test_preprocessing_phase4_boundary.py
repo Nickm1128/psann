@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 import torch
@@ -90,6 +92,59 @@ def test_conv_lsm_two_v2_generations_keep_channels_and_predictions(tmp_path) -> 
     reloaded = PSANNRegressor.load(str(second), map_location="cpu")
     assert reloaded.preprocessor_capabilities_.output_dim == 2
     np.testing.assert_allclose(reloaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-6)
+
+
+@pytest.mark.parametrize("data_format", ["channels_first", "channels_last"])
+@pytest.mark.parametrize(
+    "preprocessor_kind",
+    ["none", "conv2d-lsm", "custom-spatial"],
+)
+def test_convolutional_wave_automatic_context_is_sample_preserving_across_runtime_paths(
+    tmp_path, data_format: str, preprocessor_kind: str
+) -> None:
+    """Automatic Wave context is one row per original sample in every layout/path."""
+
+    X_cf = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+    X = np.moveaxis(X_cf, 1, -1) if data_format == "channels_last" else X_cf
+    y = X_cf.mean(axis=(1, 2, 3))
+    if preprocessor_kind == "conv2d-lsm":
+        preprocessor = PreprocessorConfig(LSMConfig.convolutional(output_dim=2, hidden_units=3))
+    elif preprocessor_kind == "custom-spatial":
+        preprocessor = PreprocessorConfig(
+            ModulePreprocessorConfig(torch.nn.Conv2d(1, 2, 1), "spatial-2d", "spatial-2d", 2)
+        )
+    else:
+        preprocessor = None
+
+    estimator = PSANNRegressor(
+        architecture=ArchitectureConfig.for_wave(
+            convolution=ConvolutionConfig(channels=3, data_format=data_format),
+            context=ContextConfig(
+                builder="cosine", builder_params={"frequencies": 1, "include_sin": False}
+            ),
+        ),
+        preprocessor=preprocessor,
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+        device="cpu",
+    ).fit(X, y, validation_data=(X[:2], y[:2]))
+
+    prepared, meta, automatic_context = estimator._prepare_inference_inputs(X[:2])
+    assert prepared.shape[0] == meta["n_samples"] == 2
+    assert automatic_context is not None and automatic_context.shape[0] == 2
+    predicted = estimator.predict(X[:2])
+    assert predicted.shape == (2,)
+
+    path = tmp_path / f"wave-{data_format}-{preprocessor_kind}.pt"
+    estimator.save(str(path))
+    restored = PSANNRegressor.load(str(path), map_location="cpu")
+    _, restored_meta, restored_context = restored._prepare_inference_inputs(X[:2])
+    assert restored_meta["n_samples"] == 2
+    assert restored_context is not None and restored_context.shape[0] == 2
+    np.testing.assert_allclose(restored.predict(X[:2]), predicted, rtol=1e-6)
 
 
 def test_attention_rejects_dense_lsm_before_pretraining(monkeypatch) -> None:
@@ -493,6 +548,115 @@ def test_custom_checkpoint_rejects_unknown_preprocessor_metadata(tmp_path) -> No
     torch.save(payload, path)
     with pytest.raises(ValueError, match="preprocessor.surprise"):
         PSANNRegressor.load(str(path))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        ("missing-artifact", "artifacts.preprocessor_module is missing for module metadata"),
+        ("invalid-artifact", "artifacts.preprocessor_module is missing or invalid"),
+        ("missing-metadata", "artifacts.preprocessor_module is unexpected without module metadata"),
+        ("non-mapping-metadata", "estimator_params.preprocessor must be a mapping"),
+        ("missing-kind", "estimator_params.preprocessor.kind is missing"),
+        ("wrong-kind", "estimator_params.preprocessor.kind must be module"),
+    ],
+)
+def test_schema_v2_module_metadata_and_artifact_are_bidirectional(
+    tmp_path, mutation: str, error: str
+) -> None:
+    """Custom prototype artifacts and metadata are one strict schema contract."""
+
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "flat", 4))
+    ).fit(X, y)
+    first = tmp_path / "custom-first.pt"
+    second = tmp_path / "custom-second.pt"
+    estimator.save(str(first))
+    # Exercise a second native schema-v2 generation before corrupting it.
+    PSANNRegressor.load(str(first)).save(str(second))
+    payload = torch.load(second, weights_only=False)
+    if mutation == "missing-artifact":
+        payload["artifacts"].pop("preprocessor_module")
+    elif mutation == "invalid-artifact":
+        payload["artifacts"]["preprocessor_module"] = "not-a-module"
+    elif mutation == "missing-metadata":
+        payload["estimator_params"].pop("preprocessor")
+    elif mutation == "non-mapping-metadata":
+        payload["estimator_params"]["preprocessor"] = "module"
+    elif mutation == "missing-kind":
+        payload["estimator_params"]["preprocessor"].pop("kind")
+    else:
+        payload["estimator_params"]["preprocessor"]["kind"] = "lsm"
+    broken = tmp_path / f"{mutation}.pt"
+    torch.save(payload, broken)
+    with pytest.raises((TypeError, ValueError), match=error):
+        PSANNRegressor.load(str(broken))
+
+
+@pytest.mark.parametrize("preprocessor_kind", ["lsm", "none"])
+def test_schema_v2_rejects_module_artifact_without_matching_module_metadata(
+    tmp_path, preprocessor_kind: str
+) -> None:
+    X, y = _dense_data()
+    if preprocessor_kind == "lsm":
+        estimator = _small_estimator(PreprocessorConfig(LSMConfig.dense(output_dim=4))).fit(X, y)
+    else:
+        estimator = PSANNRegressor(
+            hidden_layers=1, hidden_units=4, epochs=1, batch_size=4, random_state=0, device="cpu"
+        ).fit(X, y)
+    path = tmp_path / f"unexpected-artifact-{preprocessor_kind}.pt"
+    estimator.save(str(path))
+    payload = torch.load(path, weights_only=False)
+    payload["artifacts"]["preprocessor_module"] = torch.nn.Linear(3, 4)
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match="artifacts.preprocessor_module is unexpected"):
+        PSANNRegressor.load(str(path))
+
+
+@pytest.mark.parametrize(
+    "legacy_kwargs",
+    [
+        {"lsm": {"output_dim": 4, "hidden_layers": 1, "hidden_units": 4}},
+        {"lsm_train": True},
+        {"lsm_pretrain_epochs": 0},
+        {"lsm_lr": 0.01},
+        {
+            "lsm": {"output_dim": 4, "hidden_layers": 1, "hidden_units": 4},
+            "lsm_train": True,
+            "lsm_pretrain_epochs": 0,
+            "lsm_lr": 0.01,
+        },
+    ],
+    ids=["lsm", "lsm-train", "lsm-pretrain-epochs", "lsm-lr", "all-legacy-arguments"],
+)
+def test_each_legacy_preprocessing_argument_warns_once_at_the_user_callsite(
+    legacy_kwargs: dict[str, object],
+) -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        PSANNRegressor(hidden_layers=1, hidden_units=4, **legacy_kwargs)
+    deprecations = [warning for warning in caught if warning.category is DeprecationWarning]
+    assert len(deprecations) == 1
+    assert deprecations[0].filename.endswith("test_preprocessing_phase4_boundary.py")
+
+
+@pytest.mark.parametrize("legacy_key", ["lsm", "lsm_train", "lsm_pretrain_epochs", "lsm_lr"])
+def test_canonical_preprocessor_conflicts_with_every_legacy_argument(legacy_key: str) -> None:
+    legacy_value: object
+    if legacy_key == "lsm":
+        legacy_value = {"output_dim": 4, "hidden_layers": 1, "hidden_units": 4}
+    elif legacy_key == "lsm_train":
+        legacy_value = True
+    elif legacy_key == "lsm_pretrain_epochs":
+        legacy_value = 0
+    else:
+        legacy_value = 0.01
+    with pytest.raises(ValueError, match=legacy_key):
+        PSANNRegressor(
+            preprocessor=PreprocessorConfig(LSMConfig.dense(output_dim=4)),
+            **{legacy_key: legacy_value},
+        )
 
 
 @pytest.mark.parametrize("topology", ["dense", "conv2d"])

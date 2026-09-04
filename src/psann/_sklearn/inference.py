@@ -62,9 +62,16 @@ class _PSANNRegressorInferenceMixin:
             N, C = X_cf.shape[0], int(X_cf.shape[1])
             X2d = X_cf.reshape(N, C, -1).transpose(0, 2, 1).reshape(-1, C)
             X2d_scaled = self._apply_fitted_scaler(X2d)
-            flat_for_context = X2d_scaled if X2d_scaled is not X2d else X2d
             if X2d_scaled is not X2d:
                 X_cf = X2d_scaled.reshape(N, -1, C).transpose(0, 2, 1).reshape(X_cf.shape)
+            # Context builders operate on one feature row per original sample.
+            # The scaler intentionally works over a ``(N * spatial, C)`` matrix,
+            # which must not leak into automatic-context construction: it would
+            # expand a convolutional batch by its spatial extent at inference.
+            # Derive context from the scaled channel-first tensor independently
+            # of whether the predictive model consumes channel-first or flattened
+            # inputs.
+            flat_for_context = X_cf.reshape(N, -1).astype(np.float32, copy=False)
             use_cf_inputs = bool(
                 self.per_element or getattr(self, "_use_channel_first_train_inputs_", False)
             )
@@ -72,7 +79,7 @@ class _PSANNRegressorInferenceMixin:
             if use_cf_inputs:
                 inputs_np = X_cf.astype(np.float32, copy=False)
             else:
-                inputs_np = flat_for_context.reshape(N, -1).astype(np.float32, copy=False)
+                inputs_np = X_cf.reshape(N, -1).astype(np.float32, copy=False)
 
         if context_np is None and flat_for_context is not None:
             auto_ctx = self._auto_context(flat_for_context.astype(np.float32, copy=False))

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 pytest.importorskip("torch")
 
 from psann import PSANNRegressor
+from psann.architectures import ArchitectureConfig, ConvolutionConfig
 from psann.preprocessing import (
     LSMConfig,
     LSMPretrainingConfig,
@@ -96,3 +98,66 @@ def test_v2_dense_lsm_checkpoint_survives_two_generations(tmp_path) -> None:
     reloaded = PSANNRegressor.load(str(second))
     assert reloaded.preprocessor_capabilities_.output_dim == 4
     np.testing.assert_allclose(reloaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-5)
+
+
+@pytest.mark.parametrize("pretrained", [False, True])
+@pytest.mark.parametrize("trainable", [False, True])
+def test_conv_lsm_pretraining_and_joint_policy_keep_weight_and_optimizer_invariants(
+    pretrained: bool, trainable: bool
+) -> None:
+    """Conv2d LSM pretraining/freeze policy is observable beyond output shape."""
+
+    X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+    y = X.mean(axis=(1, 2, 3))
+    config = PreprocessorConfig(
+        LSMConfig.convolutional(
+            output_dim=2,
+            hidden_units=3,
+            random_state=0,
+            pretraining=LSMPretrainingConfig(epochs=1 if pretrained else 0),
+        ),
+        PreprocessorTrainingConfig(trainable=trainable, lr=0.003),
+    )
+    estimator = PSANNRegressor(
+        architecture=ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3)),
+        preprocessor=config,
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        random_state=0,
+        device="cpu",
+        warm_start=True,
+    ).fit(X, y)
+    before_second_fit = [
+        parameter.detach().clone() for parameter in estimator.preprocessor_.parameters()
+    ]
+    estimator.fit(X, y)
+    after_second_fit = list(estimator.preprocessor_.parameters())
+    optimizer_parameters = {
+        id(parameter)
+        for group in estimator._optimizer_.param_groups
+        for parameter in group["params"]
+    }
+    preprocessor_parameters = list(estimator.preprocessor_.parameters())
+    assert estimator.predict(X[:2]).shape == (2,)
+    assert all(parameter.requires_grad is trainable for parameter in preprocessor_parameters)
+    if trainable:
+        groups = {
+            group["psann_parameter_group"]: group for group in estimator._optimizer_.param_groups
+        }
+        assert groups["preprocessor"]["lr"] == pytest.approx(0.003)
+        assert {id(parameter) for parameter in preprocessor_parameters} <= optimizer_parameters
+        assert any(
+            not torch.equal(before, after.detach())
+            for before, after in zip(before_second_fit, after_second_fit)
+        )
+    else:
+        assert {id(parameter) for parameter in preprocessor_parameters}.isdisjoint(
+            optimizer_parameters
+        )
+        assert all(
+            torch.equal(before, after.detach())
+            for before, after in zip(before_second_fit, after_second_fit)
+        )
+    assert "ols_readout" in estimator.preprocessor_diagnostics_

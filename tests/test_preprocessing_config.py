@@ -58,3 +58,48 @@ def test_conv_lsm_rejects_dense_only_pretraining_options() -> None:
             output_dim=4,
             pretraining=LSMPretrainingConfig(batch_size=2),
         )
+
+
+@pytest.mark.parametrize(
+    ("alias", "expected_field"),
+    [
+        ("out_channels", "output_dim"),
+        ("hidden_width", "hidden_units"),
+        ("hidden_channels", "hidden_units"),
+    ],
+)
+def test_canonical_mapping_alias_matrix_normalizes_without_mutation(
+    alias: str, expected_field: str
+) -> None:
+    lsm: dict[str, object] = {"topology": "dense", "output_dim": 4, "hidden_units": 5}
+    lsm.pop(expected_field)
+    lsm[alias] = 6
+    source = {"kind": "lsm", "lsm": lsm, "training": {"trainable": False, "lr": None}}
+    normalized = normalize_preprocessor(source)
+    assert normalized is not None
+    assert getattr(normalized.component, expected_field) == 6
+    assert alias in source["lsm"]  # type: ignore[operator]
+
+
+@pytest.mark.parametrize(
+    ("value", "path"),
+    [
+        ({"kind": "lsm", "lsm": [], "training": {}}, "preprocessor.lsm"),
+        ({"kind": "lsm", "lsm": {}, "training": []}, "preprocessor.training"),
+        ({"kind": "lsm", "lsm": {"output_dim": [4]}}, "output_dim"),
+        ({"kind": "lsm", "lsm": {"output_dim": 4}, "training": {"trainable": 1}}, "trainable"),
+        ({"kind": "lsm", "lsm": {"output_dim": 0}}, "output_dim"),
+        ({"kind": "lsm", "lsm": {"sparsity": -0.1}}, "sparsity"),
+        ({"kind": "lsm", "lsm": {"sparsity": 1.1}}, "sparsity"),
+        ({"kind": "lsm", "lsm": {"random_state": True}}, "random_state"),
+        ({"kind": "lsm", "lsm": {"pretraining": {"epochs": "1"}}}, "epochs"),
+        ({"kind": "lsm", "lsm": {"pretraining": {"noisy": [0.1, "bad"]}}}, "noisy"),
+        ({"kind": "lsm", "lsm": {"output_dim": 4}, "training": {"lr": "0.1"}}, "lr"),
+        ({"kind": "lsm", "lsm": {"output_dim": 4, "out_channels": 5}}, "conflicting"),
+    ],
+)
+def test_canonical_mapping_adversarial_type_and_domain_matrix(
+    value: dict[str, object], path: str
+) -> None:
+    with pytest.raises((TypeError, ValueError), match=path):
+        normalize_preprocessor(value)
