@@ -349,15 +349,19 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
         if opt_name == "sgd":
             return torch.optim.SGD(params, momentum=0.9)
         return torch.optim.Adam(params, weight_decay=float(estimator.weight_decay))
-    params = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    trainable_params = [parameter for parameter in model.parameters() if parameter.requires_grad]
     if str(estimator.optimizer).lower() == "adamw":
         return torch.optim.AdamW(
-            params, lr=float(estimator.lr), weight_decay=float(estimator.weight_decay)
+            trainable_params,
+            lr=float(estimator.lr),
+            weight_decay=float(estimator.weight_decay),
         )
     if str(estimator.optimizer).lower() == "sgd":
-        return torch.optim.SGD(params, lr=float(estimator.lr), momentum=0.9)
+        return torch.optim.SGD(trainable_params, lr=float(estimator.lr), momentum=0.9)
     return torch.optim.Adam(
-        params, lr=float(estimator.lr), weight_decay=float(estimator.weight_decay)
+        trainable_params,
+        lr=float(estimator.lr),
+        weight_decay=float(estimator.weight_decay),
     )
 
 
