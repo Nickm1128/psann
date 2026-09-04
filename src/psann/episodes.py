@@ -8,7 +8,7 @@ from typing import Callable, Protocol
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn
 
 from .episodic.legacy_config import HISSOTrainerConfig
 from .episodic.rewards import multiplicative_return_reward
@@ -119,33 +119,8 @@ class EpisodeTrainer:
     def train(self, X: np.ndarray, *, epochs: int = 100, verbose: int = 1) -> None:
         self._runtime.train(X, epochs=epochs, verbose=verbose, lr_max=None, lr_min=None)
 
-    @torch.no_grad()
     def evaluate(self, X: np.ndarray, *, n_batches: int = 16) -> float:
-        data = torch.as_tensor(np.asarray(X, dtype=np.float32), device=self.device)
-        values: list[float] = []
-        self.model.eval()
-        for _ in range(n_batches):
-            episodes, _ = self._runtime._sample_episode_batch(
-                data,
-                total_steps=data.shape[0],
-                episode_length=min(self.cfg.episode_length, data.shape[0]),
-                count=self.cfg.batch_episodes,
-            )
-            context = self._runtime._extract_context(episodes)
-            outputs = self.model(
-                episodes.reshape(episodes.shape[0] * episodes.shape[1], *episodes.shape[2:])
-            )
-            if outputs.ndim == 1:
-                outputs = outputs[:, None]
-            outputs = outputs.reshape(episodes.shape[0], episodes.shape[1], -1)
-            values.append(
-                float(
-                    self._runtime._coerce_reward(
-                        self._runtime._apply_primary_transform(outputs), context
-                    ).mean()
-                )
-            )
-        return float(np.mean(values))
+        return self._runtime.evaluate(X, n_batches=n_batches)
 
 
 def make_episode_trainer_from_estimator(

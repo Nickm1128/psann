@@ -20,7 +20,10 @@ class HISSOWarmStartConfig:
     lr: Optional[float] = None
     weight_decay: Optional[float] = None
     lsm_lr: Optional[float] = None
-    shuffle: bool = True
+    # ``None`` means retain the historical state-aware default.  Canonical
+    # ``HISSOConfig`` callers resolve this field explicitly before crossing
+    # the compatibility boundary.
+    shuffle: bool | None = None
     verbose: int = 0
 
 
@@ -202,7 +205,8 @@ def coerce_warmstart_config(
     lr = cfg_map.pop("lr", None)
     weight_decay = cfg_map.pop("weight_decay", None)
     lsm_lr = cfg_map.pop("lsm_lr", None)
-    shuffle = bool(cfg_map.pop("shuffle", True))
+    shuffle_value = cfg_map.pop("shuffle", None)
+    shuffle = None if shuffle_value is None else bool(shuffle_value)
     verbose = int(cfg_map.pop("verbose", 0))
 
     if cfg_map:

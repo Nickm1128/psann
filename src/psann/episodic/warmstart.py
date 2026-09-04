@@ -42,8 +42,13 @@ def run_hisso_supervised_warmstart(
     )
 
     # Canonical callers resolve the state-aware default before constructing the
-    # compatibility payload; retained flat HISSO keeps its historical default.
-    shuffle = bool(config.shuffle)
+    # compatibility payload.  ``None`` is retained only for the flat 0.x path,
+    # whose historical default disabled shuffling for persistent state.
+    shuffle = (
+        not (estimator.stateful and estimator.state_reset in ("epoch", "none"))
+        if config.shuffle is None
+        else bool(config.shuffle)
+    )
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=int(config.batch_size or estimator.batch_size),

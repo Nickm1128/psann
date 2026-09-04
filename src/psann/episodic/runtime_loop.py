@@ -10,8 +10,8 @@ from torch.nn.utils import clip_grad_norm_
 
 from ..types import ContextExtractor, RewardFn
 from .amp import _autocast_context, _guard_cuda_capture
-from .legacy_config import HISSOTrainerConfig
 from .context import _call_context_extractor
+from .legacy_config import HISSOTrainerConfig
 from .reward import (
     _align_context_for_reward,
     _compute_reward,
@@ -88,6 +88,9 @@ class HISSOTrainer:
             "optimizer_time_s_total": 0.0,
             "amp_enabled": False,
             "amp_dtype": None,
+            "gradient_clip": gradient_clip,
+            "random_state": cfg.random_state,
+            "strict": bool(strict),
         }
         self.optimizer = optimizer or torch.optim.Adam(
             (p for p in self.model.parameters() if p.requires_grad),
@@ -279,6 +282,41 @@ class HISSOTrainer:
         if self.profile.get("episode_view_is_shared") is None:
             self.profile["episode_view_is_shared"] = True
         self.model.eval()
+
+    @torch.no_grad()
+    def evaluate(self, X: np.ndarray, *, n_batches: int = 16) -> float:
+        """Evaluate sampled episodes through the same runtime primitives.
+
+        This is intentionally owned here so the deprecated ``psann.episodes``
+        facade cannot grow a second sampler/context/reward implementation.
+        """
+
+        data = torch.as_tensor(np.asarray(X, dtype=np.float32), device=self.device)
+        if data.ndim < 2 or data.shape[0] == 0:
+            raise ValueError("HISSO evaluation requires non-empty batched inputs.")
+        episode_length = min(max(1, int(self.cfg.episode_length)), int(data.shape[0]))
+        values: list[float] = []
+        self.model.eval()
+        for _ in range(max(1, int(n_batches))):
+            episodes, _ = self._sample_episode_batch(
+                data,
+                total_steps=int(data.shape[0]),
+                episode_length=episode_length,
+                count=max(1, int(self.cfg.episodes_per_batch)),
+            )
+            context = self._extract_context(episodes)
+            outputs = self.model(
+                episodes.reshape(episodes.shape[0] * episodes.shape[1], *episodes.shape[2:])
+            )
+            if isinstance(outputs, tuple):
+                outputs = outputs[0]
+            if outputs.ndim == 1:
+                outputs = outputs[:, None]
+            outputs = outputs.reshape(episodes.shape[0], episodes.shape[1], -1)
+            values.append(
+                float(self._coerce_reward(self._apply_primary_transform(outputs), context).mean())
+            )
+        return float(np.mean(values))
 
     def _reset_state_if_needed(self, cadence: str) -> None:
         if not self.stateful or self.state_reset != cadence:

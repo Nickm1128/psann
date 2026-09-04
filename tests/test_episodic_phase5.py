@@ -17,6 +17,8 @@ from psann.episodic import (
 )
 from psann.episodic.rewards import FINANCE_PORTFOLIO_STRATEGY
 from psann.episodic.runtime import transform_actions
+from psann.episodic.runtime_loop import HISSOTrainer
+from psann.episodic.legacy_config import HISSOTrainerConfig
 from psann.preprocessing import LSMConfig, PreprocessorConfig, PreprocessorTrainingConfig
 
 
@@ -343,3 +345,41 @@ def test_schema_v3_registered_bundle_closes_two_generations(tmp_path):
     restored = EpisodicTrainer.load(first)
     restored.save(second)
     assert EpisodicTrainer.load(second).strategy.reward == "finance"
+
+
+def test_legacy_episode_facade_delegates_training_and_evaluation_to_runtime():
+    """The deprecated facade is a warning-only adapter, not another runtime."""
+
+    from psann.episodes import EpisodeConfig, EpisodeTrainer
+
+    with pytest.warns(DeprecationWarning, match="EpisodeConfig"):
+        config = EpisodeConfig(episode_length=3, batch_episodes=2, random_state=4)
+    model = torch.nn.Linear(2, 1)
+    with pytest.warns(DeprecationWarning, match="EpisodeTrainer"):
+        trainer = EpisodeTrainer(model, ep_cfg=config, device="cpu")
+    assert isinstance(trainer._runtime, HISSOTrainer)
+    trainer.train(np.ones((8, 2), dtype=np.float32), epochs=1, verbose=0)
+    assert isinstance(trainer.evaluate(np.ones((8, 2), dtype=np.float32), n_batches=2), float)
+
+
+def test_strict_runtime_propagates_state_lifecycle_failures():
+    class BrokenState(torch.nn.Linear):
+        def reset_state(self) -> None:
+            raise RuntimeError("state reset failed")
+
+    runtime = HISSOTrainer(
+        BrokenState(2, 1),
+        cfg=HISSOTrainerConfig(episode_length=2, episodes_per_batch=1),
+        device=torch.device("cpu"),
+        lr=0.01,
+        reward_fn=None,
+        context_extractor=None,
+        input_noise_std=None,
+        stateful=True,
+        state_reset="epoch",
+        strict=True,
+    )
+    with pytest.raises(RuntimeError, match="state reset failed"):
+        runtime.train(
+            np.ones((4, 2), dtype=np.float32), epochs=1, verbose=0, lr_max=None, lr_min=None
+        )
