@@ -221,6 +221,8 @@ def _build_activation(
         )
     if act == "relu":
         return nn.ReLU()
+    if act == "gelu":
+        return nn.GELU()
     if act == "tanh":
         return nn.Tanh()
     if act == "relu_sigmoid_psann":

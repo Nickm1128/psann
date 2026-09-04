@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import random as _random
 from dataclasses import dataclass
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
-from psann.activations import SineParam
+from torch import nn
+
+from psann.architectures.components import build_activation
+from ...architectures.compat import sine_policies
 
 
 @dataclass
@@ -36,63 +39,24 @@ class SineConfig:
     feature_dim: int = -1
 
 
-def build_sine(out_features: int, cfg: SineConfig | None = None) -> SineParam:
+def build_sine(out_features: int, cfg: SineConfig | None = None) -> nn.Module:
     cfg = cfg or SineConfig()
-    learnable: Iterable[str]
-    if cfg.learnable is not None:
-        learnable = tuple(cfg.learnable)
-    else:
-        learnable = ("amplitude", "frequency", "decay") if cfg.trainable else ()
-
-    # Optionally sample scalar inits from provided ranges
-    def _sample_or(x: float, rng: Optional[Tuple[float, float]]) -> float:
-        if rng is None:
-            return float(x)
-        lo, hi = float(rng[0]), float(rng[1])
-        if hi < lo:
-            lo, hi = hi, lo
-        return float(_random.uniform(lo, hi))
-
+    activation, _, _ = sine_policies(cfg)
+    # Preserve the direct low-level feature-axis compatibility surface.
+    values = {}
     import torch
 
-    def _normal_vector(mean: float, std: float) -> torch.Tensor:
-        vals = torch.randn(out_features, dtype=torch.float32) * float(std) + float(mean)
-        eps = torch.finfo(vals.dtype).eps
-        return vals.clamp_min(eps)
-
-    amp_std = float(getattr(cfg, "amp_init_std", 0.0))
-    if amp_std > 0:
-        amp_init: float | torch.Tensor = _normal_vector(cfg.amp_init, amp_std)
-    else:
-        amp_init = _sample_or(cfg.amp_init, cfg.amp_range)
-
-    freq_std = float(getattr(cfg, "freq_init_std", 0.0))
-    if freq_std > 0:
-        freq_init: float | torch.Tensor = _normal_vector(cfg.freq_init, freq_std)
-    else:
-        freq_init = _sample_or(cfg.freq_init, cfg.freq_range)
-
-    damp_std = float(getattr(cfg, "damp_init_std", 0.0))
-    if damp_std > 0:
-        damp_init: float | torch.Tensor = _normal_vector(cfg.damp_init, damp_std)
-    else:
-        damp_init = _sample_or(cfg.damp_init, cfg.damp_range)
-
-    bounds: Dict[str, Tuple[Optional[float], Optional[float]]] = {}
-    if cfg.amp_bounds is not None:
-        bounds["amplitude"] = cfg.amp_bounds
-    if cfg.freq_bounds is not None:
-        bounds["frequency"] = cfg.freq_bounds
-    if cfg.damp_bounds is not None:
-        bounds["decay"] = cfg.damp_bounds
-
-    return SineParam(
-        out_features,
-        amplitude_init=amp_init,
-        frequency_init=freq_init,
-        decay_init=damp_init,
-        learnable=learnable,
-        decay_mode=str(cfg.decay_mode),
-        bounds=bounds if bounds else None,
-        feature_dim=int(cfg.feature_dim),
-    )
+    for old, name in (("amp", "amplitude"), ("freq", "frequency"), ("damp", "decay")):
+        mean = getattr(cfg, old + "_init")
+        std = getattr(cfg, old + "_init_std")
+        rng = getattr(cfg, old + "_range")
+        if std > 0:
+            vector = torch.randn(out_features, dtype=torch.float32) * std + mean
+            values[name] = vector.clamp_min(torch.finfo(vector.dtype).eps)
+        elif rng is not None:
+            values[name] = _random.uniform(*sorted(rng))
+        else:
+            values[name] = mean
+    result = build_activation(activation, features=out_features, initial_values=values)
+    setattr(result, "feature_dim", cfg.feature_dim)
+    return result

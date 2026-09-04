@@ -70,10 +70,10 @@ def normalize_activation_name(value: str) -> str:
     """Canonicalize one activation discriminant without validating a full policy."""
 
     name = _canonical_activation_name(value)
-    allowed = {"psann", "phase-psann", "mixed", "relu", "tanh", "relu-sigmoid-psann"}
+    allowed = {"psann", "phase-psann", "mixed", "relu", "gelu", "tanh", "relu-sigmoid-psann"}
     if name not in allowed:
         raise ValueError(
-            "activation.kind must be psann, phase-psann, mixed, relu, tanh, or "
+            "activation.kind must be psann, phase-psann, mixed, relu, gelu, tanh, or "
             "relu-sigmoid-psann."
         )
     return name
@@ -242,7 +242,7 @@ class ActivationConfig:
                     raise TypeError(f"activation.activation_types[{index}] must be a string.")
                 normalized_types.append(normalize_activation_name(item))
             types = tuple(normalized_types)
-            supported = {"psann", "phase-psann", "relu-sigmoid-psann", "relu", "tanh"}
+            supported = {"psann", "phase-psann", "relu-sigmoid-psann", "relu", "gelu", "tanh"}
             if (
                 not types
                 or len(set(types)) != len(types)
@@ -815,6 +815,10 @@ def validate_architecture(value: ArchitectureConfig, *, hidden_layers: int | Non
     if kind not in {"dense", "convolutional", "wave", "sequence", "geometric-sparse"}:
         raise ValueError(
             "architecture.kind must be dense, convolutional, wave, sequence, or geometric-sparse."
+        )
+    if kind != "geometric-sparse" and value.activation.kind == "gelu":
+        raise ValueError(
+            "activation.kind='gelu' is supported only by architecture.geometric-sparse."
         )
     if kind != "geometric-sparse" and value.activation.kind in {"phase-psann", "mixed"}:
         raise ValueError(

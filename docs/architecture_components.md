@@ -4,12 +4,21 @@ Model packages can use the documented `psann.architectures.components` interface
 without importing core implementation modules. Core remains independent of optional
 model packages.
 
-`build_activation(config, *, features)` accepts an `ActivationConfig` or equivalent
-mapping for PSANN, phase PSANN, mixed activations, ReLU, tanh, and ReLU-sigmoid PSANN.
+`build_activation(config, *, features, initial_values=None)` accepts an
+`ActivationConfig` or equivalent mapping for PSANN, phase PSANN, mixed activations,
+ReLU, GELU, tanh, and ReLU-sigmoid PSANN.
 It delegates to the existing core activation builder, including parameter bounds,
 learnability, phase, mixed feature allocation, seed, and layout. A fixed `"gelu"`
-literal or `{"kind": "gelu"}` builds PyTorch GELU. The current `ActivationConfig`
-does not include a GELU kind.
+literal, `{"kind": "gelu"}`, or `ActivationConfig(kind="gelu")` builds PyTorch GELU.
+Core estimator capability validation permits this spelling only for geometric-sparse
+architectures, including fixed children of mixed activations.
+
+Optional `initial_values` supplies already resolved `amplitude`, `frequency`, and
+`decay` values. Each value must be a finite real scalar or a finite one-dimensional
+tensor of length `features`. Unknown keys, booleans, complex values, nonfinite values,
+and mismatched tensors are rejected. Tensor inputs are copied. This boundary performs
+no sampling; callers own their sampling policy. Omitting it preserves core defaults
+and RNG behavior. Fixed activations reject nonempty resolved parameter values.
 
 `RMSNorm` normalizes the last feature dimension with the established default epsilon
 of `1e-6` and a learned `scale`. `DropPath` retains the per-sample mask and inverse
@@ -28,6 +37,8 @@ wrapping, and seed. Bias and gather/scatter selection remain execution policies.
 `.as_tensors(device="cpu")` to obtain `(indices, source_indices, destination_indices)`
 as independent `torch.long` tensors. Mutating these tensors does not change the
 connectivity object or later materializations.
+`GeometryConnectivity.edge_indices(indices)` expands an existing rectangular 2D
+`torch.long` gather table into its source and destination edge tensors.
 
 Cache maintenance is available through the documented
 `psann.utils.cleanup_hf_cache(max_bytes, ...)` export. It retains the existing

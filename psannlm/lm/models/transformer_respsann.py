@@ -11,15 +11,19 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from psann.layers.sine_residual import RMSNorm
-from psann.layers.spectral import SpectralGate1D
+from psann.architectures.components import RMSNorm, DropPath
+from psann.architectures.components import SpectralGate1D
 
+from ...architectures.config import LMConfig, LMArchitectureConfig
+from ...architectures.activation import build_lm_activation
+from ...architectures.compat import legacy_lm_config
+from ...architectures.registry import build_lm_model
 from ..config import normalize_positional_encoding
 from .sine import SineConfig, build_sine
 
@@ -45,12 +49,15 @@ class PSANNMLP(nn.Module):
         sine: Optional[SineConfig] = None,
         mlp_activation: str = "sine",
         dropout: float = 0.0,
+        architecture: LMArchitectureConfig | None = None,
     ) -> None:
         super().__init__()
         self.fc1 = nn.Linear(d_model, d_mlp)
         mlp_activation = (mlp_activation or "sine").lower()
-        if mlp_activation == "sine":
-            self.act: nn.Module = build_sine(d_mlp, sine)
+        if architecture is not None:
+            self.act: nn.Module = build_lm_activation(architecture, d_mlp)
+        elif mlp_activation == "sine":
+            self.act = build_sine(d_mlp, sine)
         elif mlp_activation == "gelu":
             self.act = nn.GELU()
         else:
@@ -146,6 +153,8 @@ def _build_alibi_bias(
 
 
 class SelfAttention(nn.Module):
+    _alibi_slopes: torch.Tensor
+
     def __init__(
         self,
         d_model: int,
@@ -280,6 +289,7 @@ class TransformerBlock(nn.Module):
         gate_groups: str = "depthwise",
         gate_init: float = 0.0,
         gate_strength: float = 1.0,
+        architecture: LMArchitectureConfig | None = None,
     ) -> None:
         super().__init__()
         self.attn = SelfAttention(
@@ -290,7 +300,12 @@ class TransformerBlock(nn.Module):
             attn_impl=attn_impl,
         )
         self.mlp = PSANNMLP(
-            d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout
+            d_model,
+            d_mlp,
+            sine=sine,
+            mlp_activation=mlp_activation,
+            dropout=dropout,
+            architecture=architecture,
         )
         self.spectral = (
             SpectralGate1D(
@@ -306,10 +321,22 @@ class TransformerBlock(nn.Module):
         )
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         # Optional residual scaling (learnable), default 1.0 (shape 1 for FSDP)
-        self.alpha = nn.Parameter(torch.ones(1))
+        residual = architecture.residual if architecture is not None else None
+        self.alpha = nn.Parameter(
+            torch.full((1,), residual.alpha_init if residual is not None else 1.0)
+        )
+        self.drop_path = (
+            DropPath(residual.drop_path)
+            if residual is not None and residual.drop_path
+            else nn.Identity()
+        )
+        norm = residual.norm if residual is not None else norm
         if norm == "rms":
-            self.norm1 = RMSNorm(d_model)
-            self.norm2 = RMSNorm(d_model)
+            self.norm1: nn.Module = RMSNorm(d_model)
+            self.norm2: nn.Module = RMSNorm(d_model)
+        elif norm == "none":
+            self.norm1 = nn.Identity()
+            self.norm2 = nn.Identity()
         else:
             self.norm1 = nn.LayerNorm(d_model)
             self.norm2 = nn.LayerNorm(d_model)
@@ -332,7 +359,7 @@ class TransformerBlock(nn.Module):
         mlp_out = self.alpha * self.mlp(h2)
         if self.spectral is not None:
             mlp_out = mlp_out + self.spectral(mlp_out)
-        x = x + mlp_out
+        x = x + self.drop_path(mlp_out)
         if use_cache or past_kv is not None:
             assert present is not None
             return x, present
@@ -372,12 +399,15 @@ class ResPSANNTransformerConfig:
 
 
 class ResPSANNTransformer(nn.Module):
-    def __init__(self, cfg: ResPSANNTransformerConfig) -> None:
+    def __init__(self, config: ResPSANNTransformerConfig | LMConfig) -> None:
         super().__init__()
+        cfg: Any = config
         self.cfg = cfg
+        architecture = cfg.architecture if isinstance(cfg, LMConfig) else None
         self.gradient_checkpointing: bool = False
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        sinecfg = cfg.sine if cfg.sine is not None else SineConfig()
+        sinecfg = getattr(cfg, "sine", None) or SineConfig()
+        spectral = architecture.spectral if architecture is not None else None
         self.blocks = nn.ModuleList(
             [
                 TransformerBlock(
@@ -387,15 +417,50 @@ class ResPSANNTransformer(nn.Module):
                     dropout=cfg.dropout,
                     norm="rms",
                     sine=sinecfg,
-                    mlp_activation=cfg.mlp_activation,
+                    mlp_activation=getattr(cfg, "mlp_activation", "sine"),
+                    architecture=architecture,
                     positional_encoding=cfg.positional_encoding,
-                    attn_impl=cfg.attn_impl,
-                    use_spectral_gate=bool(cfg.use_spectral_gate),
-                    k_fft=int(cfg.k_fft),
-                    gate_type=str(cfg.gate_type),
-                    gate_groups=str(cfg.gate_groups),
-                    gate_init=float(cfg.gate_init),
-                    gate_strength=float(cfg.gate_strength),
+                    attn_impl=getattr(
+                        cfg, "attn_impl", getattr(cfg, "attention_implementation", "math")
+                    ),
+                    use_spectral_gate=bool(
+                        (
+                            spectral is not None
+                            if architecture is not None
+                            else cfg.use_spectral_gate
+                        )
+                    ),
+                    k_fft=int(
+                        (getattr(spectral, "k_fft", 64) if architecture is not None else cfg.k_fft)
+                    ),
+                    gate_type=str(
+                        (
+                            getattr(spectral, "gate_type", "rfft")
+                            if architecture is not None
+                            else cfg.gate_type
+                        )
+                    ).replace("-", "_"),
+                    gate_groups=str(
+                        (
+                            getattr(spectral, "groups", "depthwise")
+                            if architecture is not None
+                            else cfg.gate_groups
+                        )
+                    ),
+                    gate_init=float(
+                        (
+                            getattr(spectral, "init", 0.0)
+                            if architecture is not None
+                            else cfg.gate_init
+                        )
+                    ),
+                    gate_strength=float(
+                        (
+                            getattr(spectral, "strength", 1.0)
+                            if architecture is not None
+                            else cfg.gate_strength
+                        )
+                    ),
                 )
                 for _ in range(cfg.n_layers)
             ]
@@ -455,10 +520,9 @@ class ResPSANNTransformer(nn.Module):
             return logits  # (B, T, V)
 
 
-def build_respsann_transformer(**kwargs) -> ResPSANNTransformer:
-    return ResPSANNTransformer(ResPSANNTransformerConfig(**kwargs))
+def build_respsann_transformer(**kwargs: Any) -> nn.Module:
+    return build_lm_model(legacy_lm_config("respsann", kwargs)).model
 
 
-def build_sgrpsann_transformer(**kwargs) -> ResPSANNTransformer:
-    kwargs.setdefault("use_spectral_gate", True)
-    return ResPSANNTransformer(ResPSANNTransformerConfig(**kwargs))
+def build_sgrpsann_transformer(**kwargs: Any) -> nn.Module:
+    return build_lm_model(legacy_lm_config("sgrpsann", kwargs)).model

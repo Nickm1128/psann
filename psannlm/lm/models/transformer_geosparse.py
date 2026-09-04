@@ -13,17 +13,24 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, fields
-from typing import List, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, List, Optional, Sequence, Tuple
 
 import torch
 from torch import nn
 
-from psann.activations import MixedActivation
-from psann.layers.geo_sparse import build_geo_connectivity, expand_in_indices_to_edges
-from psann.layers.sine_residual import RMSNorm
-from psann.nn import DropPath
+from psann.architectures import ActivationConfig, GeometryConfig
+from psann.architectures.components import (
+    GeometryConnectivity,
+    build_geometry_connectivity,
+    build_activation,
+)
+from psann.architectures.components import RMSNorm, DropPath
 
+from ...architectures.config import LMConfig, LMArchitectureConfig
+from ...architectures.activation import build_lm_activation
+from ...architectures.compat import legacy_lm_config
+from ...architectures.registry import build_lm_model
 from ..config import normalize_positional_encoding
 from .sine import SineConfig, build_sine
 from .transformer_respsann import SelfAttention, _sinusoidal_positions
@@ -56,6 +63,10 @@ def _parse_shape(value: object | None) -> Optional[Tuple[int, int]]:
 
 class ChunkedGeoSparseLinear(nn.Module):
     """GeoSparse linear with bounded peak memory via output-feature chunking."""
+
+    in_index_per_out: torch.Tensor
+    src_index: torch.Tensor
+    dst_index: torch.Tensor
 
     def __init__(
         self,
@@ -95,7 +106,7 @@ class ChunkedGeoSparseLinear(nn.Module):
         self.reset_parameters()
 
         if self.compute_mode == "scatter":
-            src, dst = expand_in_indices_to_edges(self.in_index_per_out)
+            src, dst = GeometryConnectivity.edge_indices(self.in_index_per_out)
             self.register_buffer("src_index", src.contiguous())
             self.register_buffer("dst_index", dst.contiguous())
         else:
@@ -183,7 +194,7 @@ class GeoSparseResidualBlockLM(nn.Module):
         self.features = int(features)
         key = str(norm or "rms").lower()
         if key == "none":
-            self.norm = nn.Identity()
+            self.norm: nn.Module = nn.Identity()
         elif key == "layer":
             self.norm = nn.LayerNorm(self.features)
         elif key == "rms":
@@ -247,6 +258,7 @@ class GeoSparseMLP(nn.Module):
         seed: Optional[int] = None,
         chunk_size: int = 0,
         dropout: float = 0.0,
+        architecture: LMArchitectureConfig | None = None,
     ) -> None:
         super().__init__()
         if depth <= 0:
@@ -276,41 +288,45 @@ class GeoSparseMLP(nn.Module):
         blocks: list[nn.Module] = []
         for idx in range(int(depth)):
             block_seed = None if seed is None else int(seed) + idx * 9973
-            indices = build_geo_connectivity(
-                self.shape,
-                k=int(k),
-                pattern=str(pattern),
-                radius=int(radius),
-                offsets=offsets,
-                wrap_mode=str(wrap_mode),
-                seed=block_seed,
-            )
+            indices = build_geometry_connectivity(
+                GeometryConfig(
+                    shape=self.shape,
+                    k=int(k),
+                    pattern=str(pattern),
+                    radius=int(radius),
+                    offsets=tuple(offsets) if offsets is not None else None,
+                    wrap_mode=str(wrap_mode),
+                    seed=block_seed,
+                )
+            ).as_tensors()[0]
             dp = float(drop_path_max) * (idx / max(1, int(depth) - 1)) if int(depth) > 1 else 0.0
 
-            if act_key == "mixed":
-                builders = {
-                    # Override psann builder so we keep LM SineConfig semantics.
-                    "psann": (lambda n, _s=sine: build_sine(int(n), _s)),
-                }
-                activation = MixedActivation(
-                    int(d_mlp),
-                    activation_types=list(activation_types or []),
+            if architecture is not None:
+                activation = build_lm_activation(architecture, int(d_mlp), block_index=idx)
+            elif act_key == "mixed":
+                from ...architectures.compat import sine_policies
+                from dataclasses import replace
+
+                shared, initialization, _ = sine_policies(sine)
+                mixed = replace(
+                    shared,
+                    kind="mixed",
+                    activation_types=tuple(activation_types or ()),
                     activation_ratios=(
-                        list(activation_ratios) if activation_ratios is not None else None
+                        tuple(activation_ratios) if activation_ratios is not None else None
                     ),
-                    ratio_sum_tol=float(activation_ratio_sum_tol),
-                    seed=block_seed,
-                    layout=str(activation_layout),
-                    builders=builders,
+                    ratio_sum_tol=activation_ratio_sum_tol,
+                    mix_seed=block_seed,
+                    mix_layout=activation_layout,
                 )
+                policy = LMArchitectureConfig.geometric_sparse(
+                    activation=mixed, activation_initialization=initialization
+                )
+                activation = build_lm_activation(policy, int(d_mlp))
             elif act_key in {"psann", "sine"}:
                 activation = build_sine(int(d_mlp), sine)
-            elif act_key == "gelu":
-                activation = nn.GELU()
-            elif act_key == "relu":
-                activation = nn.ReLU()
             else:
-                activation = nn.Tanh()
+                activation = build_activation(ActivationConfig(kind=act_key), features=int(d_mlp))
             blocks.append(
                 GeoSparseResidualBlockLM(
                     int(d_mlp),
@@ -335,38 +351,72 @@ class GeoSparseMLP(nn.Module):
 
 
 class GeoSparseBlock(nn.Module):
-    def __init__(self, cfg: "GeoSparseTransformerConfig") -> None:
+    def __init__(self, config: "GeoSparseTransformerConfig | LMConfig") -> None:
         super().__init__()
+        cfg: Any = config
+        architecture = cfg.architecture if isinstance(cfg, LMConfig) else None
+        geometry = architecture.geometry if architecture is not None else None
+        execution = architecture.geometry_execution if architecture is not None else None
+        residual = architecture.residual if architecture is not None else None
         self.attn = SelfAttention(
             cfg.d_model,
             cfg.n_heads,
             dropout=cfg.dropout,
             positional_encoding=cfg.positional_encoding,
-            attn_impl=cfg.attn_impl,
+            attn_impl=getattr(cfg, "attn_impl", getattr(cfg, "attention_implementation", "math")),
         )
         self.mlp = GeoSparseMLP(
             cfg.d_model,
             cfg.d_mlp,
-            shape=cfg.geosparse_shape,
-            depth=cfg.geosparse_depth,
-            k=cfg.geosparse_k,
-            pattern=cfg.geosparse_pattern,
-            radius=cfg.geosparse_radius,
-            offsets=cfg.geosparse_offsets,
-            wrap_mode=cfg.geosparse_wrap_mode,
-            activation_type=cfg.geosparse_activation,
-            activation_types=cfg.geosparse_activation_types,
-            activation_ratios=cfg.geosparse_activation_ratios,
-            activation_ratio_sum_tol=cfg.geosparse_activation_ratio_sum_tol,
-            activation_layout=cfg.geosparse_activation_layout,
-            sine=cfg.sine,
-            norm=cfg.geosparse_norm,
-            drop_path_max=cfg.geosparse_drop_path_max,
-            residual_alpha_init=cfg.geosparse_residual_alpha_init,
-            bias=cfg.geosparse_bias,
-            compute_mode=cfg.geosparse_compute_mode,
-            seed=cfg.geosparse_seed,
-            chunk_size=cfg.geosparse_chunk_size,
+            shape=(geometry.shape if geometry is not None else cfg.geosparse_shape),
+            depth=(execution.depth if execution is not None else cfg.geosparse_depth),
+            k=(geometry.k if geometry is not None else cfg.geosparse_k),
+            pattern=(geometry.pattern if geometry is not None else cfg.geosparse_pattern),
+            radius=(geometry.radius if geometry is not None else cfg.geosparse_radius),
+            offsets=(geometry.offsets if geometry is not None else cfg.geosparse_offsets),
+            wrap_mode=(geometry.wrap_mode if geometry is not None else cfg.geosparse_wrap_mode),
+            activation_type=(
+                architecture.activation.kind
+                if architecture is not None
+                else cfg.geosparse_activation
+            ),
+            activation_types=(
+                architecture.activation.activation_types
+                if architecture is not None
+                else cfg.geosparse_activation_types
+            ),
+            activation_ratios=(
+                architecture.activation.activation_ratios
+                if architecture is not None
+                else cfg.geosparse_activation_ratios
+            ),
+            activation_ratio_sum_tol=(
+                architecture.activation.ratio_sum_tol
+                if architecture is not None
+                else cfg.geosparse_activation_ratio_sum_tol
+            ),
+            activation_layout=(
+                architecture.activation.mix_layout
+                if architecture is not None
+                else cfg.geosparse_activation_layout
+            ),
+            sine=getattr(cfg, "sine", None),
+            architecture=architecture,
+            norm=(residual.norm if residual is not None else cfg.geosparse_norm),
+            drop_path_max=(
+                residual.drop_path if residual is not None else cfg.geosparse_drop_path_max
+            ),
+            residual_alpha_init=(
+                residual.alpha_init if residual is not None else cfg.geosparse_residual_alpha_init
+            ),
+            bias=(geometry.bias if geometry is not None else cfg.geosparse_bias),
+            compute_mode=(
+                geometry.compute_mode if geometry is not None else cfg.geosparse_compute_mode
+            ),
+            seed=(geometry.seed if geometry is not None else cfg.geosparse_seed),
+            chunk_size=(
+                (execution.chunk_size or 0) if execution is not None else cfg.geosparse_chunk_size
+            ),
             dropout=cfg.dropout,
         )
         self.norm1 = RMSNorm(cfg.d_model)
@@ -442,8 +492,9 @@ class GeoSparseTransformerConfig:
 
 
 class GeoSparseTransformer(nn.Module):
-    def __init__(self, cfg: GeoSparseTransformerConfig) -> None:
+    def __init__(self, config: GeoSparseTransformerConfig | LMConfig) -> None:
         super().__init__()
+        cfg: Any = config
         self.cfg = cfg
         self.gradient_checkpointing: bool = False
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
@@ -501,8 +552,5 @@ class GeoSparseTransformer(nn.Module):
         return self.lm_head(x)
 
 
-def build_geosparse_transformer(**kwargs) -> GeoSparseTransformer:
-    # Filter to supported fields to tolerate shared harness kwargs.
-    allowed = {f.name for f in fields(GeoSparseTransformerConfig)}
-    filtered = {k: v for k, v in dict(kwargs).items() if k in allowed}
-    return GeoSparseTransformer(GeoSparseTransformerConfig(**filtered))
+def build_geosparse_transformer(**kwargs: Any) -> nn.Module:
+    return build_lm_model(legacy_lm_config("geosparse", kwargs)).model

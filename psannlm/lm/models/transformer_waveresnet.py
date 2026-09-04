@@ -8,11 +8,17 @@ pathways interleaved with attention.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
 from torch import nn
 
+from psann.architectures.components import DropPath
+
+from ...architectures.config import LMConfig, LMArchitectureConfig
+from ...architectures.activation import build_lm_activation
+from ...architectures.compat import legacy_lm_config
+from ...architectures.registry import build_lm_model
 from ..config import normalize_positional_encoding
 from .sine import build_sine
 from .transformer_respsann import (
@@ -51,19 +57,23 @@ class WaveResNetTransformerConfig:
 
 
 class WaveResNetTransformer(nn.Module):
-    def __init__(self, cfg: WaveResNetTransformerConfig) -> None:
+    def __init__(self, config: WaveResNetTransformerConfig | LMConfig) -> None:
         super().__init__()
+        cfg: Any = config
         self.cfg = cfg
+        architecture = cfg.architecture if isinstance(cfg, LMConfig) else None
         self.gradient_checkpointing: bool = False
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        sinecfg = cfg.sine if cfg.sine is not None else SineConfig()
+        sinecfg = getattr(cfg, "sine", None) or SineConfig()
         # Build blocks; optionally interleave a temporal wave block per layer
         blocks: List[nn.Module] = []
         for i in range(cfg.n_layers):
             dilation = 1
-            if int(cfg.wave_dilation_growth) > 1:
+            temporal = architecture.temporal if architecture is not None else None
+            growth = temporal.dilation_growth if temporal is not None else cfg.wave_dilation_growth
+            if int(growth) > 1:
                 try:
-                    dilation = int(max(1, (cfg.wave_dilation_growth**i)))
+                    dilation = int(max(1, (growth**i)))
                 except Exception:
                     dilation = 1
             blk = TransformerBlockWRN(
@@ -73,14 +83,33 @@ class WaveResNetTransformer(nn.Module):
                 dropout=cfg.dropout,
                 norm="rms",
                 sine=sinecfg,
-                mlp_activation=cfg.mlp_activation,
+                mlp_activation=getattr(cfg, "mlp_activation", "sine"),
+                architecture=architecture,
                 positional_encoding=cfg.positional_encoding,
-                wave_interleave=bool(cfg.wave_interleave),
-                wave_replace=bool(cfg.wave_replace),
-                wave_kernel_size=int(cfg.wave_kernel_size),
+                wave_interleave=bool(
+                    (
+                        temporal.mode in {"interleave", "replace"}
+                        if temporal is not None
+                        else cfg.wave_interleave
+                    )
+                ),
+                wave_replace=bool(
+                    (
+                        temporal.mode in {"replace", "attention-only"}
+                        if temporal is not None
+                        else cfg.wave_replace
+                    )
+                ),
+                wave_kernel_size=int(
+                    (temporal.kernel_size if temporal is not None else cfg.wave_kernel_size)
+                ),
                 wave_dilation=int(dilation),
-                wave_dropout=float(cfg.wave_dropout),
-                attn_impl=cfg.attn_impl,
+                wave_dropout=float(
+                    (temporal.dropout if temporal is not None else cfg.wave_dropout)
+                ),
+                attn_impl=getattr(
+                    cfg, "attn_impl", getattr(cfg, "attention_implementation", "math")
+                ),
             )
             blocks.append(blk)
         self.blocks = nn.ModuleList(blocks)
@@ -137,8 +166,8 @@ class WaveResNetTransformer(nn.Module):
             return self.lm_head(x)
 
 
-def build_waveresnet_transformer(**kwargs) -> WaveResNetTransformer:
-    return WaveResNetTransformer(WaveResNetTransformerConfig(**kwargs))
+def build_waveresnet_transformer(**kwargs: Any) -> nn.Module:
+    return build_lm_model(legacy_lm_config("waveresnet", kwargs)).model
 
 
 class WaveBlock1D(nn.Module):
@@ -161,6 +190,7 @@ class WaveBlock1D(nn.Module):
         dropout: float = 0.0,
         activation: str = "sine",
         sine: Optional[SineConfig] = None,
+        architecture: LMArchitectureConfig | None = None,
     ) -> None:
         super().__init__()
         self.norm = RMSNorm(d_model)
@@ -174,8 +204,10 @@ class WaveBlock1D(nn.Module):
             d_model, d_model, kernel_size=k, groups=d_model, dilation=dil, padding=pad, bias=False
         )
         activation = (activation or "sine").lower()
-        if activation == "sine":
-            self.act: nn.Module = build_sine(d_model, sine)
+        if architecture is not None:
+            self.act: nn.Module = build_lm_activation(architecture, d_model)
+        elif activation == "sine":
+            self.act = build_sine(d_model, sine)
         elif activation == "gelu":
             self.act = nn.GELU()
         else:
@@ -264,6 +296,7 @@ class TransformerBlockWRN(nn.Module):
         wave_dilation: int = 1,
         wave_dropout: float = 0.0,
         attn_impl: str = "math",
+        architecture: LMArchitectureConfig | None = None,
     ) -> None:
         super().__init__()
         self.attn = SelfAttention(
@@ -280,16 +313,33 @@ class TransformerBlockWRN(nn.Module):
         self.mlp: Optional[nn.Module]
         if not self.wave_replace:
             self.mlp = PSANNMLP(
-                d_model, d_mlp, sine=sine, mlp_activation=mlp_activation, dropout=dropout
+                d_model,
+                d_mlp,
+                sine=sine,
+                mlp_activation=mlp_activation,
+                dropout=dropout,
+                architecture=architecture,
             )
         else:
             self.mlp = None
         self.drop = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
         # Optional residual scaling (learnable), default 1.0 (keep 1D for FSDP)
-        self.alpha = nn.Parameter(torch.ones(1))
+        residual = architecture.residual if architecture is not None else None
+        self.alpha = nn.Parameter(
+            torch.full((1,), residual.alpha_init if residual is not None else 1.0)
+        )
+        self.drop_path = (
+            DropPath(residual.drop_path)
+            if residual is not None and residual.drop_path
+            else nn.Identity()
+        )
+        norm = residual.norm if residual is not None else norm
         if norm == "rms":
-            self.norm1 = RMSNorm(d_model)
-            self.norm2 = RMSNorm(d_model)
+            self.norm1: nn.Module = RMSNorm(d_model)
+            self.norm2: nn.Module = RMSNorm(d_model)
+        elif norm == "none":
+            self.norm1 = nn.Identity()
+            self.norm2 = nn.Identity()
         else:
             self.norm1 = nn.LayerNorm(d_model)
             self.norm2 = nn.LayerNorm(d_model)
@@ -302,6 +352,7 @@ class TransformerBlockWRN(nn.Module):
                 dropout=wave_dropout,
                 activation=mlp_activation,
                 sine=sine,
+                architecture=architecture,
             )
         # Internal wave cache for cached generation (per block)
         self._wave_cache: Optional[torch.Tensor] = None
@@ -332,8 +383,9 @@ class TransformerBlockWRN(nn.Module):
                 else:
                     self._wave_cache = None
                     x = self.wave(h2)
+                x = self.alpha * self.drop_path(x)
         else:
-            x = x + self.alpha * (self.mlp(h2) if self.mlp is not None else 0)
+            x = x + self.alpha * self.drop_path(self.mlp(h2) if self.mlp is not None else h2 * 0)
             if self.wave is not None:
                 if use_cache:
                     if past_kv is None:

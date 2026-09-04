@@ -8,11 +8,16 @@ RoPE/ALiBi support) for apples-to-apples throughput and perplexity comparisons.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import torch
 from torch import nn
 
+from ...architectures.config import LMConfig
+from psann.architectures import ActivationConfig
+from psann.architectures.components import build_activation
+from ...architectures.compat import legacy_lm_config
+from ...architectures.registry import build_lm_model
 from ..config import normalize_positional_encoding
 from .transformer_respsann import SelfAttention, _sinusoidal_positions
 
@@ -45,10 +50,7 @@ class VanillaTransformerConfig:
 
 
 def _build_mlp_activation(name: str) -> nn.Module:
-    key = (name or "gelu").lower()
-    if key == "relu":
-        return nn.ReLU()
-    return nn.GELU()
+    return build_activation(ActivationConfig(kind=name or "gelu"), features=1)
 
 
 class VanillaBlock(nn.Module):
@@ -102,9 +104,11 @@ class VanillaBlock(nn.Module):
 
 
 class VanillaTransformer(nn.Module):
-    def __init__(self, cfg: VanillaTransformerConfig) -> None:
+    def __init__(self, config: VanillaTransformerConfig | LMConfig) -> None:
         super().__init__()
+        cfg: Any = config
         self.cfg = cfg
+        architecture = cfg.architecture if isinstance(cfg, LMConfig) else None
         self.gradient_checkpointing: bool = False
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
         self.blocks = nn.ModuleList(
@@ -114,9 +118,15 @@ class VanillaTransformer(nn.Module):
                     cfg.n_heads,
                     cfg.d_mlp,
                     dropout=cfg.dropout,
-                    mlp_activation=cfg.mlp_activation,
+                    mlp_activation=(
+                        architecture.activation.kind
+                        if architecture is not None
+                        else cfg.mlp_activation
+                    ),
                     positional_encoding=cfg.positional_encoding,
-                    attn_impl=cfg.attn_impl,
+                    attn_impl=getattr(
+                        cfg, "attn_impl", getattr(cfg, "attention_implementation", "math")
+                    ),
                 )
                 for _ in range(cfg.n_layers)
             ]
@@ -174,22 +184,5 @@ class VanillaTransformer(nn.Module):
         return self.lm_head(x)
 
 
-def build_vanilla_transformer(**kwargs) -> VanillaTransformer:
-    # Tolerate PSANN-specific kwargs when used in shared harnesses.
-    kwargs = dict(kwargs)
-    for k in (
-        "sine",
-        "use_spectral_gate",
-        "k_fft",
-        "gate_type",
-        "gate_groups",
-        "gate_init",
-        "gate_strength",
-        "wave_interleave",
-        "wave_replace",
-        "wave_kernel_size",
-        "wave_dilation_growth",
-        "wave_dropout",
-    ):
-        kwargs.pop(k, None)
-    return VanillaTransformer(VanillaTransformerConfig(**kwargs))
+def build_vanilla_transformer(**kwargs: Any) -> nn.Module:
+    return build_lm_model(legacy_lm_config("transformer", kwargs)).model

@@ -1,50 +1,48 @@
-"""Model base registry for PSANN-LM.
-
-Maps string identifiers (e.g., "respsann", "waveresnet") to transformer
-constructors. This keeps the public API decoupled from implementation
-details and enables simple extensibility.
-"""
+"""0.x base spellings delegating to the canonical typed registry."""
 
 from __future__ import annotations
 
-from typing import Callable, Dict
+from typing import Any, Callable
 
-_REGISTRY: Dict[str, Callable[..., object]] = {}
+from torch import nn
+
+from ...architectures.compat import BASE_KINDS, compatibility_warning, legacy_lm_config
+from ...architectures.registry import (
+    LMBuildRequest,
+    LMBuildResult,
+    LMCapabilities,
+    build_lm_model,
+    register_lm_builder,
+)
 
 
-def register_base(name: str, factory: Callable[..., object]) -> None:
+def get_base(name: str) -> Callable[..., nn.Module]:
     key = name.strip().lower()
-    if not key:
-        raise ValueError("Base name cannot be empty")
-    if not callable(factory):
-        raise TypeError("Factory must be callable")
-    _REGISTRY[key] = factory
+    if key not in BASE_KINDS:
+        raise KeyError(f"Unknown base {name!r}. Available: {tuple(BASE_KINDS)}")
+
+    def factory(**kwargs: Any) -> nn.Module:
+        return build_lm_model(legacy_lm_config(key, kwargs)).model
+
+    return factory
 
 
-def get_base(name: str) -> Callable[..., object]:
+def list_bases() -> list[str]:
+    compatibility_warning("list_bases is deprecated; use available_lm_architectures.")
+    return sorted(BASE_KINDS)
+
+
+def register_base(name: str, factory: Callable[..., nn.Module], *, replace: bool = False) -> None:
+    """Adapt a 0.x factory replacement to the one canonical request registry."""
     key = name.strip().lower()
-    if key not in _REGISTRY:
-        available = ", ".join(sorted(_REGISTRY)) or "<none>"
-        raise KeyError(f"Unknown base {name!r}. Available: {available}")
-    return _REGISTRY[key]
+    kind = BASE_KINDS.get(key, key)
 
+    def builder(request: LMBuildRequest) -> LMBuildResult:
+        config = request.config
+        model = factory(config=config)
+        return LMBuildResult(model, LMCapabilities(config.architecture.kind))
 
-def list_bases() -> list[str]:  # pragma: no cover - trivial
-    return sorted(_REGISTRY)
-
-
-# Pre-register default bases once modules are importable.
-try:  # pragma: no cover - import side-effect wiring
-    from .transformer_geosparse import build_geosparse_transformer
-    from .transformer_respsann import build_respsann_transformer, build_sgrpsann_transformer
-    from .transformer_vanilla import build_vanilla_transformer
-    from .transformer_waveresnet import build_waveresnet_transformer
-
-    register_base("geosparse", build_geosparse_transformer)
-    register_base("respsann", build_respsann_transformer)
-    register_base("sgrpsann", build_sgrpsann_transformer)
-    register_base("transformer", build_vanilla_transformer)
-    register_base("waveresnet", build_waveresnet_transformer)
-except Exception:
-    # Allow import during partial scaffolding
-    pass
+    register_lm_builder(kind, builder, replace=replace)
+    compatibility_warning(
+        "register_base is deprecated; factories now receive config=LMConfig. Use register_lm_builder."
+    )

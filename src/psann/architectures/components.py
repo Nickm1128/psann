@@ -7,7 +7,8 @@ module does not import any language-model, estimator, or training integration.
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from math import isqrt
+from math import isfinite, isqrt
+from numbers import Real
 from typing import Literal, Mapping
 
 import torch
@@ -32,7 +33,10 @@ __all__ = [
 
 
 def build_activation(
-    config: ActivationConfig | Mapping[str, object] | Literal["gelu"], *, features: int
+    config: ActivationConfig | Mapping[str, object] | Literal["gelu"],
+    *,
+    features: int,
+    initial_values: Mapping[str, float | torch.Tensor] | None = None,
 ) -> nn.Module:
     """Build a core activation with the supplied feature width.
 
@@ -44,17 +48,43 @@ def build_activation(
         raise TypeError("features must be an integer.")
     if features <= 0:
         raise ValueError("features must be positive.")
+    resolved: dict[str, float | torch.Tensor] = {}
+    if initial_values is not None:
+        if not isinstance(initial_values, Mapping):
+            raise TypeError("initial_values must be a mapping.")
+        for key, value in initial_values.items():
+            path = f"initial_values.{key}"
+            if key not in {"amplitude", "frequency", "decay"}:
+                raise ValueError(f"{path} is unknown.")
+            if isinstance(value, torch.Tensor):
+                if value.ndim != 1 or value.shape[0] != features:
+                    raise ValueError(f"{path} must be a one-dimensional tensor of length features.")
+                if value.dtype == torch.bool or value.is_complex():
+                    raise TypeError(
+                        f"{path} must contain real numbers, not booleans or complex values."
+                    )
+                if not bool(torch.isfinite(value).all()):
+                    raise ValueError(f"{path} must be finite.")
+                resolved[key] = value.detach().clone()
+            elif isinstance(value, bool) or not isinstance(value, Real):
+                raise TypeError(f"{path} must be a finite real scalar or tensor.")
+            elif not isfinite(value):
+                raise ValueError(f"{path} must be finite.")
+            else:
+                resolved[key] = float(value)
     if isinstance(config, str):
         if config != "gelu":
             raise ValueError("activation literal must be 'gelu'.")
-        return nn.GELU()
+        config = ActivationConfig(kind="gelu")
     if isinstance(config, Mapping) and config.get("kind") == "gelu":
         unknown = set(config) - {"kind"}
         if unknown:
             raise ValueError(f"activation.{sorted(unknown)[0]} is not a GELU field.")
-        return nn.GELU()
+        config = ActivationConfig(kind="gelu")
     policy = normalize_activation_config(config)
     raw = {field.name: getattr(policy, field.name) for field in fields(policy)}
+    if resolved and policy.kind not in {"psann", "phase-psann", "relu-sigmoid-psann", "mixed"}:
+        raise ValueError("initial_values requires a parameterized activation.")
     if policy.activation_types is not None:
         raw["activation_types"] = tuple(name.replace("-", "_") for name in policy.activation_types)
         # MixedActivation presents last-axis slices to every child, independently
@@ -64,7 +94,7 @@ def build_activation(
         builders = {
             name: (lambda n, key=name: _build_activation(key, n, child_raw)) for name in names
         }
-        return MixedActivation(
+        result = MixedActivation(
             features,
             activation_types=names,
             activation_ratios=policy.activation_ratios,
@@ -74,6 +104,20 @@ def build_activation(
             feature_dim=policy.feature_dim,
             builders=builders,
         )
+        for name, child in result.acts.items():
+            if name not in {"psann", "phase_psann", "relu_sigmoid_psann"}:
+                continue
+            indices = getattr(result, result._idx_attr[name])
+            child_values = dict(child_raw)
+            for key, value in resolved.items():
+                child_values[key + "_init"] = (
+                    value[indices] if isinstance(value, torch.Tensor) else value
+                )
+            if resolved:
+                result.acts[name] = _build_activation(name, indices.numel(), child_values)
+        return result
+    for key, value in resolved.items():
+        raw[key + "_init"] = value
     return _build_activation(policy.kind.replace("-", "_"), features, raw)
 
 
@@ -88,6 +132,13 @@ class GeometryConnectivity:
 
     shape: tuple[int, int]
     indices: tuple[tuple[int, ...], ...]
+
+    @staticmethod
+    def edge_indices(indices: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Expand a rectangular gather table into source/destination edge indices."""
+        if indices.ndim != 2 or indices.dtype != torch.long:
+            raise ValueError("connectivity.indices must be a two-dimensional long tensor.")
+        return expand_in_indices_to_edges(indices)
 
     def __post_init__(self) -> None:
         # Reuse strict geometry dimension validation and detach caller containers.

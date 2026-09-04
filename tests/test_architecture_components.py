@@ -115,7 +115,7 @@ def test_mixed_axis_rejects_out_of_range_at_forward(axis):
         model(torch.zeros(2, 5, 11))
 
 
-@pytest.mark.parametrize("config", ["gelu", {"kind": "gelu"}])
+@pytest.mark.parametrize("config", ["gelu", {"kind": "gelu"}, ActivationConfig(kind="gelu")])
 def test_fixed_gelu_exact_value_and_gradient_parity(config):
     assert_forward_and_backward(build_activation(config, features=11), nn.GELU(), (2, 5, 11))
 
