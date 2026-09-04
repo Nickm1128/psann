@@ -219,9 +219,13 @@ def _schema_v3_episodic_with_artifacts(
                     f"{metadata_path}.config.{field} metadata."
                 )
             if field == "reward" and not isinstance(descriptor, str):
-                raise TypeError(f"{metadata_path}.config.reward must be a registered name or callable descriptor.")
+                raise TypeError(
+                    f"{metadata_path}.config.reward must be a registered name or callable descriptor."
+                )
             if field == "context_extractor" and descriptor is not None:
-                raise TypeError(f"{metadata_path}.config.context_extractor must be null or a callable descriptor.")
+                raise TypeError(
+                    f"{metadata_path}.config.context_extractor must be null or a callable descriptor."
+                )
     if not isinstance(raw["effective"], Mapping):
         raise TypeError(f"{metadata_path}.effective must be a mapping.")
     if not isinstance(raw["history"], list):
@@ -238,7 +242,9 @@ def _schema_v3_episodic_with_artifacts(
     return strategy, list(raw["history"]), dict(raw["profile"])
 
 
-def _migrate_legacy_hisso_strategy(fitted: Mapping[str, object], artifacts: Mapping[str, object]) -> object | None:
+def _migrate_legacy_hisso_strategy(
+    fitted: Mapping[str, object], artifacts: Mapping[str, object]
+) -> object | None:
     """Translate v1/v2 HISSO metadata into the canonical immutable strategy."""
 
     if not fitted.get("hisso_trained"):
@@ -1651,9 +1657,13 @@ class PSANNRegressor(_Phase2Regressor):
         structure = dict(getattr(self, "_architecture_structure_", {}) or {})
         if self._architecture_lifecycle_:
             structure.update(self._architecture_lifecycle_.structure_metadata())
-        episodic_strategy = getattr(self, "_episodic_strategy_", None)
+        from ..episodic import HISSOConfig
+
+        episodic_strategy = cast(Optional[HISSOConfig], getattr(self, "_episodic_strategy_", None))
         if episodic_strategy is None:
-            episodic_strategy = _migrate_legacy_hisso_strategy(fitted, artifacts)
+            episodic_strategy = cast(
+                Optional[HISSOConfig], _migrate_legacy_hisso_strategy(fitted, artifacts)
+            )
         if episodic_strategy is None:
             fitted["episodic"] = None
         else:
