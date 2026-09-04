@@ -68,6 +68,52 @@ from ..types import LossLike, ScalerSpec
 
 _DEFAULT_ARCHITECTURE = ArchitectureConfig.dense()
 _OMITTED = object()
+_SCHEMA_MODULE_PREPROCESSOR_PATH = "Schema-v2 estimator_params.preprocessor"
+
+
+def _normalise_schema_module_preprocessor(value: object, module: nn.Module) -> PreprocessorConfig:
+    """Rebuild a custom preprocessor with strict, schema-path diagnostics."""
+
+    path = _SCHEMA_MODULE_PREPROCESSOR_PATH
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{path} must be a mapping.")
+    raw = dict(value)
+    allowed = {"kind", "input_topology", "output_topology", "output_dim", "training"}
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise ValueError(f"{path}.{unknown[0]} is unknown.")
+    for key in allowed:
+        if key not in raw:
+            raise ValueError(f"{path}.{key} is missing.")
+    if raw["kind"] != "module":
+        raise ValueError(f"{path}.kind must be module.")
+    training_raw = raw["training"]
+    if not isinstance(training_raw, Mapping):
+        raise TypeError(f"{path}.training must be a mapping.")
+    training_dict = dict(training_raw)
+    training_allowed = {field.name for field in fields(PreprocessorTrainingConfig)}
+    unknown_training = sorted(set(training_dict) - training_allowed)
+    if unknown_training:
+        raise ValueError(f"{path}.training.{unknown_training[0]} is unknown.")
+    for key in training_allowed:
+        if key not in training_dict:
+            raise ValueError(f"{path}.training.{key} is missing.")
+    try:
+        training = PreprocessorTrainingConfig(**cast(Any, training_dict))
+        return PreprocessorConfig(
+            ModulePreprocessorConfig(
+                module=module,
+                input_topology=cast(str, raw["input_topology"]),
+                output_topology=cast(str, raw["output_topology"]),
+                output_dim=cast(int, raw["output_dim"]),
+            ),
+            training=training,
+        )
+    except (TypeError, ValueError) as exc:
+        message = str(exc)
+        message = message.replace("preprocessor.component.", f"{path}.")
+        message = message.replace("preprocessor.training.", f"{path}.training.")
+        raise type(exc)(message) from exc
 
 
 def _activation_mapping(config: ArchitectureConfig) -> dict[str, object]:
@@ -1780,37 +1826,12 @@ class PSANNRegressor(_Phase2Regressor):
             raw_params["device"] = torch.device(map_location)
         raw_preprocessor = raw_params.get("preprocessor")
         if isinstance(raw_preprocessor, Mapping) and raw_preprocessor.get("kind") == "module":
-            allowed_module_keys = {
-                "kind",
-                "input_topology",
-                "output_topology",
-                "output_dim",
-                "training",
-            }
-            unknown_module_keys = set(raw_preprocessor) - allowed_module_keys
-            if unknown_module_keys:
-                raise ValueError(
-                    "Schema-v2 estimator_params.preprocessor."
-                    f"{sorted(unknown_module_keys)[0]} is unknown."
-                )
             module = dict(payload.get("artifacts", {})).get("preprocessor_module")
             if not isinstance(module, nn.Module):
                 raise ValueError("Schema-v2 artifacts.preprocessor_module is missing or invalid.")
-            training = raw_preprocessor.get("training", {})
-            if not isinstance(training, Mapping):
-                raise ValueError("Schema-v2 estimator_params.preprocessor.training is invalid.")
-            try:
-                raw_params["preprocessor"] = PreprocessorConfig(
-                    ModulePreprocessorConfig(
-                        module=module,
-                        input_topology=cast(str, raw_preprocessor["input_topology"]),
-                        output_topology=cast(str, raw_preprocessor["output_topology"]),
-                        output_dim=cast(int, raw_preprocessor["output_dim"]),
-                    ),
-                    training=PreprocessorTrainingConfig(**dict(training)),
-                )
-            except (KeyError, TypeError, ValueError) as exc:
-                raise ValueError("Schema-v2 estimator_params.preprocessor is invalid.") from exc
+            raw_params["preprocessor"] = _normalise_schema_module_preprocessor(
+                raw_preprocessor, module
+            )
         if "architecture" not in raw_params:
             raise ValueError("Schema-v1 checkpoint is missing estimator_params.architecture.")
         estimator = cls(**raw_params)

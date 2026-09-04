@@ -53,15 +53,22 @@ def run_hisso_supervised_warmstart(
     estimator._ensure_model_device(device)
 
     optimizer = estimator._build_optimizer(estimator.model_)
+    estimator._optimizer_ = optimizer
+    estimator._hisso_warmstart_optimizer_ = optimizer
     if config.lr is not None:
         for group in optimizer.param_groups:
-            group["lr"] = float(config.lr)
+            if group.get("psann_parameter_group") == "core":
+                group["lr"] = float(config.lr)
     if config.weight_decay is not None:
         for group in optimizer.param_groups:
             group["weight_decay"] = float(config.weight_decay)
-    if lsm_module is not None and config.lsm_lr is not None:
+    if (
+        getattr(estimator, "preprocessor", None) is None
+        and lsm_module is not None
+        and config.lsm_lr is not None
+    ):
         for group in optimizer.param_groups:
-            if any(param in group["params"] for param in lsm_module.parameters()):
+            if group.get("psann_parameter_group") == "preprocessor":
                 group["lr"] = float(config.lsm_lr)
 
     loop_cfg = TrainingLoopConfig(

@@ -146,17 +146,18 @@ def run_hisso_stage(
     estimator._hisso_reward_fn_ = plan.options.reward_fn
     estimator._hisso_context_extractor_ = plan.options.context_extractor
 
-    training = getattr(getattr(estimator, "preprocessor", None), "training", None)
-    hisso_lr = (
-        float(training.lr)
-        if training is not None and training.trainable and training.lr is not None
-        else float(estimator.lr)
-    )
+    # HISSO uses the exact same canonical groups as supervised optimisation:
+    # core parameters retain ``estimator.lr`` and a trainable preprocessor gets
+    # its own configured (or inherited) rate.  Passing one scalar here would
+    # silently train both components at the preprocessing rate.
+    hisso_optimizer = _build_optimizer(estimator, estimator.model_)
+    estimator._optimizer_ = hisso_optimizer
     trainer = run_hisso_training(
         estimator,
         inputs_arr,
         trainer_cfg=plan.trainer_config,
-        lr=hisso_lr,
+        lr=float(estimator.lr),
+        optimizer=hisso_optimizer,
         device=device,
         reward_fn=plan.options.reward_fn,
         context_extractor=plan.options.context_extractor,
@@ -329,9 +330,13 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
         and model.preproc is not None
     ):
         params = [
-            {"params": model.core.parameters(), "lr": float(estimator.lr)},
             {
-                "params": model.preproc.parameters(),
+                "params": [p for p in model.core.parameters() if p.requires_grad],
+                "lr": float(estimator.lr),
+                "psann_parameter_group": "core",
+            },
+            {
+                "params": [p for p in model.preproc.parameters() if p.requires_grad],
                 "lr": (
                     float(training.lr)
                     if training is not None and training.lr is not None
@@ -341,6 +346,7 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
                         else float(estimator.lr)
                     )
                 ),
+                "psann_parameter_group": "preprocessor",
             },
         ]
         opt_name = str(estimator.optimizer).lower()
@@ -350,17 +356,22 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
             return torch.optim.SGD(params, momentum=0.9)
         return torch.optim.Adam(params, weight_decay=float(estimator.weight_decay))
     trainable_params = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    params = [
+        {
+            "params": trainable_params,
+            "lr": float(estimator.lr),
+            "psann_parameter_group": "core",
+        }
+    ]
     if str(estimator.optimizer).lower() == "adamw":
         return torch.optim.AdamW(
-            trainable_params,
-            lr=float(estimator.lr),
+            params,
             weight_decay=float(estimator.weight_decay),
         )
     if str(estimator.optimizer).lower() == "sgd":
-        return torch.optim.SGD(trainable_params, lr=float(estimator.lr), momentum=0.9)
+        return torch.optim.SGD(params, momentum=0.9)
     return torch.optim.Adam(
-        trainable_params,
-        lr=float(estimator.lr),
+        params,
         weight_decay=float(estimator.weight_decay),
     )
 

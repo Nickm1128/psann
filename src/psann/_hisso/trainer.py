@@ -40,6 +40,7 @@ class HISSOTrainer:
         state_reset: str = "batch",
         use_amp: bool = False,
         amp_dtype: Optional[torch.dtype] = None,
+        optimizer: Optional[torch.optim.Optimizer] = None,
     ) -> None:
         self.model = model
         self.cfg = cfg
@@ -83,7 +84,7 @@ class HISSOTrainer:
             "amp_enabled": False,
             "amp_dtype": None,
         }
-        self.optimizer = torch.optim.Adam(
+        self.optimizer = optimizer or torch.optim.Adam(
             (p for p in self.model.parameters() if p.requires_grad),
             lr=float(lr),
         )
@@ -275,16 +276,18 @@ class HISSOTrainer:
     def _reset_state_if_needed(self, cadence: str) -> None:
         if not self.stateful or self.state_reset != cadence:
             return
-        if hasattr(self.model, "reset_state"):
+        reset_state = getattr(self.model, "reset_state", None)
+        if callable(reset_state):
             try:
-                self.model.reset_state()
+                reset_state()
             except Exception:
                 pass
 
     def _commit_state_if_any(self) -> None:
-        if hasattr(self.model, "commit_state_updates"):
+        commit_state_updates = getattr(self.model, "commit_state_updates", None)
+        if callable(commit_state_updates):
             try:
-                self.model.commit_state_updates()
+                commit_state_updates()
             except Exception:
                 pass
 
@@ -386,10 +389,11 @@ def run_hisso_training(
     context_extractor: Optional[ContextExtractor] = None,
     lr_max: Optional[float] = None,
     lr_min: Optional[float] = None,
-    input_noise_std: Optional[NoiseSpec] = None,
+    input_noise_std: Optional[float] = None,
     verbose: int = 0,
     use_amp: bool = False,
     amp_dtype: Optional[torch.dtype] = None,
+    optimizer: Optional[torch.optim.Optimizer] = None,
 ) -> HISSOTrainer:
     """Instantiate the lightweight HISSO trainer and execute one optimisation run."""
 
@@ -406,6 +410,7 @@ def run_hisso_training(
         state_reset=str(getattr(estimator, "state_reset", "batch")),
         use_amp=use_amp,
         amp_dtype=amp_dtype,
+        optimizer=optimizer,
     )
     trainer.train(
         X_train_arr,

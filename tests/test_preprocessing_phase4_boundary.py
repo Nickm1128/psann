@@ -353,3 +353,144 @@ def test_custom_checkpoint_rejects_unknown_preprocessor_metadata(tmp_path) -> No
     torch.save(payload, path)
     with pytest.raises(ValueError, match="preprocessor.surprise"):
         PSANNRegressor.load(str(path))
+
+
+@pytest.mark.parametrize("topology", ["dense", "conv2d"])
+@pytest.mark.parametrize("trainable", [False, True])
+@pytest.mark.parametrize("separate_rate", [False, True])
+def test_canonical_preprocessor_hisso_uses_separate_core_and_preprocessor_groups(
+    topology: str, trainable: bool, separate_rate: bool, monkeypatch
+) -> None:
+    """Pure HISSO and its supervised warm start share canonical group policy."""
+
+    if topology == "dense":
+        X, y = _dense_data()
+        component = LSMConfig.dense(output_dim=4)
+        architecture = ArchitectureConfig.dense()
+    else:
+        X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+        y = X.mean(axis=(1, 2, 3))
+        component = LSMConfig.convolutional(output_dim=2, hidden_units=3)
+        architecture = ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3))
+    preprocessor_lr = 0.123 if separate_rate else None
+    estimator = PSANNRegressor(
+        architecture=architecture,
+        preprocessor=PreprocessorConfig(
+            component, PreprocessorTrainingConfig(trainable=trainable, lr=preprocessor_lr)
+        ),
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        lr=0.001,
+        device="cpu",
+        random_state=0,
+    )
+    from psann.estimators import _fit_utils as fit_utils
+
+    snapshots: list[list[torch.Tensor]] = []
+    warm_snapshots: list[list[torch.Tensor]] = []
+    original_hisso = fit_utils.run_hisso_training
+    original_warmstart = fit_utils.run_hisso_supervised_warmstart
+
+    def capture_hisso(*args, **kwargs):
+        model = args[0].model_
+        snapshots.append([parameter.detach().clone() for parameter in model.preproc.parameters()])
+        return original_hisso(*args, **kwargs)
+
+    def capture_warmstart(*args, **kwargs):
+        model = args[0].model_
+        warm_snapshots.append(
+            [parameter.detach().clone() for parameter in model.preproc.parameters()]
+        )
+        return original_warmstart(*args, **kwargs)
+
+    monkeypatch.setattr(fit_utils, "run_hisso_training", capture_hisso)
+    monkeypatch.setattr(fit_utils, "run_hisso_supervised_warmstart", capture_warmstart)
+    reward = lambda actions, _context: actions.sum(dim=-1)
+    estimator.fit(X, y, hisso=True, hisso_window=4, hisso_reward_fn=reward)
+    trainer = estimator._hisso_trainer_
+    assert trainer is not None
+    groups = {group["psann_parameter_group"]: group for group in trainer.optimizer.param_groups}
+    assert groups["core"]["lr"] == pytest.approx(0.001)
+    preprocessor_ids = {id(parameter) for parameter in estimator.preprocessor_.parameters()}
+    optimizer_ids = {
+        id(parameter) for group in trainer.optimizer.param_groups for parameter in group["params"]
+    }
+    if trainable:
+        assert groups["preprocessor"]["lr"] == pytest.approx(0.123 if separate_rate else 0.001)
+        assert preprocessor_ids <= optimizer_ids
+    else:
+        assert "preprocessor" not in groups
+        assert preprocessor_ids.isdisjoint(optimizer_ids)
+
+    # The supervised warm-start may override its core rate, but never collapses
+    # canonical preprocessing into that core group.
+    warm = PSANNRegressor(
+        architecture=architecture,
+        preprocessor=PreprocessorConfig(
+            component, PreprocessorTrainingConfig(trainable=trainable, lr=preprocessor_lr)
+        ),
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        lr=0.001,
+        device="cpu",
+        random_state=0,
+    )
+    warm.fit(
+        X,
+        y,
+        hisso=True,
+        hisso_window=4,
+        hisso_reward_fn=reward,
+        hisso_supervised={"y": y, "epochs": 1, "batch_size": 4, "lr": 0.02},
+    )
+    warm_groups = {
+        group["psann_parameter_group"]: group
+        for group in warm._hisso_warmstart_optimizer_.param_groups
+    }
+    assert warm_groups["core"]["lr"] == pytest.approx(0.02)
+    if trainable:
+        assert warm_groups["preprocessor"]["lr"] == pytest.approx(0.123 if separate_rate else 0.001)
+        assert any(
+            not torch.equal(before, after)
+            for before, after in zip(warm_snapshots[0], warm.preprocessor_.parameters())
+        )
+    else:
+        assert "preprocessor" not in warm_groups
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        (
+            lambda preprocessor: preprocessor["training"].update({"surprise": 1}),
+            "training.surprise",
+        ),
+        (
+            lambda preprocessor: preprocessor.__setitem__("training", []),
+            "training must be a mapping",
+        ),
+        (
+            lambda preprocessor: preprocessor["training"].__setitem__("trainable", "yes"),
+            "training.trainable",
+        ),
+        (lambda preprocessor: preprocessor["training"].pop("lr"), "training.lr is missing"),
+    ],
+)
+def test_custom_checkpoint_nested_metadata_errors_are_path_specific(
+    tmp_path, mutation, error: str
+) -> None:
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "flat", 4))
+    ).fit(X, y)
+    path = tmp_path / "custom-nested.pt"
+    estimator.save(str(path))
+    payload = torch.load(path, weights_only=False)
+    mutation(payload["estimator_params"]["preprocessor"])
+    torch.save(payload, path)
+    with pytest.raises((TypeError, ValueError), match=error):
+        PSANNRegressor.load(str(path))
