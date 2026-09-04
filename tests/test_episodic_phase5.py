@@ -711,6 +711,27 @@ def test_schema_v3_portfolio_alias_persists_as_finance_across_generations(tmp_pa
     )
 
 
+def test_native_supervised_schema_v3_closes_without_an_episodic_block(tmp_path):
+    """Ordinary supervised checkpoints remain explicitly non-episodic in v3."""
+
+    X = np.arange(24, dtype=np.float32).reshape(12, 2)
+    y = X.sum(axis=1)
+    estimator = PSANNRegressor(epochs=1, batch_size=3, random_state=0).fit(X, y)
+    first, second = tmp_path / "supervised-1.pt", tmp_path / "supervised-2.pt"
+    estimator.save(first)
+    first_payload = torch.load(first, weights_only=False)
+    assert first_payload["schema_version"] == 3
+    assert first_payload["fitted"]["episodic"] is None
+    loaded = PSANNRegressor.load(first)
+    loaded.save(second)
+    second_payload = torch.load(second, weights_only=False)
+    assert second_payload["schema_version"] == 3
+    assert second_payload["fitted"]["episodic"] is None
+    np.testing.assert_allclose(
+        PSANNRegressor.load(second).predict(X[:3]), estimator.predict(X[:3]), rtol=1e-6
+    )
+
+
 @pytest.mark.parametrize(
     ("mutate", "message"),
     [

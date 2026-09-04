@@ -227,3 +227,50 @@ def test_canonical_episodic_cuda_two_generation_map_location(tmp_path, convoluti
     loaded = EpisodicTrainer.load(second, map_location="cpu")
     assert next(loaded.estimator.model_.parameters()).device.type == "cpu"
     np.testing.assert_allclose(loaded.predict(X[:2]), cpu.predict(X[:2]), rtol=1e-5)
+
+
+@pytest.mark.parametrize("convolutional", [False, True], ids=["dense-lsm", "conv2d-lsm"])
+def test_canonical_episodic_bidirectional_cpu_cuda_schema_v3_closure(
+    tmp_path, convolutional: bool
+) -> None:
+    """Canonical episodic checkpoints close CPU → CUDA → CPU with LSM metadata."""
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    if convolutional:
+        X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+        architecture = ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3))
+        preprocessor = PreprocessorConfig(
+            LSMConfig.convolutional(output_dim=2, hidden_units=3, random_state=0),
+            PreprocessorTrainingConfig(trainable=True, lr=5e-3),
+        )
+    else:
+        X, _ = _flat()
+        X = np.concatenate((X, X[:2]), axis=0)
+        architecture = ArchitectureConfig.dense()
+        preprocessor = PreprocessorConfig(
+            LSMConfig.dense(output_dim=4, hidden_units=5, random_state=0),
+            PreprocessorTrainingConfig(trainable=True, lr=5e-3),
+        )
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=architecture,
+            preprocessor=preprocessor,
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=2,
+            device="cpu",
+            random_state=0,
+        ),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1)),
+    ).fit(X)
+    cpu_path, cuda_path = tmp_path / "cpu.pt", tmp_path / "cuda.pt"
+    trainer.save(cpu_path)
+    cuda = EpisodicTrainer.load(cpu_path, map_location="cuda")
+    assert next(cuda.estimator.model_.parameters()).device.type == "cuda"
+    assert np.isfinite(cuda.evaluate(X[:4]))
+    cuda.save(cuda_path)
+    restored = EpisodicTrainer.load(cuda_path, map_location="cpu")
+    assert next(restored.estimator.model_.parameters()).device.type == "cpu"
+    np.testing.assert_allclose(restored.predict(X[:2]), trainer.predict(X[:2]), rtol=1e-5)
