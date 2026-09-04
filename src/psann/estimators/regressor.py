@@ -236,12 +236,25 @@ def _schema_v3_episodic_with_artifacts(
     if not isinstance(raw["effective"], Mapping):
         raise TypeError(f"{metadata_path}.effective must be a mapping.")
     effective = dict(raw["effective"])
+    # The first Phase-5 schema-v3 writer called the configured field
+    # ``episode_length`` and did not persist runtime-effective profile values.
+    # Recognize only that complete historical shape, then validate the upgraded
+    # representation below; arbitrary partial metadata remains an error.
+    if set(effective) == {"episode_length", "batch_episodes", "updates_per_epoch"}:
+        effective = {
+            "configured_episode_length": effective["episode_length"],
+            "effective_episode_length": effective["episode_length"],
+            "batch_episodes": effective["batch_episodes"],
+            "updates_per_epoch": effective["updates_per_epoch"],
+        }
+        raw["effective"] = effective
     expected_effective = {
-        "episode_length": strategy.schedule.episode_length,
+        "configured_episode_length": strategy.schedule.episode_length,
         "batch_episodes": strategy.schedule.batch_episodes,
         "updates_per_epoch": strategy.schedule.updates_per_epoch,
     }
-    unknown_effective = sorted(set(effective) - set(expected_effective))
+    allowed_effective = set(expected_effective) | {"effective_episode_length"}
+    unknown_effective = sorted(set(effective) - allowed_effective)
     if unknown_effective:
         raise ValueError(f"{metadata_path}.effective.{unknown_effective[0]} is unknown.")
     for key, expected in expected_effective.items():
@@ -251,15 +264,47 @@ def _schema_v3_episodic_with_artifacts(
         if isinstance(effective[key], bool) or not isinstance(effective[key], int):
             raise TypeError(f"{path} must be an integer.")
         if effective[key] != expected:
-            raise ValueError(f"{path} conflicts with {metadata_path}.config.schedule.{key}.")
+            config_key = "episode_length" if key == "configured_episode_length" else key
+            raise ValueError(f"{path} conflicts with {metadata_path}.config.schedule.{config_key}.")
+    effective_length_path = f"{metadata_path}.effective.effective_episode_length"
+    if "effective_episode_length" not in effective:
+        raise ValueError(f"{effective_length_path} is missing.")
+    effective_length = effective["effective_episode_length"]
+    if isinstance(effective_length, bool) or not isinstance(effective_length, int):
+        raise TypeError(f"{effective_length_path} must be an integer.")
+    if not 1 <= effective_length <= strategy.schedule.episode_length:
+        raise ValueError(
+            f"{effective_length_path} must be between 1 and "
+            f"{metadata_path}.config.schedule.episode_length."
+        )
     if not isinstance(raw["history"], list):
         raise TypeError(f"{metadata_path}.history must be a list.")
     if not isinstance(raw["profile"], Mapping):
         raise TypeError(f"{metadata_path}.profile must be a mapping.")
+    profile = dict(raw["profile"])
+    if "configured_episode_length" not in profile and "episode_length" in profile:
+        profile["configured_episode_length"] = effective["configured_episode_length"]
+        profile["effective_episode_length"] = effective["effective_episode_length"]
+        profile["batch_episodes"] = effective["batch_episodes"]
+        profile["updates_per_epoch"] = effective["updates_per_epoch"]
+    profile_expectations = {
+        "configured_episode_length": expected_effective["configured_episode_length"],
+        "effective_episode_length": effective_length,
+        "batch_episodes": expected_effective["batch_episodes"],
+        "updates_per_epoch": expected_effective["updates_per_epoch"],
+    }
+    for key, expected in profile_expectations.items():
+        path = f"{metadata_path}.profile.{key}"
+        if key not in profile:
+            raise ValueError(f"{path} is missing.")
+        if isinstance(profile[key], bool) or not isinstance(profile[key], int):
+            raise TypeError(f"{path} must be an integer.")
+        if profile[key] != expected:
+            raise ValueError(f"{path} conflicts with {metadata_path}.effective.{key}.")
     _require_portable_schema_value(raw["effective"], f"{metadata_path}.effective")
     _require_portable_schema_value(raw["history"], f"{metadata_path}.history")
     _require_portable_schema_value(raw["profile"], f"{metadata_path}.profile")
-    return strategy, list(raw["history"]), dict(raw["profile"])
+    return strategy, list(raw["history"]), profile
 
 
 def _migrate_legacy_hisso_strategy(
@@ -324,7 +369,7 @@ def _require_portable_schema_value(value: object, path: str) -> None:
                 raise TypeError(f"{path} mapping keys must be strings.")
             _require_portable_schema_value(item, f"{path}.{key}")
         return
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list):
         for index, item in enumerate(value):
             _require_portable_schema_value(item, f"{path}[{index}]")
         return
@@ -1706,13 +1751,25 @@ class PSANNRegressor(_Phase2Regressor):
                 artifacts["episodic_context"] = episodic_strategy.context_extractor
             history = list(getattr(self, "_episodic_history_", ()))
             profile = dict(getattr(self, "_episodic_profile_", {}))
+            profile["configured_episode_length"] = episodic_strategy.schedule.episode_length
+            profile["effective_episode_length"] = int(
+                profile.get("effective_episode_length", episodic_strategy.schedule.episode_length)
+            )
+            profile["batch_episodes"] = episodic_strategy.schedule.batch_episodes
+            profile["updates_per_epoch"] = episodic_strategy.schedule.updates_per_epoch
             _require_portable_schema_value(history, "Schema-v3 fitted.episodic.history")
             _require_portable_schema_value(profile, "Schema-v3 fitted.episodic.profile")
             fitted["episodic"] = {
                 "kind": "hisso",
                 "config": episodic_mapping,
                 "effective": {
-                    "episode_length": episodic_strategy.schedule.episode_length,
+                    "configured_episode_length": episodic_strategy.schedule.episode_length,
+                    "effective_episode_length": int(
+                        profile.get(
+                            "effective_episode_length",
+                            episodic_strategy.schedule.episode_length,
+                        )
+                    ),
                     "batch_episodes": episodic_strategy.schedule.batch_episodes,
                     "updates_per_epoch": episodic_strategy.schedule.updates_per_epoch,
                 },

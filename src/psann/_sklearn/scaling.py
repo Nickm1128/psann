@@ -469,6 +469,42 @@ class _PSANNRegressorScalingMixin:
         y2d = self._inverse_fitted_target_scaler(y2d)
         return y2d.reshape(orig_shape).astype(np.float32, copy=False)
 
+    def _inverse_fitted_target_scaler_tensor(self, values: torch.Tensor) -> torch.Tensor:
+        """Differentiably invert built-in target scaling for episodic rewards.
+
+        Canonical episodic rewards are expressed in the same user-facing target
+        units as ``predict``.  The built-in scaler state is affine, so retaining
+        the operation in torch preserves the reward gradient.  A custom scaler
+        cannot promise that property; it is deliberately left unchanged here,
+        matching its opaque estimator-level contract.
+        """
+
+        kind = getattr(self, "_target_scaler_kind_", None)
+        state = getattr(self, "_target_scaler_state_", None)
+        if kind is None or state is None:
+            return values
+        shape = values.shape
+        flat = values.reshape(-1, shape[-1])
+        if kind == "standard":
+            mean = torch.as_tensor(state["mean"], device=values.device, dtype=values.dtype)
+            variance = torch.as_tensor(
+                state["M2"] / max(int(state["n"]), 1),
+                device=values.device,
+                dtype=values.dtype,
+            )
+            scale = torch.sqrt(torch.clamp(variance, min=1e-8))
+            return (flat * scale + mean).reshape(shape)
+        if kind == "minmax":
+            minimum = torch.as_tensor(state["min"], device=values.device, dtype=values.dtype)
+            maximum = torch.as_tensor(state["max"], device=values.device, dtype=values.dtype)
+            scale = torch.where(
+                (maximum - minimum) > 1e-8,
+                maximum - minimum,
+                torch.ones_like(maximum),
+            )
+            return (flat * scale + minimum).reshape(shape)
+        return values
+
     def _scaler_inverse_tensor(self, X_ep: torch.Tensor, *, feature_dim: int = -1) -> torch.Tensor:
         """Inverse-transform a torch tensor episode if scaler is active.
 

@@ -67,6 +67,7 @@ def build_hisso_training_plan(
     fit_args: NormalisedFitArgs,
     options,
     lsm_module: Optional[nn.Module] = None,
+    model_context: Optional[np.ndarray] = None,
 ) -> HISSOTrainingPlan:
     """Prepare HISSO trainer inputs without mutating estimator state."""
 
@@ -97,6 +98,9 @@ def build_hisso_training_plan(
         allow_full_window=allow_full_window,
         options=options,
         lsm_module=lsm_module,
+        model_context=(
+            None if model_context is None else np.asarray(model_context, dtype=np.float32)
+        ),
     )
 
 
@@ -229,6 +233,10 @@ def run_hisso_stage(
         ),
         gradient_clip=(canonical.gradient_clip if canonical is not None else 1.0),
         strict=canonical is not None,
+        model_context=plan.model_context,
+        action_postprocessor=(
+            estimator._inverse_fitted_target_scaler_tensor if canonical is not None else None
+        ),
     )
 
     estimator._hisso_options_ = plan.options

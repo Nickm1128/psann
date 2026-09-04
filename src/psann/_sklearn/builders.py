@@ -427,6 +427,7 @@ class _PSANNRegressorBuilderMixin:
                 fit_args=fit_args,
                 options=fit_args.hisso_options,
                 lsm_module=request.lsm_module,
+                model_context=request.prepared.train_context,
             )
 
         return FitVariantHooks(
@@ -508,6 +509,7 @@ class _PSANNRegressorBuilderMixin:
                 fit_args=fit_args,
                 options=fit_args.hisso_options,
                 lsm_module=request.lsm_module,
+                model_context=request.prepared.train_context,
             )
 
         return FitVariantHooks(

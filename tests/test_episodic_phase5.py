@@ -1186,3 +1186,187 @@ def test_canonical_wrapper_state_lifecycle_cadence_and_commit_counts(
     ).fit(X)
     assert len(resets) == expected_resets
     assert len(commits) == 2
+
+
+def test_canonical_actions_use_target_units_in_training_prediction_and_evaluation():
+    """Rewards see the same inverse-target-scaled action units as prediction."""
+
+    seen: list[torch.Tensor] = []
+
+    def reward(actions: torch.Tensor, _context: torch.Tensor, **_kwargs: object) -> torch.Tensor:
+        seen.append(actions.detach().cpu().clone())
+        return actions.mean(dim=(-1, -2))
+
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) + 1
+    y = np.linspace(100.0, 180.0, len(X), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            epochs=1,
+            batch_size=2,
+            random_state=0,
+            target_scaler="standard",
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=len(X), batch_episodes=1),
+            reward=reward,
+        ),
+    ).fit(X, y)
+    predicted = trainer.predict(X)
+    score = trainer.evaluate(X)
+    np.testing.assert_allclose(seen[-1].numpy().reshape(predicted.shape), predicted, rtol=1e-6)
+    assert score == pytest.approx(float(predicted.mean()), rel=1e-6)
+    # The training action is target-inverted too: raw standardized output near
+    # zero would not be in the user-facing hundred-scale target range.
+    assert abs(float(seen[0].mean())) > 20.0
+
+
+def test_canonical_wave_context_changes_training_prediction_and_evaluation_actions():
+    """Explicit architecture context reaches the episodic model in all lifecycle routes."""
+
+    def reward(actions: torch.Tensor, _context: torch.Tensor, **_kwargs: object) -> torch.Tensor:
+        return actions.mean(dim=(-1, -2))
+
+    X = np.arange(24, dtype=np.float32).reshape(12, 2) / 10
+    context_a = np.zeros((len(X), 1), dtype=np.float32)
+    context_b = np.full((len(X), 1), 3.0, dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=ArchitectureConfig.for_wave(
+                context=ContextConfig(dim=1), residual=ResidualConfig(alpha_init=1.0)
+            ),
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=2,
+            random_state=0,
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=3, batch_episodes=1), reward=reward
+        ),
+    ).fit(X, context=context_a)
+    actions_a = trainer.predict(X[:4], context=context_a[:4])
+    actions_b = trainer.predict(X[:4], context=context_b[:4])
+    assert float(np.max(np.abs(actions_a - actions_b))) > 1e-5
+    assert trainer.evaluate(X[:4], context=context_a[:4]) != pytest.approx(
+        trainer.evaluate(X[:4], context=context_b[:4])
+    )
+    second = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=ArchitectureConfig.for_wave(
+                context=ContextConfig(dim=1), residual=ResidualConfig(alpha_init=1.0)
+            ),
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            batch_size=2,
+            random_state=0,
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=3, batch_episodes=1), reward=reward
+        ),
+    ).fit(X, context=context_b)
+    assert any(
+        not torch.equal(left, right)
+        for left, right in zip(
+            trainer.estimator.model_.parameters(), second.estimator.model_.parameters()
+        )
+    )
+
+
+def test_canonical_wrapper_exposes_transactional_estimator_parameters_and_grid_search():
+    from sklearn.model_selection import GridSearchCV
+
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, hidden_units=4, random_state=0),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1)),
+    )
+    assert trainer.get_params(deep=True)["estimator__hidden_units"] == 4
+    trainer.set_params(estimator__hidden_units=6)
+    assert trainer.estimator.hidden_units == 6
+    with pytest.raises(ValueError, match="estimator__missing"):
+        trainer.set_params(estimator__missing=9)
+    assert trainer.estimator.hidden_units == 6
+    search = GridSearchCV(
+        trainer,
+        {"estimator__hidden_units": [3, 4]},
+        scoring=lambda fitted, features, targets: -float(np.mean(fitted.predict(features))),
+        cv=2,
+        refit=False,
+    )
+    search.fit(X, np.ones(len(X), dtype=np.float32))
+    assert set(search.cv_results_["param_estimator__hidden_units"].data) == {3, 4}
+
+
+def test_canonical_wrapper_rolls_back_partially_mutating_estimator_updates():
+    class _PartiallyMutatingEstimator:
+        def __init__(self) -> None:
+            self.value = "original"
+
+        def get_params(self, deep: bool = True) -> dict[str, object]:
+            del deep
+            return {"value": self.value}
+
+        def set_params(self, **params: object) -> "_PartiallyMutatingEstimator":
+            self.value = params["value"]
+            if self.value == "invalid":
+                raise ValueError("invalid value")
+            return self
+
+    estimator = _PartiallyMutatingEstimator()
+    trainer = EpisodicTrainer(estimator=estimator, strategy="hisso")
+    previous_strategy = trainer.strategy
+    with pytest.raises(ValueError, match="invalid value"):
+        trainer.set_params(
+            strategy__schedule__episode_length=3,
+            estimator__value="invalid",
+        )
+    assert estimator.value == "original"
+    assert trainer.strategy is previous_strategy
+
+
+def test_canonical_short_series_profile_and_schema_effective_metadata_are_truthful(tmp_path):
+    X = np.arange(6, dtype=np.float32).reshape(3, 2)
+    strategy = HISSOConfig(
+        schedule=EpisodeScheduleConfig(episode_length=8, batch_episodes=3, updates_per_epoch=2)
+    )
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=0), strategy=strategy
+    ).fit(X)
+    assert trainer.profile_["configured_episode_length"] == 8
+    assert trainer.profile_["effective_episode_length"] == 3
+    assert trainer.profile_["batch_episodes"] == 3
+    assert trainer.profile_["updates_per_epoch"] == 2
+    path = tmp_path / "short.pt"
+    trainer.save(path)
+    payload = torch.load(path, weights_only=False)
+    effective = payload["fitted"]["episodic"]["effective"]
+    assert effective == {
+        "configured_episode_length": 8,
+        "effective_episode_length": 3,
+        "batch_episodes": 3,
+        "updates_per_epoch": 2,
+    }
+    payload["fitted"]["episodic"]["profile"]["effective_episode_length"] = 8
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match="profile.effective_episode_length"):
+        EpisodicTrainer.load(path)
+
+
+@pytest.mark.parametrize(
+    "bad_value",
+    [(1, 2), {1, 2}, np.float32(1.0), torch.tensor(1.0), {1: "value"}, float("nan")],
+)
+def test_schema_v3_portability_rejects_noncanonical_metadata_values(tmp_path, bad_value):
+    X = np.ones((6, 2), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2)),
+    ).fit(X)
+    path = tmp_path / "nonportable.pt"
+    trainer.save(path)
+    payload = torch.load(path, weights_only=False)
+    payload["fitted"]["episodic"]["profile"]["bad"] = bad_value
+    torch.save(payload, path)
+    with pytest.raises((TypeError, ValueError), match="Schema-v3 fitted.episodic.profile"):
+        EpisodicTrainer.load(path)

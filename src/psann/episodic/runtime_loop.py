@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 import numpy as np
 import torch
@@ -44,6 +44,7 @@ class HISSOTrainer:
         optimizer: Optional[torch.optim.Optimizer] = None,
         gradient_clip: float | None = 1.0,
         strict: bool = False,
+        action_postprocessor: Callable[[torch.Tensor], torch.Tensor] | None = None,
     ) -> None:
         self.model = model
         self.cfg = cfg
@@ -62,6 +63,7 @@ class HISSOTrainer:
         self.state_reset = state_reset_value
         self.strict = strict
         self.gradient_clip = gradient_clip
+        self.action_postprocessor = action_postprocessor
         legacy_episodes_per_epoch = max(1, int(cfg.episodes_per_batch))
         episode_batch_size = int(cfg.resolved_episode_batch_size())
         updates_per_epoch = int(cfg.resolved_updates_per_epoch())
@@ -71,7 +73,10 @@ class HISSOTrainer:
             "epochs": 0,
             "total_time_s": 0.0,
             "episode_length": int(cfg.episode_length),
-            "batch_episodes": legacy_episodes_per_epoch,
+            "configured_episode_length": int(cfg.episode_length),
+            "effective_episode_length": None,
+            "batch_episodes": episode_batch_size,
+            "legacy_episodes_per_epoch": legacy_episodes_per_epoch,
             "episode_batch_size": episode_batch_size,
             "updates_per_epoch": updates_per_epoch,
             "dataset_bytes": 0,
@@ -116,6 +121,7 @@ class HISSOTrainer:
         verbose: int,
         lr_max: Optional[float],
         lr_min: Optional[float],
+        model_context: np.ndarray | None = None,
     ) -> None:
         """Optimise the underlying model against sampled HISSO episodes."""
 
@@ -152,9 +158,17 @@ class HISSOTrainer:
             }
         )
 
+        model_context_tensor: torch.Tensor | None = None
+        if model_context is not None:
+            model_context_arr = np.asarray(model_context, dtype=np.float32)
+            if model_context_arr.shape[0] != x_tensor.shape[0]:
+                raise ValueError("Model context must align with HISSO training inputs.")
+            model_context_tensor = torch.as_tensor(model_context_arr, device=self.device)
+
         episode_len = max(1, int(self.cfg.episode_length))
         total_steps = int(x_tensor.shape[0])
         episode_len = min(episode_len, total_steps)
+        self.profile["effective_episode_length"] = episode_len
         single_window_only = total_steps <= episode_len
 
         self.model.to(self.device)
@@ -183,12 +197,27 @@ class HISSOTrainer:
                     batch_start = time.perf_counter()
                     self._reset_state_if_needed("batch")
                     gather_start = time.perf_counter()
+                    starts = self._sample_episode_starts(
+                        total_steps=total_steps,
+                        episode_length=episode_len,
+                        count=episode_batch,
+                    )
                     episodes, is_shared = self._sample_episode_batch(
                         x_tensor,
                         total_steps=total_steps,
                         episode_length=episode_len,
                         count=episode_batch,
+                        starts=starts,
                     )
+                    episode_model_context = None
+                    if model_context_tensor is not None:
+                        episode_model_context, _ = self._sample_episode_batch(
+                            model_context_tensor,
+                            total_steps=total_steps,
+                            episode_length=episode_len,
+                            count=episode_batch,
+                            starts=starts,
+                        )
                     self.profile["episode_gather_time_s_total"] += (
                         time.perf_counter() - gather_start
                     )
@@ -210,7 +239,16 @@ class HISSOTrainer:
                         model_inputs = inputs.reshape(
                             episode_batch * episode_len, *tuple(inputs.shape[2:])
                         )
-                        outputs = self.model(model_inputs)
+                        flat_model_context = (
+                            None
+                            if episode_model_context is None
+                            else episode_model_context.reshape(episode_batch * episode_len, -1)
+                        )
+                        outputs = (
+                            self.model(model_inputs, flat_model_context)
+                            if flat_model_context is not None
+                            else self.model(model_inputs)
+                        )
                         if isinstance(outputs, tuple):
                             outputs = outputs[0]
                         if outputs.ndim == 1:
@@ -319,21 +357,26 @@ class HISSOTrainer:
         return float(np.mean(values))
 
     @torch.no_grad()
-    def evaluate_prepared(self, inputs: np.ndarray) -> float:
-        """Evaluate one complete prepared series through the training reward path."""
+    def evaluate_prepared(self, inputs: np.ndarray, *, actions: np.ndarray | None = None) -> float:
+        """Score prepared inputs and caller-visible actions through one reward path."""
 
         data = torch.as_tensor(np.asarray(inputs, dtype=np.float32), device=self.device)
         if data.ndim < 2 or data.shape[0] == 0:
             raise ValueError("HISSO evaluation requires non-empty prepared inputs.")
         self.model.eval()
         context = self._extract_context(data.unsqueeze(0))
-        outputs = self.model(data)
-        if isinstance(outputs, tuple):
-            outputs = outputs[0]
-        if outputs.ndim == 1:
-            outputs = outputs[:, None]
-        actions = self._apply_primary_transform(outputs.reshape(1, data.shape[0], -1))
-        return float(self._coerce_reward(actions, context).mean().detach().cpu())
+        if actions is None:
+            outputs = self.model(data)
+            if isinstance(outputs, tuple):
+                outputs = outputs[0]
+            if outputs.ndim == 1:
+                outputs = outputs[:, None]
+            action_tensor = self._apply_primary_transform(outputs.reshape(1, data.shape[0], -1))
+        else:
+            action_tensor = torch.as_tensor(actions, dtype=data.dtype, device=self.device)
+            action_tensor = action_tensor.reshape(1, data.shape[0], -1)
+            action_tensor = self._apply_primary_transform(action_tensor, apply_postprocessor=False)
+        return float(self._coerce_reward(action_tensor, context).mean().detach().cpu())
 
     def _reset_state_if_needed(self, cadence: str) -> None:
         if not self.stateful or self.state_reset != cadence:
@@ -366,6 +409,7 @@ class HISSOTrainer:
         total_steps: int,
         episode_length: int,
         count: int,
+        starts: np.ndarray | None = None,
     ) -> tuple[torch.Tensor, bool]:
         if count <= 0:
             raise ValueError("episode batch size must be positive.")
@@ -375,8 +419,10 @@ class HISSOTrainer:
             episodes = x_tensor[:episode_length].unsqueeze(0).repeat(count, *([1] * x_tensor.ndim))
             return episodes, False
 
-        max_start = total_steps - episode_length
-        starts = self._rng.integers(0, max_start + 1, size=count, endpoint=False)
+        if starts is None:
+            starts = self._sample_episode_starts(
+                total_steps=total_steps, episode_length=episode_length, count=count
+            )
         starts_arr = np.asarray(starts, dtype=np.int64).reshape(count)
         if count == 1:
             start = int(starts_arr[0])
@@ -388,6 +434,16 @@ class HISSOTrainer:
         gathered = x_tensor.index_select(0, indices.reshape(-1))
         episodes = gathered.reshape(count, episode_length, *tuple(x_tensor.shape[1:]))
         return episodes, False
+
+    def _sample_episode_starts(
+        self, *, total_steps: int, episode_length: int, count: int
+    ) -> np.ndarray:
+        if total_steps <= episode_length:
+            return np.zeros(count, dtype=np.int64)
+        return np.asarray(
+            self._rng.integers(0, total_steps - episode_length + 1, size=count, endpoint=False),
+            dtype=np.int64,
+        )
 
     def _extract_context(self, inputs: torch.Tensor) -> torch.Tensor:
         if self.strict:
@@ -406,7 +462,11 @@ class HISSOTrainer:
             )
         return _call_context_extractor(self.context_extractor, inputs)
 
-    def _apply_primary_transform(self, primary: torch.Tensor) -> torch.Tensor:
+    def _apply_primary_transform(
+        self, primary: torch.Tensor, *, apply_postprocessor: bool = True
+    ) -> torch.Tensor:
+        if apply_postprocessor and self.action_postprocessor is not None:
+            primary = self.action_postprocessor(primary)
         return transform_action_tensor(primary, self.cfg.primary_transform or "identity")
 
     def _coerce_reward(self, primary: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
@@ -489,6 +549,8 @@ def run_hisso_training(
     optimizer: Optional[torch.optim.Optimizer] = None,
     gradient_clip: float | None = 1.0,
     strict: bool = False,
+    model_context: np.ndarray | None = None,
+    action_postprocessor: Callable[[torch.Tensor], torch.Tensor] | None = None,
 ) -> HISSOTrainer:
     """Instantiate the lightweight HISSO trainer and execute one optimisation run."""
 
@@ -508,6 +570,7 @@ def run_hisso_training(
         optimizer=optimizer,
         gradient_clip=gradient_clip,
         strict=strict,
+        action_postprocessor=action_postprocessor,
     )
     trainer.train(
         X_train_arr,
@@ -515,6 +578,7 @@ def run_hisso_training(
         verbose=int(verbose),
         lr_max=lr_max,
         lr_min=lr_min,
+        model_context=model_context,
     )
     estimator._hisso_reward_fn_ = trainer.reward_fn
     estimator._hisso_context_extractor_ = context_extractor

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from psann.scripts import hisso_log_run
 
 
@@ -129,6 +131,65 @@ def test_hisso_logging_cli_emits_metrics(tmp_path):
     assert "kind: hisso" in resolved_yaml
     assert "schedule:" in resolved_yaml
     assert "output_dir" in resolved_yaml
+
+
+def test_hisso_logging_cli_preserves_tagged_strategy_fields_without_flat_round_trip(tmp_path):
+    config_path = tmp_path / "canonical.json"
+    _write_config(config_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["episodic"]["strategy"] = {
+        "kind": "hisso",
+        "schedule": {
+            "episode_length": 9,
+            "batch_episodes": 2,
+            "updates_per_epoch": 3,
+            "random_state": 17,
+        },
+        "reward": "portfolio",
+        "primary_transform": "tanh",
+        "transition_penalty": 0.0,
+        "input_noise_std": 0.125,
+        "gradient_clip": 0.25,
+        "mixed_precision": False,
+        "amp_dtype": "bfloat16",
+    }
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    output_dir = tmp_path / "artifacts"
+    assert (
+        hisso_log_run.main(
+            [
+                "--config",
+                str(config_path),
+                "--output-dir",
+                str(output_dir),
+                "--run-name",
+                "canonical",
+                "--device",
+                "cpu",
+                "--seed",
+                "123",
+            ]
+        )
+        == 0
+    )
+    resolved = (output_dir / "canonical" / "config_resolved.yaml").read_text(encoding="utf-8")
+    assert "random_state: 17" in resolved
+    assert "gradient_clip: 0.25" in resolved
+    assert "input_noise_std: 0.125" in resolved
+    assert "reward: finance" in resolved
+    assert "batch_episodes: 2" in resolved
+    assert "updates_per_epoch: 3" in resolved
+
+
+def test_hisso_logging_cli_rejects_target_selection_inside_canonical_warm_start():
+    with pytest.raises(ValueError, match="episodic.strategy.warm_start.y_key"):
+        hisso_log_run._normalise_canonical_cli_strategy(
+            {
+                "kind": "hisso",
+                "warm_start": {"epochs": 1, "y_key": "y_train"},
+            }
+        )
 
 
 def test_hisso_logging_cli_respects_output_dir(tmp_path):

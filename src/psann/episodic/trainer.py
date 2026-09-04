@@ -24,6 +24,10 @@ class EpisodicTrainer:
     def get_params(self, deep: bool = True) -> dict[str, object]:
         params: dict[str, object] = {"estimator": self.estimator, "strategy": self.strategy}
         if deep:
+            get_estimator_params = getattr(self.estimator, "get_params", None)
+            if callable(get_estimator_params):
+                for name, value in get_estimator_params(deep=True).items():
+                    params[f"estimator__{name}"] = value
             resolved = normalize_strategy(self.strategy)
             for field in fields(HISSOConfig):
                 params[f"strategy__{field.name}"] = getattr(resolved, field.name)
@@ -40,12 +44,15 @@ class EpisodicTrainer:
         unknown = [
             name
             for name in params
-            if name not in {"estimator", "strategy"} and not name.startswith("strategy__")
+            if name not in {"estimator", "strategy"}
+            and not name.startswith(("strategy__", "estimator__"))
         ]
         if unknown:
             raise ValueError(f"Unknown parameter {unknown[0]!r}.")
         if "strategy" in params and any(name.startswith("strategy__") for name in params):
             raise ValueError("strategy conflicts with strategy__ nested updates.")
+        if "estimator" in params and any(name.startswith("estimator__") for name in params):
+            raise ValueError("estimator conflicts with estimator__ nested updates.")
         previous_estimator = self.estimator
         estimator = params.get("estimator", previous_estimator)
         strategy = normalize_strategy(params.get("strategy", self.strategy))  # type: ignore[arg-type]
@@ -53,6 +60,31 @@ class EpisodicTrainer:
         nested.sort(key=lambda item: item[0].count("__"))
         for name, value in nested:
             strategy = replace_strategy(strategy, name, value)
+        estimator_nested = {
+            name.removeprefix("estimator__"): value
+            for name, value in params.items()
+            if name.startswith("estimator__")
+        }
+        if estimator_nested:
+            get_estimator_params = getattr(estimator, "get_params", None)
+            set_estimator_params = getattr(estimator, "set_params", None)
+            if not callable(get_estimator_params) or not callable(set_estimator_params):
+                raise TypeError("estimator must expose sklearn get_params and set_params.")
+            known = get_estimator_params(deep=True)
+            invalid = sorted(set(estimator_nested) - set(known))
+            if invalid:
+                raise ValueError(f"Unknown parameter 'estimator__{invalid[0]}'.")
+            # Validate the whole wrapper request before either owner changes,
+            # then restore the addressed estimator parameters if its setter
+            # rejects a value after making a partial update.  This keeps the
+            # frozen strategy and wrapped sklearn object transactional as one
+            # public ``set_params`` operation.
+            previous_estimator_params = {name: known[name] for name in estimator_nested}
+            try:
+                set_estimator_params(**estimator_nested)
+            except Exception:
+                set_estimator_params(**previous_estimator_params)
+                raise
         self.estimator, self.strategy = estimator, strategy
         # A replacement must not leave a formerly wrapped estimator claiming a
         # fitted episodic run.  Clear it as well as the new owner; the latter may
@@ -146,7 +178,7 @@ class EpisodicTrainer:
     def evaluate(self, X: np.ndarray, *, context: np.ndarray | None = None) -> float:
         strategy = normalize_strategy(self.strategy)
         estimator = self._fitted()
-        prepared, _, _ = estimator._prepare_inference_inputs(X, context=context)
+        prepared, _, model_context = estimator._prepare_inference_inputs(X, context=context)
         runtime = getattr(estimator, "_hisso_trainer_", None)
         if runtime is None:
             runtime = HISSOTrainer(
@@ -161,7 +193,13 @@ class EpisodicTrainer:
                 state_reset=str(estimator.state_reset),
                 strict=True,
             )
-        return runtime.evaluate_prepared(prepared)
+        # Inference owns preprocessing, model context, output validation and
+        # inverse target scaling.  Reward evaluation consumes precisely those
+        # caller-visible values, while the runtime still owns strategy context,
+        # alignment and reward dispatch over the prepared feature tensor.
+        raw_outputs = estimator._run_model(prepared, context_np=model_context, state_updates=False)
+        values = estimator._inverse_fitted_target_scaler_like(raw_outputs)
+        return runtime.evaluate_prepared(prepared, actions=values)
 
     def save(self, path: str | Path) -> None:
         self._fitted().save(str(path))

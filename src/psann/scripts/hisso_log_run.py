@@ -448,6 +448,29 @@ def _episodes_from_history(history: list[dict]) -> int:
     return total
 
 
+def _normalise_canonical_cli_strategy(value: object) -> HISSOConfig:
+    """Resolve the maintained tagged strategy without a legacy round trip."""
+
+    if not isinstance(value, Mapping):
+        raise TypeError("episodic.strategy must be a tagged mapping or the hisso preset.")
+    raw = dict(value)
+    warm_start = raw.get("warm_start")
+    if isinstance(warm_start, Mapping) and "y_key" in warm_start:
+        raise ValueError(
+            "episodic.strategy.warm_start.y_key is not supported; "
+            "supply supervised targets through the dataset."
+        )
+    reward = raw.get("reward")
+    if isinstance(reward, Mapping):
+        raw["reward"] = _maybe_partial(reward.get("target"), reward.get("kwargs", {}))
+    context = raw.get("context_extractor")
+    if isinstance(context, Mapping):
+        raw["context_extractor"] = _maybe_partial(context.get("target"), context.get("kwargs", {}))
+    elif isinstance(context, str):
+        raw["context_extractor"] = _resolve_target(context)
+    return normalize_strategy(raw)
+
+
 def main(argv: Optional[Iterable[str]] = None) -> int:
     args = parse_args(argv)
     config_path = Path(args.config).resolve()
@@ -491,10 +514,31 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
         estimator = EstimatorCls(**estimator_params)
 
-        # ``episodic`` is the maintained configuration section.  Retain
-        # ``hisso`` only so archived 0.x logging payloads remain runnable.
-        hisso_cfg = config.get("episodic", config.get("hisso", {}))
-        if isinstance(hisso_cfg.get("strategy"), Mapping):
+        # ``episodic.strategy`` is the maintained tagged configuration.  The
+        # old flat ``hisso`` section is intentionally isolated below as a 0.x
+        # compatibility adapter; canonical fields must never make that round trip.
+        canonical_strategy: HISSOConfig | None = None
+        canonical_section = config.get("episodic")
+        if canonical_section is not None:
+            if not isinstance(canonical_section, Mapping):
+                raise TypeError("episodic must be a mapping.")
+            unknown_episodic = set(canonical_section) - {"enabled", "strategy"}
+            if unknown_episodic:
+                raise ValueError(f"episodic.{min(unknown_episodic)} is unknown.")
+            hisso_enabled = bool(canonical_section.get("enabled", True))
+            if hisso_enabled:
+                if "strategy" not in canonical_section:
+                    raise ValueError("episodic.strategy is required when episodic.enabled is true.")
+                canonical_strategy = _normalise_canonical_cli_strategy(
+                    canonical_section["strategy"]
+                )
+            hisso_cfg: Mapping[str, Any] = canonical_section
+        else:
+            hisso_cfg = config.get("hisso", {})
+            if not isinstance(hisso_cfg, Mapping):
+                raise TypeError("hisso must be a mapping.")
+            hisso_enabled = bool(hisso_cfg.get("enabled", True))
+        if canonical_strategy is None and isinstance(hisso_cfg.get("strategy"), Mapping):
             # Tagged maintained input is normalized into the existing bounded
             # consumer payload here; the old flat shape stays below as a
             # compatibility adapter only.
@@ -511,31 +555,34 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 "updates_per_epoch": schedule_mapping.get("updates_per_epoch", 1),
                 "supervised": warm_start,
             }
-        hisso_enabled = bool(hisso_cfg.get("enabled", True))
         mixed_precision = bool(hisso_cfg.get("mixed_precision", False))
         amp_dtype_name = hisso_cfg.get("amp_dtype", "float16")
 
         reward_spec = hisso_cfg.get("reward")
         reward_fn = None
-        if isinstance(reward_spec, Mapping):
+        if canonical_strategy is None and isinstance(reward_spec, Mapping):
             reward_fn = _maybe_partial(
                 reward_spec.get("target"),
                 reward_spec.get("kwargs", {}),
             )
-        elif isinstance(reward_spec, str):
+        elif canonical_strategy is None and isinstance(reward_spec, str):
             reward_fn = _resolve_target(reward_spec)
 
         context_spec = hisso_cfg.get("context_extractor")
         context_extractor = None
-        if isinstance(context_spec, Mapping):
+        if canonical_strategy is None and isinstance(context_spec, Mapping):
             context_extractor = _maybe_partial(
                 context_spec.get("target"),
                 context_spec.get("kwargs", {}),
             )
-        elif isinstance(context_spec, str):
+        elif canonical_strategy is None and isinstance(context_spec, str):
             context_extractor = _resolve_target(context_spec)
 
-        supervised_payload = _build_supervised_payload(hisso_cfg.get("supervised"), dataset)
+        supervised_payload = (
+            None
+            if canonical_strategy is not None
+            else _build_supervised_payload(hisso_cfg.get("supervised"), dataset)
+        )
 
         fit_kwargs: Dict[str, Any] = {
             "context": dataset.context_train,
@@ -551,36 +598,40 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
 
         episodic_trainer: EpisodicTrainer | None = None
         if hisso_enabled:
-            warm_start = None
-            if supervised_payload is not None:
-                warm_start = SupervisedWarmStartConfig(
-                    **{
-                        key: value
-                        for key, value in supervised_payload.items()
-                        if key != "y" and value is not None
-                    }
+            if canonical_strategy is not None:
+                strategy = canonical_strategy
+            else:
+                warm_start = None
+                if supervised_payload is not None:
+                    warm_start = SupervisedWarmStartConfig(
+                        **{
+                            key: value
+                            for key, value in supervised_payload.items()
+                            if key != "y" and value is not None
+                        }
+                    )
+                schedule = EpisodeScheduleConfig(
+                    episode_length=int(hisso_cfg.get("window") or 64),
+                    batch_episodes=int(
+                        hisso_cfg.get("batch_episodes", hisso_cfg.get("episodes_per_batch", 32))
+                        or 32
+                    ),
+                    updates_per_epoch=int(hisso_cfg.get("updates_per_epoch") or 1),
+                    random_state=args.seed,
                 )
-            schedule: EpisodeScheduleConfig = EpisodeScheduleConfig(
-                episode_length=int(hisso_cfg.get("window") or 64),
-                batch_episodes=int(
-                    hisso_cfg.get("batch_episodes", hisso_cfg.get("episodes_per_batch", 32)) or 32
-                ),
-                updates_per_epoch=int(hisso_cfg.get("updates_per_epoch") or 1),
-                random_state=args.seed,
-            )
-            strategy = HISSOConfig(
-                schedule=schedule,
-                reward=reward_fn or "default",
-                context_extractor=context_extractor,
-                primary_transform=hisso_cfg.get("primary_transform") or "identity",
-                transition_penalty=float(
-                    hisso_cfg.get("transition_penalty", hisso_cfg.get("trans_cost", 0.0)) or 0.0
-                ),
-                input_noise_std=hisso_cfg.get("input_noise"),
-                warm_start=warm_start,
-                mixed_precision=mixed_precision,
-                amp_dtype=amp_dtype_name,
-            )
+                strategy = HISSOConfig(
+                    schedule=schedule,
+                    reward=reward_fn or "default",
+                    context_extractor=context_extractor,
+                    primary_transform=hisso_cfg.get("primary_transform") or "identity",
+                    transition_penalty=float(
+                        hisso_cfg.get("transition_penalty", hisso_cfg.get("trans_cost", 0.0)) or 0.0
+                    ),
+                    input_noise_std=hisso_cfg.get("input_noise"),
+                    warm_start=warm_start,
+                    mixed_precision=mixed_precision,
+                    amp_dtype=amp_dtype_name,
+                )
             episodic_trainer = EpisodicTrainer(estimator=estimator, strategy=strategy)
 
         stateful = bool(getattr(estimator, "stateful", False))

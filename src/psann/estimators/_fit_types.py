@@ -76,6 +76,7 @@ class HISSOTrainingPlan:
     allow_full_window: bool
     options: HISSOOptions
     lsm_module: Optional[nn.Module]
+    model_context: Optional[np.ndarray] = None
 
 
 class ModelFactory(Protocol):
