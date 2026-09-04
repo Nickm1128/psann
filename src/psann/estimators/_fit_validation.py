@@ -253,18 +253,6 @@ def _resolve_validation_inputs(
     model: nn.Module,
     inputs: torch.Tensor,
 ) -> torch.Tensor:
-    val_inputs = inputs
-    preproc = None
-    if isinstance(model, WithPreprocessor) and model.preproc is not None:
-        preproc = model.preproc
-    elif hasattr(estimator, "lsm") and estimator.lsm is not None:
-        preproc = estimator.lsm
-    if preproc is None:
-        return val_inputs
-
-    if hasattr(preproc, "eval"):
-        preproc.eval()
-    if hasattr(preproc, "forward"):
-        with torch.no_grad():
-            val_inputs = preproc(inputs)
-    return val_inputs
+    # Validation enters the same full model boundary as training and inference.
+    # Applying ``model.preproc`` here would make a WithPreprocessor run it twice.
+    return inputs

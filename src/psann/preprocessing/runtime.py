@@ -154,6 +154,15 @@ def prepare_preprocessor(request: PreprocessorBuildRequest) -> PreprocessorBuild
             raise ValueError(
                 "preprocessor.component.output_topology is incompatible with module output rank."
             )
+        if produced.shape[0] != probe.shape[0]:
+            raise ValueError("preprocessor.component.module must preserve batch dimension.")
+        if component.output_topology == "tokens" and produced.shape[1] != probe.shape[1]:
+            raise ValueError("preprocessor.component.module must preserve token length.")
+        if (
+            component.output_topology.startswith("spatial-")
+            and produced.shape[2:] != probe.shape[2:]
+        ):
+            raise ValueError("preprocessor.component.module must preserve spatial dimensions.")
         if produced.shape[-1] != component.output_dim and not component.output_topology.startswith(
             "spatial-"
         ):
@@ -204,23 +213,30 @@ def validate_preprocessor_capability(
     """Apply Phase 4 topology compatibility before predictive training."""
 
     output = capabilities.output_topology
+    input_topology = capabilities.input_topology
     if architecture_kind == "sequence":
-        if output != "tokens":
+        if (input_topology, output) != ("tokens", "tokens"):
             raise ValueError(
-                "preprocessor output topology must be tokens for sequence architecture."
+                "preprocessor.component.input_topology and output_topology must both be tokens for sequence architecture."
             )
         return
     if attention:
-        if output != "tokens":
-            raise ValueError("attention architecture requires a tokens-to-tokens preprocessor.")
+        if (input_topology, output) != ("tokens", "tokens"):
+            raise ValueError(
+                "attention architecture requires preprocessor.component input_topology/output_topology tokens-to-tokens."
+            )
         return
     if convolutional:
         expected = f"spatial-{spatial_ndim}d"
-        if output != expected:
-            raise ValueError(f"convolutional architecture requires {expected} preprocessor output.")
+        if (input_topology, output) != (expected, expected):
+            raise ValueError(
+                f"convolutional architecture requires preprocessor.component input_topology/output_topology {expected}."
+            )
         return
-    if output != "flat":
-        raise ValueError(f"{architecture_kind} architecture requires flat preprocessor output.")
+    if (input_topology, output) != ("flat", "flat"):
+        raise ValueError(
+            f"{architecture_kind} architecture requires preprocessor.component input_topology/output_topology flat."
+        )
     if architecture_kind == "geometric-sparse" and geometry_size is not None:
         if capabilities.output_dim != geometry_size:
             raise ValueError(

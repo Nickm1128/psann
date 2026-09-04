@@ -146,11 +146,17 @@ def run_hisso_stage(
     estimator._hisso_reward_fn_ = plan.options.reward_fn
     estimator._hisso_context_extractor_ = plan.options.context_extractor
 
+    training = getattr(getattr(estimator, "preprocessor", None), "training", None)
+    hisso_lr = (
+        float(training.lr)
+        if training is not None and training.trainable and training.lr is not None
+        else float(estimator.lr)
+    )
     trainer = run_hisso_training(
         estimator,
         inputs_arr,
         trainer_cfg=plan.trainer_config,
-        lr=float(estimator.lr),
+        lr=hisso_lr,
         device=device,
         reward_fn=plan.options.reward_fn,
         context_extractor=plan.options.context_extractor,
@@ -343,7 +349,16 @@ def _build_optimizer(estimator: "PSANNRegressor", model: nn.Module) -> torch.opt
         if opt_name == "sgd":
             return torch.optim.SGD(params, momentum=0.9)
         return torch.optim.Adam(params, weight_decay=float(estimator.weight_decay))
-    return estimator._make_optimizer(model)
+    params = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    if str(estimator.optimizer).lower() == "adamw":
+        return torch.optim.AdamW(
+            params, lr=float(estimator.lr), weight_decay=float(estimator.weight_decay)
+        )
+    if str(estimator.optimizer).lower() == "sgd":
+        return torch.optim.SGD(params, lr=float(estimator.lr), momentum=0.9)
+    return torch.optim.Adam(
+        params, lr=float(estimator.lr), weight_decay=float(estimator.weight_decay)
+    )
 
 
 __all__ = [

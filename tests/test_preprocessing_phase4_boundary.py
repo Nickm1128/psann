@@ -316,3 +316,26 @@ def test_preprocessor_nested_gridsearch_and_joblib_round_trip(tmp_path) -> None:
     joblib.dump(search.best_estimator_, restored_path)
     restored = joblib.load(restored_path)
     assert restored.predict(X[:2]).shape == (2,)
+
+
+def test_shape_changing_preprocessor_validation_enters_wrapper_once() -> None:
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(LSMConfig.dense(output_dim=4)), early_stopping=True
+    ).fit(X, y, validation_data=(X[:2], y[:2]))
+    assert estimator.predict(X[:2]).shape == (2,)
+
+
+def test_frozen_preprocessor_is_excluded_from_supervised_optimizer() -> None:
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(LSMConfig.dense(output_dim=4), PreprocessorTrainingConfig(False))
+    ).fit(X, y)
+    optimizer_parameters = {
+        id(parameter)
+        for group in estimator._optimizer_.param_groups
+        for parameter in group["params"]
+    }
+    assert not any(
+        id(parameter) in optimizer_parameters for parameter in estimator.preprocessor_.parameters()
+    )
