@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 
 import numpy as np
 
-from ..hisso import HISSOOptions
+from ..episodic.legacy_config import HISSOOptions
 from ..types import HISSOFitParams, NoiseSpec
 from ._fit_types import NormalisedFitArgs, ValidationInput
 

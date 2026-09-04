@@ -8,6 +8,7 @@ import torch
 
 from psann.architectures import ArchitectureConfig, ContextConfig, ConvolutionConfig, GeometryConfig
 from psann.estimators import PSANNRegressor
+from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 from psann.lsm import LSMConv2dExpander
 from psann.preprocessing import (
     LSMConfig,
@@ -193,3 +194,36 @@ def test_cuda_multichannel_channels_last_wave_context_keeps_sample_axis() -> Non
     assert meta["n_samples"] == 2
     assert context is not None and context.shape[0] == 2
     assert estimator.predict(X[:2]).shape == (2,)
+
+
+@pytest.mark.parametrize("convolutional", [False, True])
+def test_canonical_episodic_cuda_two_generation_map_location(tmp_path, convolutional: bool) -> None:
+    """Canonical episodic fit/evaluate closes CUDA→CPU schema-v3 generations."""
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    if convolutional:
+        X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) + 1
+        architecture = ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3))
+    else:
+        X = np.arange(16, dtype=np.float32).reshape(8, 2) + 1
+        architecture = ArchitectureConfig.dense()
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=architecture, epochs=1, batch_size=2, device="cuda", random_state=0
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=2),
+            mixed_precision=True,
+            amp_dtype="bfloat16",
+        ),
+    ).fit(X)
+    assert trainer.profile_["amp_enabled"] is True
+    assert trainer.evaluate(X[:3]) == pytest.approx(trainer.evaluate(X[:3]))
+    first, second = tmp_path / "episodic-cuda.pt", tmp_path / "episodic-cpu.pt"
+    trainer.save(first)
+    cpu = EpisodicTrainer.load(first, map_location="cpu")
+    cpu.save(second)
+    loaded = EpisodicTrainer.load(second, map_location="cpu")
+    assert next(loaded.estimator.model_.parameters()).device.type == "cpu"
+    np.testing.assert_allclose(loaded.predict(X[:2]), cpu.predict(X[:2]), rtol=1e-5)

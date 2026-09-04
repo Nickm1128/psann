@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Callable, Optional, Protocol, Tuple, Union
 import numpy as np
 import torch.nn as nn
 
-from ..hisso import HISSOOptions, HISSOTrainerConfig
+from ..episodic.legacy_config import HISSOOptions, HISSOTrainerConfig
 from ..types import NoiseSpec
 
 if TYPE_CHECKING:
