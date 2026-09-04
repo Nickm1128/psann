@@ -274,3 +274,46 @@ def test_canonical_episodic_bidirectional_cpu_cuda_schema_v3_closure(
     restored = EpisodicTrainer.load(cuda_path, map_location="cpu")
     assert next(restored.estimator.model_.parameters()).device.type == "cpu"
     np.testing.assert_allclose(restored.predict(X[:2]), trainer.predict(X[:2]), rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    ("primary_width", "context_width"),
+    [(2, 2), (2, 1), (1, 3)],
+    ids=["exact", "singleton-broadcast", "reduced-for-scalar-action"],
+)
+def test_canonical_episodic_cuda_context_alignment_uses_one_strict_runtime(
+    primary_width: int, context_width: int
+) -> None:
+    """CUDA exercises strict reward alignment in wrapper training and evaluation."""
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    observed: list[tuple[str, tuple[int, ...], tuple[int, ...]]] = []
+
+    def context(inputs: torch.Tensor) -> torch.Tensor:
+        base = inputs[..., :1]
+        return base.expand(*base.shape[:-1], context_width)
+
+    def reward(actions: torch.Tensor, aligned: torch.Tensor, **_kwargs: object) -> torch.Tensor:
+        observed.append((actions.device.type, tuple(actions.shape), tuple(aligned.shape)))
+        return -(actions - aligned).square().mean(dim=(-1, -2))
+
+    X = np.arange(24, dtype=np.float32).reshape(12, 2) + 1
+    y = np.ones((12, primary_width), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            epochs=1, batch_size=2, device="cuda", random_state=0, scaler="standard"
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=3, batch_episodes=1),
+            context_extractor=context,
+            reward=reward,
+        ),
+    ).fit(X, y)
+    assert trainer.predict(X[:2]).shape == (2, primary_width)
+    assert np.isfinite(trainer.evaluate(X[:4]))
+    assert len(observed) >= 2
+    assert all(
+        device == "cuda" and action_shape == context_shape
+        for device, action_shape, context_shape in observed
+    )
