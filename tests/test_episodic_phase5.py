@@ -489,6 +489,64 @@ def test_canonical_evaluation_reuses_scaled_rank3_context_runtime_path():
 
 
 @pytest.mark.parametrize(
+    ("primary_width", "context_width"),
+    [(2, 2), (2, 1), (1, 3)],
+    ids=["exact", "singleton-broadcast", "reduced-for-scalar-action"],
+)
+def test_canonical_context_alignment_is_identical_in_training_and_evaluation(
+    primary_width, context_width
+):
+    """The strict runtime owns exact, broadcast, and scalar-reduction alignment."""
+
+    X = np.arange(24, dtype=np.float32).reshape(12, 2) + 1
+    received: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+
+    def context(inputs: torch.Tensor) -> torch.Tensor:
+        base = inputs[..., :1]
+        return base.expand(*base.shape[:-1], context_width)
+
+    def reward(actions: torch.Tensor, aligned: torch.Tensor, **_kwargs: object) -> torch.Tensor:
+        received.append((tuple(actions.shape), tuple(aligned.shape)))
+        return -(actions - aligned).square().mean(dim=(-1, -2))
+
+    y = np.ones((len(X), primary_width), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, random_state=0, device="cpu"),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=3, batch_episodes=1),
+            context_extractor=context,
+            reward=reward,
+            primary_transform="tanh",
+        ),
+    ).fit(X, y)
+    assert trainer.predict(X[:4]).shape == (4, primary_width)
+    assert np.isfinite(trainer.evaluate(X[:4]))
+    assert len(received) >= 2
+    assert all(action_shape == context_shape for action_shape, context_shape in received)
+
+
+def test_legacy_reward_helper_delegates_to_the_runtime(monkeypatch):
+    """The retained facade has no independent NumPy reward/context body."""
+
+    from psann.hisso import hisso_evaluate_reward
+
+    calls: list[tuple[int, ...]] = []
+    original = HISSOTrainer.evaluate_prepared
+
+    def capture(self, prepared):
+        calls.append(tuple(np.asarray(prepared).shape))
+        return original(self, prepared)
+
+    monkeypatch.setattr(HISSOTrainer, "evaluate_prepared", capture)
+    estimator = PSANNRegressor(epochs=1, batch_size=2, random_state=0).fit(
+        np.ones((8, 2), dtype=np.float32), hisso=True, hisso_window=2
+    )
+    with pytest.warns(DeprecationWarning, match="psann.hisso"):
+        assert np.isfinite(hisso_evaluate_reward(estimator, np.ones((4, 2), dtype=np.float32)))
+    assert calls == [(4, 2)]
+
+
+@pytest.mark.parametrize(
     "extractor, message",
     [
         (

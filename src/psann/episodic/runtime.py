@@ -9,8 +9,16 @@ import numpy as np
 import torch
 
 
-def transform_actions(values: np.ndarray, transform: str) -> np.ndarray:
-    tensor = torch.as_tensor(values, dtype=torch.float32)
+def transform_action_tensor(values: torch.Tensor, transform: str) -> torch.Tensor:
+    """Apply the canonical action transform without changing device or dtype.
+
+    Every episodic lifecycle entry point goes through this primitive.  Keeping the
+    tensor implementation here prevents the training loop, canonical wrapper, and
+    retained compatibility helpers from growing subtly different softmax axes or
+    numerical implementations.
+    """
+
+    tensor = values
     # A rank-one estimator result denotes one decision per sample, not one
     # vector of decisions across the complete sample batch.  Preserve that
     # sample axis while applying the final-width transform.
@@ -30,7 +38,14 @@ def transform_actions(values: np.ndarray, transform: str) -> np.ndarray:
         raise ValueError(f"strategy.primary_transform {transform!r} is unsupported.")
     if column_output:
         result = result[:, 0]
-    return result.detach().cpu().numpy()
+    return result
+
+
+def transform_actions(values: np.ndarray, transform: str) -> np.ndarray:
+    """NumPy boundary for :func:`transform_action_tensor`."""
+
+    tensor = torch.as_tensor(values, dtype=torch.float32)
+    return transform_action_tensor(tensor, transform).detach().cpu().numpy()
 
 
 def align_context(actions: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
@@ -87,4 +102,10 @@ def validate_reward_penalty(reward: object, penalty: float) -> None:
     )
 
 
-__all__ = ["align_context", "call_reward", "transform_actions", "validate_reward_penalty"]
+__all__ = [
+    "align_context",
+    "call_reward",
+    "transform_action_tensor",
+    "transform_actions",
+    "validate_reward_penalty",
+]

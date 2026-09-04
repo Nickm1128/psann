@@ -18,7 +18,7 @@ from .reward import (
     _default_reward_fn,
     _resolve_reward_kwarg,
 )
-from .runtime import align_context, call_reward
+from .runtime import align_context, call_reward, transform_action_tensor
 
 if TYPE_CHECKING:
     from ..sklearn import PSANNRegressor
@@ -407,17 +407,7 @@ class HISSOTrainer:
         return _call_context_extractor(self.context_extractor, inputs)
 
     def _apply_primary_transform(self, primary: torch.Tensor) -> torch.Tensor:
-        transform = (self.cfg.primary_transform or "identity").lower()
-        if transform == "identity":
-            return primary
-        if transform == "softmax":
-            return torch.softmax(primary, dim=-1)
-        if transform == "tanh":
-            return torch.tanh(primary)
-        if transform in {"relu_norm", "relu-normalize", "sparse"}:
-            positive = torch.relu(primary) + 1e-8
-            return positive / positive.sum(dim=-1, keepdim=True)
-        raise ValueError(f"Unsupported primary_transform '{self.cfg.primary_transform}'.")
+        return transform_action_tensor(primary, self.cfg.primary_transform or "identity")
 
     def _coerce_reward(self, primary: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
         if self.strict:

@@ -3,11 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
-import torch
-
 from .legacy_config import HISSOOptions, HISSOTrainerConfig
-from .context import _call_context_extractor
-from .reward import _align_context_for_reward, _compute_reward, _resolve_reward_kwarg
+from .runtime import transform_actions
+from .runtime_loop import HISSOTrainer
 
 if TYPE_CHECKING:
     from ..sklearn import PSANNRegressor
@@ -33,31 +31,35 @@ def _resolve_primary_transform(
     return None
 
 
-def _apply_primary_transform_numpy(values: np.ndarray, transform: Optional[str]) -> np.ndarray:
-    arr = np.asarray(values, dtype=np.float32)
-    squeeze = False
-    if arr.ndim == 1:
-        arr = arr.reshape(-1, 1)
-        squeeze = True
+def _compat_runtime(
+    estimator: "PSANNRegressor", cfg: HISSOTrainerConfig, options: Optional[HISSOOptions]
+) -> HISSOTrainer:
+    """Build the permissive legacy adapter around the one episodic runtime."""
 
-    if transform is None:
-        result = arr
-    else:
-        transform_lower = transform.lower()
-        if transform_lower == "identity":
-            result = arr
-        elif transform_lower == "softmax":
-            shifted = arr - arr.max(axis=1, keepdims=True)
-            exp = np.exp(shifted)
-            totals = exp.sum(axis=1, keepdims=True)
-            np.clip(totals, a_min=np.finfo(np.float32).tiny, a_max=None, out=totals)
-            result = exp / totals
-        elif transform_lower == "tanh":
-            result = np.tanh(arr)
-        else:
-            raise ValueError(f"Unsupported primary transform '{transform}'.")
-
-    return result.squeeze(1) if squeeze else result
+    model_device = next(estimator.model_.parameters()).device
+    return HISSOTrainer(
+        estimator.model_,
+        cfg=cfg,
+        # A retained test compatibility seam can advertise CUDA while preserving
+        # CPU model parameters.  Follow the model's actual placement here; normal
+        # fitted CUDA models remain on CUDA.
+        device=model_device,
+        lr=0.0,
+        reward_fn=(
+            options.reward_fn
+            if options is not None
+            else getattr(estimator, "_hisso_reward_fn_", None)
+        ),
+        context_extractor=(
+            options.context_extractor
+            if options is not None
+            else getattr(estimator, "_hisso_context_extractor_", None)
+        ),
+        input_noise_std=None,
+        stateful=bool(getattr(estimator, "stateful", False)),
+        state_reset=str(getattr(estimator, "state_reset", "batch")),
+        strict=False,
+    )
 
 
 def hisso_infer_series(
@@ -72,7 +74,7 @@ def hisso_infer_series(
     else:
         preds = estimator.predict(X_obs)
     options = getattr(estimator, "_hisso_options_", None)
-    return _apply_primary_transform_numpy(preds, _resolve_primary_transform(cfg, options))
+    return transform_actions(preds, _resolve_primary_transform(cfg, options) or "identity")
 
 
 def hisso_evaluate_reward(
@@ -84,41 +86,14 @@ def hisso_evaluate_reward(
     options = getattr(estimator, "_hisso_options_", None)
     if options is not None:
         reward_fn = options.reward_fn
-        context_extractor = options.context_extractor
     else:
         reward_fn = getattr(estimator, "_hisso_reward_fn_", None)
-        context_extractor = getattr(estimator, "_hisso_context_extractor_", None)
 
     if reward_fn is None:
         return 0.0
 
-    device = estimator._device()
-    X_np = np.asarray(X_obs, dtype=np.float32)
-    inputs_t = torch.from_numpy(X_np).to(device)
-
     cfg = _resolve_hisso_config(estimator, trainer_cfg)
-    preds = estimator.predict(X_obs)
-    primary_np = _apply_primary_transform_numpy(preds, _resolve_primary_transform(cfg, options))
-    primary_t = torch.from_numpy(primary_np).to(device)
-
-    context_t = _call_context_extractor(context_extractor, inputs_t)
-    context_t = context_t.to(device=primary_t.device, dtype=primary_t.dtype)
-    if context_t.ndim > 2:
-        context_t = context_t.reshape(context_t.shape[0], -1)
-    context_t = _align_context_for_reward(primary_t, context_t)
-
-    transition_penalty = 0.0
-    if cfg is not None:
-        transition_penalty = cfg.resolved_transition_penalty()
-    elif options is not None:
-        transition_penalty = float(options.transition_penalty or 0.0)
-    reward = _compute_reward(
-        reward_fn,
-        _resolve_reward_kwarg(reward_fn),
-        primary_t,
-        context_t,
-        transition_penalty=transition_penalty,
-    )
-    if isinstance(reward, torch.Tensor):
-        return float(reward.mean().detach().cpu().item())
-    return float(reward)
+    if cfg is None:
+        raise RuntimeError("HISSO reward evaluation requires a fitted HISSO trainer configuration.")
+    prepared, _, _ = estimator._prepare_inference_inputs(X_obs)
+    return _compat_runtime(estimator, cfg, options).evaluate_prepared(prepared)
