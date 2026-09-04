@@ -283,6 +283,28 @@ def _migrate_legacy_hisso_strategy(fitted: Mapping[str, object], artifacts: Mapp
         return None
 
 
+def _require_portable_schema_value(value: object, path: str) -> None:
+    """Reject runtime state that cannot form portable schema-v3 metadata."""
+
+    if value is None or isinstance(value, (str, bool, int)):
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{path} must contain finite scalar values.")
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError(f"{path} mapping keys must be strings.")
+            _require_portable_schema_value(item, f"{path}.{key}")
+        return
+    if isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            _require_portable_schema_value(item, f"{path}[{index}]")
+        return
+    raise TypeError(f"{path} must contain only portable scalar/list/mapping data.")
+
+
 def _activation_mapping(config: ArchitectureConfig) -> dict[str, object]:
     activation = config.activation
     return {
@@ -1644,6 +1666,10 @@ class PSANNRegressor(_Phase2Regressor):
             context_descriptor = episodic_mapping["context_extractor"]
             if isinstance(context_descriptor, Mapping):
                 artifacts["episodic_context"] = episodic_strategy.context_extractor
+            history = list(getattr(self, "_episodic_history_", ()))
+            profile = dict(getattr(self, "_episodic_profile_", {}))
+            _require_portable_schema_value(history, "Schema-v3 fitted.episodic.history")
+            _require_portable_schema_value(profile, "Schema-v3 fitted.episodic.profile")
             fitted["episodic"] = {
                 "kind": "hisso",
                 "config": episodic_mapping,
@@ -1652,8 +1678,8 @@ class PSANNRegressor(_Phase2Regressor):
                     "batch_episodes": episodic_strategy.schedule.batch_episodes,
                     "updates_per_epoch": episodic_strategy.schedule.updates_per_epoch,
                 },
-                "history": list(getattr(self, "_episodic_history_", ())),
-                "profile": dict(getattr(self, "_episodic_profile_", {})),
+                "history": history,
+                "profile": profile,
             }
         payload = {
             "schema": "psann.regressor",

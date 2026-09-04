@@ -115,7 +115,14 @@ class EpisodicTrainer:
 
     def predict(self, X: np.ndarray, *, context: np.ndarray | None = None) -> np.ndarray:
         estimator = self._fitted()
-        values = estimator.predict(X, context=context)
+        if getattr(estimator, "stateful", False) and hasattr(estimator, "predict_sequence"):
+            # Episodic inference always starts clean and never commits training
+            # state.  The sequence mixin provides that guarantee explicitly.
+            values = estimator.predict_sequence(
+                X, context=context, reset_state=True, return_sequence=True, update_state=False
+            )
+        else:
+            values = estimator.predict(X, context=context)
         return transform_actions(
             np.asarray(values), normalize_strategy(self.strategy).primary_transform
         )
