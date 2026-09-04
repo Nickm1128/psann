@@ -1826,9 +1826,13 @@ class PSANNRegressor(_Phase2Regressor):
                     if key not in preprocessing:
                         raise ValueError(f"Schema-v2 fitted.preprocessing.{key} is missing.")
                 if not isinstance(preprocessing["input_topology"], str):
-                    raise TypeError("Schema-v2 fitted.preprocessing.input_topology must be a string.")
+                    raise TypeError(
+                        "Schema-v2 fitted.preprocessing.input_topology must be a string."
+                    )
                 if not isinstance(preprocessing["output_topology"], str):
-                    raise TypeError("Schema-v2 fitted.preprocessing.output_topology must be a string.")
+                    raise TypeError(
+                        "Schema-v2 fitted.preprocessing.output_topology must be a string."
+                    )
                 if isinstance(preprocessing["output_dim"], bool) or not isinstance(
                     preprocessing["output_dim"], int
                 ):
