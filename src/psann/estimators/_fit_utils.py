@@ -10,12 +10,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from ..hisso import (
-    HISSOTrainer,
-    coerce_warmstart_config,
-    run_hisso_supervised_warmstart,
-    run_hisso_training,
-)
+from .._hisso.config import coerce_warmstart_config
+from ..episodic.runtime_loop import HISSOTrainer, run_hisso_training
+from ..episodic.warmstart import run_hisso_supervised_warmstart
 from ..nn import WithPreprocessor
 from ..training import TrainingLoopConfig, run_training_loop
 from ._fit_args import normalise_fit_args
