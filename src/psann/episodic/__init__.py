@@ -13,6 +13,7 @@ from .rewards import (
     RewardStrategyBundle,
     get_reward_strategy,
     register_reward_strategy,
+    resolve_reward,
 )
 from .trainer import EpisodicTrainer
 
@@ -26,6 +27,7 @@ __all__ = [
     "FINANCE_PORTFOLIO_STRATEGY",
     "get_reward_strategy",
     "register_reward_strategy",
+    "resolve_reward",
     "normalize_strategy",
     "strategy_to_mapping",
 ]

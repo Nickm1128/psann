@@ -77,6 +77,15 @@ def get_reward_strategy(name: str) -> RewardStrategyBundle:
     return _REGISTRY[name.strip().lower()]
 
 
+def registered_reward_name(value: object) -> str | None:
+    """Return a stable registry discriminator for an identical bundle/callable."""
+
+    for name, bundle in _REGISTRY.items():
+        if value is bundle or value is bundle.reward_fn:
+            return name
+    return None
+
+
 register_reward_strategy(
     "default",
     RewardStrategyBundle(cast(RewardStrategy, default_reward), description="Activation penalty"),
@@ -106,5 +115,6 @@ __all__ = [
     "get_reward_strategy",
     "multiplicative_return_reward",
     "register_reward_strategy",
+    "registered_reward_name",
     "resolve_reward",
 ]

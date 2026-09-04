@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Iterable, Optional
+from typing import Any, Iterator, Optional
 
 import torch
 
@@ -12,6 +12,7 @@ def _autocast_context(
 ) -> Any:
     """Return an autocast context compatible with current torch version/device."""
 
+    dtype = dtype or torch.float16
     amp_mod = getattr(torch, "amp", None)
     if amp_mod is not None and hasattr(amp_mod, "autocast"):
         try:
@@ -29,7 +30,7 @@ def _autocast_context(
 
 
 @contextlib.contextmanager
-def _guard_cuda_capture() -> Iterable[None]:
+def _guard_cuda_capture() -> Iterator[None]:
     """Temporarily neutralise CUDA graph capture checks when the driver is unavailable."""
 
     if not torch.cuda.is_available():

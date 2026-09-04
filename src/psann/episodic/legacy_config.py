@@ -112,7 +112,7 @@ class HISSOOptions:
         )
         explicit_vectorized = resolved_updates_per_epoch is not None
         if explicit_vectorized:
-            total_episodes = max(1, resolved_episode_batch * int(resolved_updates_per_epoch))
+            total_episodes = max(1, resolved_episode_batch * int(resolved_updates_per_epoch or 1))
             cfg_episode_batch_size = max(1, resolved_episode_batch)
         else:
             total_episodes = max(1, resolved_episode_batch)

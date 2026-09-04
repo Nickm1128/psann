@@ -18,6 +18,7 @@ from .reward import (
     _default_reward_fn,
     _resolve_reward_kwarg,
 )
+from .runtime import align_context, call_reward
 
 if TYPE_CHECKING:
     from ..sklearn import PSANNRegressor
@@ -41,6 +42,8 @@ class HISSOTrainer:
         use_amp: bool = False,
         amp_dtype: Optional[torch.dtype] = None,
         optimizer: Optional[torch.optim.Optimizer] = None,
+        gradient_clip: float | None = 1.0,
+        strict: bool = False,
     ) -> None:
         self.model = model
         self.cfg = cfg
@@ -57,6 +60,8 @@ class HISSOTrainer:
                 f"Unsupported state_reset '{state_reset}'. Expected one of {{'batch', 'epoch', 'none'}}."
             )
         self.state_reset = state_reset_value
+        self.strict = strict
+        self.gradient_clip = gradient_clip
         legacy_episodes_per_epoch = max(1, int(cfg.episodes_per_batch))
         episode_batch_size = int(cfg.resolved_episode_batch_size())
         updates_per_epoch = int(cfg.resolved_updates_per_epoch())
@@ -224,7 +229,8 @@ class HISSOTrainer:
                             raise RuntimeError("AMP enabled but GradScaler is unavailable.")
                         self.scaler.scale(loss).backward()
                         self.scaler.unscale_(self.optimizer)
-                        clip_grad_norm_(self.model.parameters(), 1.0)
+                        if self.gradient_clip is not None:
+                            clip_grad_norm_(self.model.parameters(), self.gradient_clip)
                         self.profile["backward_time_s_total"] += (
                             time.perf_counter() - backward_start
                         )
@@ -233,7 +239,8 @@ class HISSOTrainer:
                         self.scaler.update()
                     else:
                         loss.backward()
-                        clip_grad_norm_(self.model.parameters(), 1.0)
+                        if self.gradient_clip is not None:
+                            clip_grad_norm_(self.model.parameters(), self.gradient_clip)
                         self.profile["backward_time_s_total"] += (
                             time.perf_counter() - backward_start
                         )
@@ -278,18 +285,24 @@ class HISSOTrainer:
             return
         reset_state = getattr(self.model, "reset_state", None)
         if callable(reset_state):
-            try:
+            if self.strict:
                 reset_state()
-            except Exception:
-                pass
+            else:
+                try:
+                    reset_state()
+                except Exception:
+                    pass
 
     def _commit_state_if_any(self) -> None:
         commit_state_updates = getattr(self.model, "commit_state_updates", None)
         if callable(commit_state_updates):
-            try:
+            if self.strict:
                 commit_state_updates()
-            except Exception:
-                pass
+            else:
+                try:
+                    commit_state_updates()
+                except Exception:
+                    pass
 
     def _sample_episode_batch(
         self,
@@ -322,6 +335,20 @@ class HISSOTrainer:
         return episodes, False
 
     def _extract_context(self, inputs: torch.Tensor) -> torch.Tensor:
+        if self.strict:
+            if self.context_extractor is None:
+                return inputs.reshape(inputs.shape[0], inputs.shape[1], -1)
+            context = self.context_extractor(inputs)
+            if not isinstance(context, torch.Tensor):
+                raise TypeError("strategy.context_extractor must return a torch.Tensor.")
+            if context.shape[:2] != inputs.shape[:2]:
+                raise ValueError(
+                    "strategy.context_extractor batch/time mismatch: "
+                    f"inputs={tuple(inputs.shape)}, context={tuple(context.shape)}."
+                )
+            return context.to(device=inputs.device, dtype=inputs.dtype).reshape(
+                context.shape[0], context.shape[1], -1
+            )
         return _call_context_extractor(self.context_extractor, inputs)
 
     def _apply_primary_transform(self, primary: torch.Tensor) -> torch.Tensor:
@@ -332,9 +359,30 @@ class HISSOTrainer:
             return torch.softmax(primary, dim=-1)
         if transform == "tanh":
             return torch.tanh(primary)
+        if transform in {"relu_norm", "relu-normalize", "sparse"}:
+            positive = torch.relu(primary) + 1e-8
+            return positive / positive.sum(dim=-1, keepdim=True)
         raise ValueError(f"Unsupported primary_transform '{self.cfg.primary_transform}'.")
 
     def _coerce_reward(self, primary: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+        if self.strict:
+            actions = primary.reshape(primary.shape[0], primary.shape[1], -1)
+            ctx = context.reshape(context.shape[0], context.shape[1], -1)
+            reward = call_reward(
+                self.reward_fn,
+                actions,
+                align_context(actions, ctx),
+                self.cfg.resolved_transition_penalty(),
+            )
+            if reward.ndim == 0:
+                return reward.reshape(1)
+            if reward.shape[0] != actions.shape[0]:
+                raise ValueError(
+                    "strategy.reward must return one scalar or a time series per episode."
+                )
+            # The retained default activation reward is per time step. Reduce
+            # only its trailing time/feature dimensions, never the episode axis.
+            return reward.reshape(reward.shape[0], -1).mean(dim=1)
         actions = primary
         ctx = context
         if actions.ndim > 3:
@@ -394,6 +442,8 @@ def run_hisso_training(
     use_amp: bool = False,
     amp_dtype: Optional[torch.dtype] = None,
     optimizer: Optional[torch.optim.Optimizer] = None,
+    gradient_clip: float | None = 1.0,
+    strict: bool = False,
 ) -> HISSOTrainer:
     """Instantiate the lightweight HISSO trainer and execute one optimisation run."""
 
@@ -411,6 +461,8 @@ def run_hisso_training(
         use_amp=use_amp,
         amp_dtype=amp_dtype,
         optimizer=optimizer,
+        gradient_clip=gradient_clip,
+        strict=strict,
     )
     trainer.train(
         X_train_arr,

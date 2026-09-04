@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import warnings
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, cast
 
 import numpy as np
 import torch
@@ -76,7 +76,7 @@ def _call_context_extractor(
         fallback_to_numpy = True
         inputs_np = inputs.detach().cpu().numpy()
         try:
-            context = extractor(inputs_np)
+            context = cast(Any, extractor)(inputs_np)
         except Exception as second_exc:  # pragma: no cover - defensive fallback
             raise first_exc from second_exc
 

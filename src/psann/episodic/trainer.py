@@ -53,6 +53,21 @@ class EpisodicTrainer:
         for name, value in nested:
             strategy = replace_strategy(strategy, name, value)
         self.estimator, self.strategy = estimator, strategy
+        invalidate = getattr(self.estimator, "_clear_architecture_runtime", None)
+        if callable(invalidate):
+            invalidate()
+        else:
+            for name in (
+                "_episodic_strategy_",
+                "_episodic_history_",
+                "_episodic_profile_",
+                "_hisso_trainer_",
+                "_hisso_options_",
+                "_hisso_cfg_",
+                "_hisso_reward_fn_",
+                "_hisso_context_extractor_",
+            ):
+                getattr(self.estimator, "__dict__", {}).pop(name, None)
         for name in ("estimator_", "history_", "profile_"):
             self.__dict__.pop(name, None)
         return self
@@ -70,19 +85,11 @@ class EpisodicTrainer:
             raise ValueError("strategy.warm_start requires fit targets y.")
         if not hasattr(self.estimator, "fit"):
             raise TypeError("estimator must provide fit.")
-        reward = resolve_reward(strategy.reward)
-        warm_start: dict[str, object] | None = None
-        if strategy.warm_start is not None:
-            # The retained estimator adapter accepts only legacy keys and does
-            # not accept explicit ``None`` values for optional fields.
-            warm_start = {
-                field.name: value
-                for field in fields(strategy.warm_start)
-                if (value := getattr(strategy.warm_start, field.name)) is not None
-            }
-            warm_start["y"] = y
-            if warm_start.get("preprocessor_lr") is not None:
-                warm_start["lsm_lr"] = warm_start.pop("preprocessor_lr")
+        # The estimator still owns construction/scaling/preprocessing, but the
+        # typed request is consumed by its episodic stage directly. Do not
+        # round canonical fields through the deprecated flat keyword adapter.
+        setattr(self.estimator, "_episodic_strategy_request_", strategy)
+        setattr(self.estimator, "_episodic_targets_request_", y)
         setattr(self.estimator, "_episodic_canonical_call_", True)
         try:
             self.estimator.fit(
@@ -91,18 +98,11 @@ class EpisodicTrainer:
                 context=context,
                 verbose=verbose,
                 hisso=True,
-                hisso_window=strategy.schedule.episode_length,
-                hisso_batch_episodes=strategy.schedule.batch_episodes,
-                hisso_updates_per_epoch=strategy.schedule.updates_per_epoch,
-                hisso_reward_fn=reward,
-                hisso_context_extractor=strategy.context_extractor,
-                hisso_primary_transform=strategy.primary_transform,
-                hisso_transition_penalty=strategy.transition_penalty,
-                hisso_supervised=warm_start,
-                noisy=strategy.input_noise_std,
             )
         finally:
             self.estimator.__dict__.pop("_episodic_canonical_call_", None)
+            self.estimator.__dict__.pop("_episodic_strategy_request_", None)
+            self.estimator.__dict__.pop("_episodic_targets_request_", None)
         self.estimator_ = self.estimator
         legacy = getattr(self.estimator, "_hisso_trainer_", None)
         self.history_ = list(getattr(legacy, "history", ()))
@@ -133,10 +133,14 @@ class EpisodicTrainer:
 
     def evaluate(self, X: np.ndarray, *, context: np.ndarray | None = None) -> float:
         strategy = normalize_strategy(self.strategy)
-        actions = torch.as_tensor(self.predict(X, context=context), dtype=torch.float32)
+        estimator = self._fitted()
+        device = estimator._device()
+        actions = torch.as_tensor(
+            self.predict(X, context=context), dtype=torch.float32, device=device
+        )
         if actions.ndim == 1:
             actions = actions[:, None]
-        data = torch.as_tensor(np.asarray(X), dtype=actions.dtype)
+        data = torch.as_tensor(np.asarray(X), dtype=actions.dtype, device=device)
         if strategy.context_extractor is None:
             reward_context = data.reshape(data.shape[0], -1)
         else:
@@ -144,6 +148,7 @@ class EpisodicTrainer:
             reward_context = extractor(data)
             if not isinstance(reward_context, torch.Tensor):
                 raise TypeError("strategy.context_extractor must return a torch.Tensor.")
+            reward_context = reward_context.to(device=device, dtype=actions.dtype)
         if reward_context.ndim == 1:
             reward_context = reward_context[:, None]
         reward_context = align_context(actions.unsqueeze(0), reward_context.unsqueeze(0))

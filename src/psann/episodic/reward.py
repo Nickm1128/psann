@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 import math
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import torch
 
@@ -84,9 +84,9 @@ def _compute_reward(
         return reward_fn(actions, context)
     penalty = float(transition_penalty or 0.0)
     if reward_kwarg == "transition_penalty":
-        return reward_fn(actions, context, transition_penalty=penalty)
+        return cast(Any, reward_fn)(actions, context, transition_penalty=penalty)
     if reward_kwarg == "trans_cost":
-        return reward_fn(actions, context, trans_cost=penalty)
+        return cast(Any, reward_fn)(actions, context, trans_cost=penalty)
     return reward_fn(actions, context, **{reward_kwarg: penalty})
 
 

@@ -3,14 +3,14 @@ from __future__ import annotations
 """Lean training helpers for the sklearn-style estimators."""
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, cast
 
 import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from ..episodic.legacy_config import coerce_warmstart_config
+from ..episodic.legacy_config import HISSOWarmStartConfig, coerce_warmstart_config
 from ..episodic.runtime_loop import HISSOTrainer, run_hisso_training
 from ..episodic.warmstart import run_hisso_supervised_warmstart
 from ..nn import WithPreprocessor
@@ -130,7 +130,56 @@ def run_hisso_stage(
     device = estimator._device()
     inputs_arr = plan.inputs
 
-    warm_cfg = coerce_warmstart_config(plan.options.supervised, fit_args.y)
+    canonical = getattr(estimator, "_episodic_strategy_request_", None)
+    if canonical is not None:
+        from ..episodic import HISSOConfig, resolve_reward
+
+        if not isinstance(canonical, HISSOConfig):
+            raise TypeError("_episodic_strategy_request_ must be a HISSOConfig.")
+        random_state = (
+            canonical.schedule.random_state
+            if canonical.schedule.random_state is not None
+            else estimator.random_state
+        )
+        plan.trainer_config = plan.trainer_config.__class__(
+            episode_length=canonical.schedule.episode_length,
+            episodes_per_batch=canonical.schedule.batch_episodes
+            * canonical.schedule.updates_per_epoch,
+            episode_batch_size=canonical.schedule.batch_episodes,
+            updates_per_epoch=canonical.schedule.updates_per_epoch,
+            primary_dim=plan.primary_dim,
+            primary_transform=canonical.primary_transform,
+            random_state=random_state,
+            transition_penalty=canonical.transition_penalty,
+        )
+        reward_fn = resolve_reward(canonical.reward)
+        stateful_restricted = bool(estimator.stateful) and estimator.state_reset in {
+            "epoch",
+            "none",
+        }
+        if (
+            canonical.warm_start is not None
+            and canonical.warm_start.shuffle is True
+            and stateful_restricted
+        ):
+            raise ValueError(
+                "strategy.warm_start.shuffle=True is invalid for stateful epoch/none cadence."
+            )
+        warm_cfg = None
+        if canonical.warm_start is not None:
+            warm = canonical.warm_start
+            warm_cfg = HISSOWarmStartConfig(
+                targets=cast(np.ndarray, fit_args.y),
+                epochs=warm.epochs,
+                batch_size=warm.batch_size,
+                lr=warm.lr,
+                weight_decay=warm.weight_decay,
+                lsm_lr=warm.preprocessor_lr,
+                shuffle=(not stateful_restricted) if warm.shuffle is None else warm.shuffle,
+            )
+    else:
+        reward_fn = cast(Any, plan.options.reward_fn)
+        warm_cfg = coerce_warmstart_config(plan.options.supervised, fit_args.y)
     if warm_cfg is not None:
         run_hisso_supervised_warmstart(
             estimator,
@@ -140,8 +189,13 @@ def run_hisso_stage(
             lsm_module=plan.lsm_module,
         )
 
-    estimator._hisso_reward_fn_ = plan.options.reward_fn
-    estimator._hisso_context_extractor_ = plan.options.context_extractor
+    context_extractor = (
+        cast(Any, canonical.context_extractor)
+        if canonical is not None
+        else plan.options.context_extractor
+    )
+    estimator._hisso_reward_fn_ = reward_fn
+    estimator._hisso_context_extractor_ = context_extractor
 
     # HISSO shares canonical parameter groups with supervised optimisation, but
     # retains its historical Adam algorithm.  Optimizer selection is an episodic
@@ -155,14 +209,26 @@ def run_hisso_stage(
         lr=float(estimator.lr),
         optimizer=hisso_optimizer,
         device=device,
-        reward_fn=plan.options.reward_fn,
-        context_extractor=plan.options.context_extractor,
+        reward_fn=reward_fn,
+        context_extractor=context_extractor,
         lr_max=float(fit_args.lr_max) if fit_args.lr_max is not None else None,
         lr_min=float(fit_args.lr_min) if fit_args.lr_min is not None else None,
-        input_noise_std=plan.options.input_noise_std,
+        input_noise_std=(
+            canonical.input_noise_std if canonical is not None else plan.options.input_noise_std
+        ),
         verbose=int(fit_args.verbose),
-        use_amp=bool(getattr(estimator, "_hisso_use_amp", False)),
-        amp_dtype=getattr(estimator, "_hisso_amp_dtype", None),
+        use_amp=(
+            canonical.mixed_precision
+            if canonical is not None
+            else bool(getattr(estimator, "_hisso_use_amp", False))
+        ),
+        amp_dtype=(
+            getattr(torch, canonical.amp_dtype)
+            if canonical is not None
+            else getattr(estimator, "_hisso_amp_dtype", None)
+        ),
+        gradient_clip=(canonical.gradient_clip if canonical is not None else 1.0),
+        strict=canonical is not None,
     )
 
     estimator._hisso_options_ = plan.options
@@ -170,8 +236,8 @@ def run_hisso_stage(
     estimator._hisso_cfg_ = plan.trainer_config
     estimator._hisso_trained_ = True
     estimator.history_ = getattr(trainer, "history", [])
-    estimator._hisso_reward_fn_ = plan.options.reward_fn
-    estimator._hisso_context_extractor_ = plan.options.context_extractor
+    estimator._hisso_reward_fn_ = reward_fn
+    estimator._hisso_context_extractor_ = context_extractor
     return trainer
 
 

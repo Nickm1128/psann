@@ -201,7 +201,17 @@ def strategy_to_mapping(value: HISSOConfig) -> dict[str, object]:
         raise TypeError("strategy must be a HISSOConfig.")
     reward: object = value.reward
     if not isinstance(reward, str):
-        reward = {"kind": "callable"}
+        from .rewards import registered_reward_name
+
+        registered = registered_reward_name(reward)
+        if registered is not None:
+            reward = registered
+        elif callable(reward):
+            reward = {"kind": "callable"}
+        else:
+            raise TypeError(
+                "strategy.reward is an unregistered RewardStrategyBundle; register it before saving."
+            )
     context: object = None if value.context_extractor is None else {"kind": "callable"}
     return {
         "kind": "hisso",

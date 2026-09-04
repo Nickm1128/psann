@@ -41,7 +41,9 @@ def run_hisso_supervised_warmstart(
         torch.from_numpy(y_vec.astype(np.float32)),
     )
 
-    shuffle = not (estimator.stateful and estimator.state_reset in ("epoch", "none"))
+    # Canonical callers resolve the state-aware default before constructing the
+    # compatibility payload; retained flat HISSO keeps its historical default.
+    shuffle = bool(config.shuffle)
     dataloader = torch.utils.data.DataLoader(
         dataset,
         batch_size=int(config.batch_size or estimator.batch_size),
