@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import torch
 
-from psann import PSANNRegressor
+from psann import PSANNRegressor, StateConfig
 from psann.architectures import (
     ArchitectureConfig,
     ConvolutionConfig,
@@ -771,3 +771,31 @@ def test_canonical_short_series_schedule_uses_local_rng_and_preserves_episode_co
     assert first.history_ == second.history_
     assert first.history_[0]["episodes"] == 1
     assert first.profile_["episodes_sampled"] == 1
+
+
+def test_canonical_stateful_prediction_uses_clean_noncommitting_sequence_route(monkeypatch):
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    estimator = PSANNRegressor(
+        epochs=1,
+        batch_size=2,
+        random_state=0,
+        stateful=True,
+        state=StateConfig(rho=0.9),
+        state_reset="batch",
+    )
+    trainer = EpisodicTrainer(
+        estimator=estimator,
+        strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1)),
+    ).fit(X)
+    calls: list[dict[str, object]] = []
+    original = estimator.predict_sequence
+
+    def capture(*args, **kwargs):
+        calls.append(dict(kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(estimator, "predict_sequence", capture)
+    assert trainer.predict(X[:3]).shape[0] == 3
+    assert calls == [
+        {"context": None, "reset_state": True, "return_sequence": True, "update_state": False}
+    ]
