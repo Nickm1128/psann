@@ -1131,16 +1131,16 @@ def test_canonical_stateful_prediction_uses_clean_noncommitting_sequence_route(m
         strategy=HISSOConfig(schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1)),
     ).fit(X)
     calls: list[dict[str, object]] = []
-    original = estimator.predict_sequence
+    original = estimator._predict_with_prepared_inputs
 
     def capture(*args, **kwargs):
         calls.append(dict(kwargs))
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(estimator, "predict_sequence", capture)
+    monkeypatch.setattr(estimator, "_predict_with_prepared_inputs", capture)
     assert trainer.predict(X[:3]).shape[0] == 3
     assert calls == [
-        {"context": None, "reset_state": True, "return_sequence": True, "update_state": False}
+        {"context": None, "sequence": True, "reset_state": True, "update_state": False}
     ]
 
 
@@ -1167,14 +1167,14 @@ def test_canonical_stateful_evaluation_consumes_the_same_sequence_actions(monkey
 
     def sentinel(*args, **kwargs):
         calls.append(dict(kwargs))
-        return np.full(len(args[0]), 42.0, dtype=np.float32)
+        return np.full((len(args[0]), 1), 42.0, dtype=np.float32)
 
-    monkeypatch.setattr(estimator, "predict_sequence", sentinel)
+    monkeypatch.setattr(estimator, "_run_model", sentinel)
     np.testing.assert_allclose(trainer.predict(X[:3]), 42.0)
     assert trainer.evaluate(X[:3]) == pytest.approx(42.0)
     assert calls == [
-        {"context": None, "reset_state": True, "return_sequence": True, "update_state": False},
-        {"context": None, "reset_state": True, "return_sequence": True, "update_state": False},
+        {"context_np": None, "state_updates": False, "sequence": True},
+        {"context_np": None, "state_updates": False, "sequence": True},
     ]
 
 
@@ -1477,3 +1477,252 @@ def test_schema_v3_portability_rejects_noncanonical_metadata_values(tmp_path, ba
     torch.save(payload, path)
     with pytest.raises((TypeError, ValueError), match="Schema-v3 fitted.episodic.profile"):
         EpisodicTrainer.load(path)
+
+
+@pytest.mark.parametrize("method", ["predict", "evaluate"])
+@pytest.mark.parametrize("stateful", [False, True], ids=["stateless", "stateful"])
+@pytest.mark.parametrize("use_scaler", [False, True], ids=["unscaled", "custom-scaler"])
+@pytest.mark.parametrize("context_kind", ["absent", "automatic", "explicit"])
+@pytest.mark.parametrize("preprocess", [False, True], ids=["bare", "custom-preprocessor"])
+def test_canonical_request_prepares_once_with_matching_action_and_reward_values(
+    monkeypatch, method, stateful, use_scaler, context_kind, preprocess
+):
+    """Count whole requests and assert values at every inference boundary.
+
+    The fitted dense core is instrumented to expose its exact feature/context
+    values. Context instrumentation also exercises sequence preparation, without
+    claiming that dense state and Wave context are a supported architecture pair.
+    Real Wave forwards remain covered by the Wave regression below.
+    """
+
+    class ChangingScaler:
+        calls = 0
+
+        def fit(self, inputs):
+            return self
+
+        def transform(self, inputs):
+            self.calls += 1
+            return inputs + self.calls * 0.1
+
+    scaler = ChangingScaler()
+    X = np.arange(12, dtype=np.float32).reshape(6, 2) / 100
+    rewards = []
+
+    def reward(actions, context, **kwargs):
+        rewards.append((actions.detach().cpu().numpy(), context.detach().cpu().numpy()))
+        return actions.mean(dim=(-1, -2))
+
+    estimator = PSANNRegressor(
+        hidden_units=4,
+        hidden_layers=1,
+        epochs=1,
+        random_state=0,
+        scaler=scaler if use_scaler else None,
+        architecture=ArchitectureConfig.dense(state={"rho": 0.9} if stateful else None),
+        preprocessor=(
+            PreprocessorConfig(ModulePreprocessorConfig(torch.nn.Identity(), "flat", "flat", 2))
+            if preprocess
+            else None
+        ),
+    )
+    trainer = EpisodicTrainer(
+        estimator=estimator,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1),
+            primary_transform="tanh",
+            reward=reward,
+        ),
+    ).fit(X, np.ones_like(X))
+    scaler.calls = 0
+    rewards.clear()
+    prepared_calls, builder_inputs, preprocessor_inputs, core_inputs = [], [], [], []
+    resets, commits, inversions, transformed = [], [], [], []
+    prepare = estimator._prepare_inference_inputs
+    inverse = estimator._inverse_fitted_target_scaler_like
+    core = estimator.model_.core if preprocess else estimator.model_
+
+    def capture_prepare(*args, **kwargs):
+        prepared_calls.append(args[0].copy())
+        return prepare(*args, **kwargs)
+
+    def builder(inputs):
+        builder_inputs.append(inputs.copy())
+        return inputs * 2 + len(builder_inputs) * 0.03
+
+    def preprocessor_forward(inputs):
+        preprocessor_inputs.append(inputs.detach().cpu().numpy().copy())
+        return inputs + 0.02
+
+    def core_forward(inputs, context=None):
+        assert not core.training
+        core_inputs.append((inputs.detach().cpu().numpy().copy(), context))
+        return inputs if context is None else inputs + context
+
+    def capture_inverse(values):
+        inversions.append(values.copy())
+        return inverse(values)
+
+    from psann.episodic import trainer as trainer_module
+
+    original_transform = trainer_module.transform_actions
+
+    def capture_transform(values, transform):
+        actions = original_transform(values, transform)
+        transformed.append(actions)
+        return actions
+
+    original_evaluate = estimator._hisso_trainer_.evaluate_prepared
+
+    def capture_evaluate(inputs, *, actions):
+        assert actions is transformed[-1]
+        return original_evaluate(inputs, actions=actions)
+
+    monkeypatch.setattr(estimator, "_prepare_inference_inputs", capture_prepare)
+    monkeypatch.setattr(estimator, "_inverse_fitted_target_scaler_like", capture_inverse)
+    monkeypatch.setattr(core, "forward", core_forward)
+    monkeypatch.setattr(core, "reset_state", lambda: resets.append(True))
+    monkeypatch.setattr(core, "commit_state_updates", lambda: commits.append(True))
+    monkeypatch.setattr(trainer_module, "transform_actions", capture_transform)
+    monkeypatch.setattr(estimator._hisso_trainer_, "evaluate_prepared", capture_evaluate)
+    if preprocess:
+        monkeypatch.setattr(estimator.model_.preproc, "forward", preprocessor_forward)
+    if context_kind != "absent":
+        estimator._context_dim_ = 2
+        estimator.context_builder = builder
+        estimator._context_builder_callable_ = builder
+    explicit = np.full_like(X, 0.07) if context_kind == "explicit" else None
+
+    # Two independent calls prove that no result is cached across requests.
+    for request in (1, 2):
+        core_inputs.clear()
+        result = getattr(trainer, method)(X, context=explicit)
+        scaled = X + request * 0.1 if use_scaler else X
+        expected_context = scaled * 2 + request * 0.03 if context_kind == "automatic" else explicit
+        model_inputs = scaled + 0.02 if preprocess else scaled
+        values = model_inputs if expected_context is None else model_inputs + expected_context
+        expected_actions = np.tanh(values)
+        assert len(prepared_calls) == request
+        assert scaler.calls == (request if use_scaler else 0)
+        assert len(builder_inputs) == (request if context_kind == "automatic" else 0)
+        assert len(preprocessor_inputs) == (request if preprocess else 0)
+        assert len(inversions) == len(transformed) == request
+        assert len(resets) == (request if stateful else 0)
+        assert commits == []
+        assert len(core_inputs) == (len(X) if stateful else 1)
+        np.testing.assert_allclose(np.concatenate([item[0] for item in core_inputs]), model_inputs)
+        if expected_context is not None:
+            observed_context = np.concatenate([item[1].cpu().numpy() for item in core_inputs])
+            np.testing.assert_allclose(observed_context, expected_context)
+        if context_kind == "automatic":
+            np.testing.assert_allclose(builder_inputs[-1], scaled)
+        if preprocess:
+            np.testing.assert_allclose(preprocessor_inputs[-1], scaled)
+        if method == "predict":
+            assert result is transformed[-1]
+            np.testing.assert_allclose(result, expected_actions, rtol=1e-6)
+            assert rewards == []
+        else:
+            assert result == pytest.approx(expected_actions.mean())
+            assert len(rewards) == request
+            np.testing.assert_allclose(rewards[-1][0][0], expected_actions, rtol=1e-6)
+            np.testing.assert_allclose(rewards[-1][1][0], scaled)
+
+
+@pytest.mark.parametrize("method", ["predict", "evaluate"])
+@pytest.mark.parametrize("context_kind", ["automatic", "explicit"])
+def test_canonical_wave_request_builds_context_once_for_real_forward(method, context_kind):
+    contexts, rewards = [], []
+
+    def builder(inputs):
+        contexts.append(inputs.copy())
+        return inputs.mean(axis=1, keepdims=True) + len(contexts) * 0.1
+
+    def reward(actions, context, **kwargs):
+        rewards.append(actions.detach().cpu().numpy().copy())
+        return actions.mean(dim=(-1, -2))
+
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    explicit = np.ones((8, 1), dtype=np.float32) if context_kind == "explicit" else None
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=ArchitectureConfig.for_wave(
+                context=ContextConfig(dim=1, builder=builder),
+                residual=ResidualConfig(alpha_init=1.0),
+            ),
+            scaler="standard",
+            hidden_layers=1,
+            hidden_units=4,
+            epochs=1,
+            random_state=0,
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1), reward=reward
+        ),
+    ).fit(X, context=explicit)
+    contexts.clear()
+    expected_context = (
+        trainer.estimator._apply_fitted_scaler(X).mean(axis=1, keepdims=True) + 0.1
+        if explicit is None
+        else explicit
+    )
+    expected = trainer.estimator.predict(X, context=expected_context)
+    rewards.clear()
+    result = getattr(trainer, method)(X, context=explicit)
+    assert len(contexts) == (1 if explicit is None else 0)
+    if method == "predict":
+        np.testing.assert_allclose(result, expected)
+    else:
+        np.testing.assert_allclose(rewards[-1].reshape(expected.shape), expected)
+        assert result == pytest.approx(expected.mean())
+
+
+@pytest.mark.parametrize("request_shape", ["single", "series", "singleton-batch"])
+@pytest.mark.parametrize("target_scaler", [None, "standard", "minmax"])
+def test_canonical_prepared_stateful_sequence_matches_estimator_shape_and_target_units(
+    monkeypatch, request_shape, target_scaler
+):
+    X = np.arange(16, dtype=np.float32).reshape(8, 2) / 10
+    y = np.arange(8, dtype=np.float32) + 100
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(
+            architecture=ArchitectureConfig.dense(state={"rho": 0.9}),
+            scaler="standard",
+            target_scaler=target_scaler,
+            hidden_units=4,
+            epochs=1,
+            random_state=0,
+        ),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2, batch_episodes=1),
+            reward=lambda actions, context, **kwargs: actions.mean(dim=(-1, -2)),
+        ),
+    ).fit(X, y)
+    request = X[0] if request_shape == "single" else X[:3]
+    if request_shape == "singleton-batch":
+        request = request[None, ...]
+    estimator = trainer.estimator
+    resets, commits, preparations = [], [], []
+    reset = estimator.reset_state
+    prepare = estimator._prepare_inference_inputs
+
+    def capture_reset():
+        resets.append(True)
+        reset()
+
+    def capture_prepare(*args, **kwargs):
+        preparations.append(True)
+        return prepare(*args, **kwargs)
+
+    monkeypatch.setattr(estimator, "reset_state", capture_reset)
+    monkeypatch.setattr(estimator.model_, "commit_state_updates", lambda: commits.append(True))
+    monkeypatch.setattr(estimator, "_prepare_inference_inputs", capture_prepare)
+    expected = estimator.predict_sequence(
+        request, reset_state=True, return_sequence=True, update_state=False
+    )
+    actual = trainer.predict(request)
+    assert actual.shape == ((1,) if request_shape == "single" else (3,))
+    np.testing.assert_allclose(actual, expected)
+    assert trainer.evaluate(request) == pytest.approx(expected.mean())
+    assert len(preparations) == len(resets) == 3
+    assert commits == []
