@@ -29,6 +29,7 @@ from psann.episodic import (
     EpisodicTrainer,
     HISSOConfig,
     SupervisedWarmStartConfig,
+    normalize_strategy,
     strategy_to_mapping,
 )
 from psann.metrics import portfolio_metrics
@@ -500,14 +501,14 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             tagged = dict(hisso_cfg["strategy"])
             if tagged.pop("kind", "hisso") != "hisso":
                 raise ValueError("episodic.strategy.kind must be hisso.")
-            schedule = dict(tagged.pop("schedule", {}))
+            schedule_mapping = dict(tagged.pop("schedule", {}))
             warm_start = tagged.pop("warm_start", None)
             hisso_cfg = {
                 **dict(hisso_cfg),
                 **tagged,
-                "window": schedule.get("episode_length", 64),
-                "batch_episodes": schedule.get("batch_episodes", 32),
-                "updates_per_epoch": schedule.get("updates_per_epoch", 1),
+                "window": schedule_mapping.get("episode_length", 64),
+                "batch_episodes": schedule_mapping.get("batch_episodes", 32),
+                "updates_per_epoch": schedule_mapping.get("updates_per_epoch", 1),
                 "supervised": warm_start,
             }
         hisso_enabled = bool(hisso_cfg.get("enabled", True))
@@ -559,7 +560,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                         if key != "y" and value is not None
                     }
                 )
-            schedule = EpisodeScheduleConfig(
+            schedule: EpisodeScheduleConfig = EpisodeScheduleConfig(
                 episode_length=int(hisso_cfg.get("window") or 64),
                 batch_episodes=int(
                     hisso_cfg.get("batch_episodes", hisso_cfg.get("episodes_per_batch", 32)) or 32
@@ -660,7 +661,9 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                         "reward_std": history_metrics["reward_std"],
                         "episodes": episodes,
                         "transition_penalty": (
-                            trainer.strategy.transition_penalty if trainer is not None else None
+                            normalize_strategy(trainer.strategy).transition_penalty
+                            if trainer is not None
+                            else None
                         ),
                         "throughput_eps_per_sec": throughput,
                         "profile": trainer_profile,
@@ -680,6 +683,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                 preds_eval = preds_val
             else:
                 preds_eval = preds_test
+            if preds_eval is None:
+                raise RuntimeError("portfolio evaluation requires predictions.")
             metrics["portfolio_metrics"] = portfolio_metrics(
                 preds_eval, prices, trans_cost=trans_cost
             )
@@ -700,7 +705,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
                     if trainer is None
                     else {
                         "enabled": True,
-                        "strategy": strategy_to_mapping(trainer.strategy),
+                        "strategy": strategy_to_mapping(normalize_strategy(trainer.strategy)),
                         "effective": dict(getattr(trainer, "profile_", {})),
                     }
                 ),

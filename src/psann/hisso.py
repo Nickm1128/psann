@@ -3,6 +3,7 @@ from __future__ import annotations
 """Public HISSO helpers and trainer types."""
 
 import warnings
+from typing import Any, cast
 
 from .episodic.legacy_config import (
     HISSOOptions,
@@ -27,32 +28,32 @@ def _warn() -> None:
 
 def coerce_warmstart_config(*args: object, **kwargs: object):
     _warn()
-    return _coerce_warmstart_config(*args, **kwargs)
+    return cast(Any, _coerce_warmstart_config)(*args, **kwargs)
 
 
 def ensure_hisso_trainer_config(*args: object, **kwargs: object):
     _warn()
-    return _ensure_hisso_trainer_config(*args, **kwargs)
+    return cast(Any, _ensure_hisso_trainer_config)(*args, **kwargs)
 
 
 def hisso_evaluate_reward(*args: object, **kwargs: object):
     _warn()
-    return _hisso_evaluate_reward(*args, **kwargs)
+    return cast(Any, _hisso_evaluate_reward)(*args, **kwargs)
 
 
 def hisso_infer_series(*args: object, **kwargs: object):
     _warn()
-    return _hisso_infer_series(*args, **kwargs)
+    return cast(Any, _hisso_infer_series)(*args, **kwargs)
 
 
 def run_hisso_training(*args: object, **kwargs: object):
     _warn()
-    return _run_hisso_training(*args, **kwargs)
+    return cast(Any, _run_hisso_training)(*args, **kwargs)
 
 
 def run_hisso_supervised_warmstart(*args: object, **kwargs: object):
     _warn()
-    return _run_hisso_supervised_warmstart(*args, **kwargs)
+    return cast(Any, _run_hisso_supervised_warmstart)(*args, **kwargs)
 
 
 __all__ = [
