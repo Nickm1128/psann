@@ -109,6 +109,7 @@ When HISSO is enabled and no targets are provided the primary dimension defaults
 
 - `predict(X) -> np.ndarray` - returns pooled targets `(N, T)` or per-element outputs matching the configured spatial layout.
 - `score(X, y) -> float` - coefficient of determination (R^2) using scikit-learn when available, with a lightweight fallback otherwise.
+- `score_reconstruction(X) -> float` - score a fitted canonical LSM preprocessor's reconstruction. It is available only after fitting an LSM-backed `preprocessor=` configuration; it uses the fitted scaler and input layout (including channels-last conversion) and remains available after schema-v2 checkpoint reloads. It raises a clear error for custom/no-preprocessor estimators.
 - `hisso_infer_series(X_obs, *, trainer_cfg=None) -> np.ndarray` - run the trained HISSO policy over a full series using the stored primary transform.
 - `hisso_evaluate_reward(X_obs, *, trainer_cfg=None) -> float` - evaluate the configured reward function across observed inputs.
 - `predict_sequence(X_seq, *, reset_state=True, return_sequence=False, update_state=True)` - deterministic rollout for stateful models; set `return_sequence=True` to capture the full trace.

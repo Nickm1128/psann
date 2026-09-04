@@ -339,3 +339,17 @@ def test_frozen_preprocessor_is_excluded_from_supervised_optimizer() -> None:
     assert not any(
         id(parameter) in optimizer_parameters for parameter in estimator.preprocessor_.parameters()
     )
+
+
+def test_custom_checkpoint_rejects_unknown_preprocessor_metadata(tmp_path) -> None:
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(ModulePreprocessorConfig(torch.nn.Linear(3, 4), "flat", "flat", 4))
+    ).fit(X, y)
+    path = tmp_path / "custom.pt"
+    estimator.save(str(path))
+    payload = torch.load(path, weights_only=False)
+    payload["estimator_params"]["preprocessor"]["surprise"] = 1
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match="preprocessor.surprise"):
+        PSANNRegressor.load(str(path))

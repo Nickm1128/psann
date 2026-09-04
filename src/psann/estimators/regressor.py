@@ -1780,6 +1780,19 @@ class PSANNRegressor(_Phase2Regressor):
             raw_params["device"] = torch.device(map_location)
         raw_preprocessor = raw_params.get("preprocessor")
         if isinstance(raw_preprocessor, Mapping) and raw_preprocessor.get("kind") == "module":
+            allowed_module_keys = {
+                "kind",
+                "input_topology",
+                "output_topology",
+                "output_dim",
+                "training",
+            }
+            unknown_module_keys = set(raw_preprocessor) - allowed_module_keys
+            if unknown_module_keys:
+                raise ValueError(
+                    "Schema-v2 estimator_params.preprocessor."
+                    f"{sorted(unknown_module_keys)[0]} is unknown."
+                )
             module = dict(payload.get("artifacts", {})).get("preprocessor_module")
             if not isinstance(module, nn.Module):
                 raise ValueError("Schema-v2 artifacts.preprocessor_module is missing or invalid.")
