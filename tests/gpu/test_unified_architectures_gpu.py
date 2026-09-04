@@ -126,3 +126,43 @@ def test_canonical_lsm_cuda_trainable_two_generation_checkpoint(
     reloaded = PSANNRegressor.load(str(second), map_location="cuda")
     np.testing.assert_allclose(reloaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-5)
     assert next(reloaded.model_.parameters()).device.type == "cuda"
+
+
+@pytest.mark.parametrize("convolutional", [False, True])
+def test_canonical_lsm_schema_v2_two_generations_survive_bidirectional_map_location(
+    tmp_path, convolutional: bool
+) -> None:
+    """A CPU v2 save can rebuild on CUDA and close again on CPU."""
+
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    if convolutional:
+        X = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+        y = X.mean(axis=(1, 2, 3))
+        architecture = ArchitectureConfig.convolutional(convolution=ConvolutionConfig(channels=3))
+        component = LSMConfig.convolutional(output_dim=2, hidden_units=3, random_state=0)
+    else:
+        X, y = _flat()
+        X = np.concatenate((X, X[:2]), axis=0)
+        y = np.concatenate((y, y[:2]), axis=0)
+        architecture = ArchitectureConfig.dense()
+        component = LSMConfig.dense(output_dim=4, hidden_layers=1, hidden_units=5, random_state=0)
+    estimator = PSANNRegressor(
+        architecture=architecture,
+        preprocessor=PreprocessorConfig(component),
+        hidden_layers=1,
+        hidden_units=4,
+        epochs=1,
+        batch_size=4,
+        device="cpu",
+        random_state=0,
+    ).fit(X, y)
+    first = tmp_path / f"cpu-{convolutional}.pt"
+    second = tmp_path / f"cuda-{convolutional}.pt"
+    estimator.save(str(first))
+    cuda_loaded = PSANNRegressor.load(str(first), map_location="cuda")
+    assert next(cuda_loaded.model_.parameters()).device.type == "cuda"
+    cuda_loaded.save(str(second))
+    cpu_reloaded = PSANNRegressor.load(str(second), map_location="cpu")
+    assert next(cpu_reloaded.model_.parameters()).device.type == "cpu"
+    np.testing.assert_allclose(cpu_reloaded.predict(X[:2]), estimator.predict(X[:2]), rtol=1e-5)
