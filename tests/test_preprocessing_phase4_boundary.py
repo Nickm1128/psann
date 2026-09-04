@@ -201,6 +201,11 @@ def test_v2_metadata_is_strict_and_lsm_controller_survives_two_generations(tmp_p
     torch.save(payload, broken)
     with pytest.raises(ValueError, match="fitted.preprocessing.output_topology"):
         PSANNRegressor.load(str(broken))
+    payload = torch.load(first, weights_only=False)
+    payload["fitted"]["preprocessing"]["output_dim"] = 4.0
+    torch.save(payload, broken)
+    with pytest.raises(TypeError, match="fitted.preprocessing.output_dim"):
+        PSANNRegressor.load(str(broken))
     # map_location must choose CPU before construction, even if the serialized
     # constructor record came from a CUDA training host.
     payload = torch.load(first, weights_only=False)
@@ -273,3 +278,23 @@ def test_custom_false_topology_and_non_tensor_output_reject_before_training() ->
     not_tensor = PreprocessorConfig(ModulePreprocessorConfig(NotATensor(), "flat", "flat", 3))
     with pytest.raises(ValueError, match="torch.Tensor"):
         _small_estimator(not_tensor).fit(*_dense_data())
+
+
+def test_reconstruction_score_uses_fitted_scaling_and_conv_layout() -> None:
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(LSMConfig.dense(output_dim=4)), scaler="standard"
+    ).fit(X, y)
+    scaled, _, _ = estimator._prepare_inference_inputs(X)
+    assert estimator.score_reconstruction(X) == pytest.approx(
+        estimator.preprocessor_controller_.score_reconstruction(scaled)
+    )
+    X_nhwc = np.arange(72, dtype=np.float32).reshape(8, 3, 3, 1) / 10
+    y_nhwc = X_nhwc.mean(axis=(1, 2, 3))
+    conv = _small_estimator(
+        PreprocessorConfig(LSMConfig.convolutional(output_dim=2)),
+        architecture=ArchitectureConfig.convolutional(
+            convolution=ConvolutionConfig(data_format="channels_last")
+        ),
+    ).fit(X_nhwc, y_nhwc)
+    assert isinstance(conv.score_reconstruction(X_nhwc), float)
