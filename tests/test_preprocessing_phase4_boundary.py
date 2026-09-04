@@ -15,6 +15,7 @@ from psann.architectures import (
     ContextConfig,
     ConvolutionConfig,
     GeometryConfig,
+    StateConfig,
 )
 from psann.estimators import PSANNRegressor
 from psann.preprocessing import (
@@ -100,18 +101,20 @@ def test_conv_lsm_two_v2_generations_keep_channels_and_predictions(tmp_path) -> 
     ["none", "conv2d-lsm", "custom-spatial"],
 )
 def test_convolutional_wave_automatic_context_is_sample_preserving_across_runtime_paths(
-    tmp_path, data_format: str, preprocessor_kind: str
+    tmp_path, monkeypatch: pytest.MonkeyPatch, data_format: str, preprocessor_kind: str
 ) -> None:
-    """Automatic Wave context is one row per original sample in every layout/path."""
+    """Wave context uses scaled channel-first order on every runtime path."""
 
-    X_cf = np.arange(72, dtype=np.float32).reshape(8, 1, 3, 3) / 10
+    # Two deliberately distinct channels expose accidental NHWC flattening:
+    # a single channel would make both flatten orders appear identical.
+    X_cf = np.arange(144, dtype=np.float32).reshape(8, 2, 3, 3) / 10
     X = np.moveaxis(X_cf, 1, -1) if data_format == "channels_last" else X_cf
     y = X_cf.mean(axis=(1, 2, 3))
     if preprocessor_kind == "conv2d-lsm":
         preprocessor = PreprocessorConfig(LSMConfig.convolutional(output_dim=2, hidden_units=3))
     elif preprocessor_kind == "custom-spatial":
         preprocessor = PreprocessorConfig(
-            ModulePreprocessorConfig(torch.nn.Conv2d(1, 2, 1), "spatial-2d", "spatial-2d", 2)
+            ModulePreprocessorConfig(torch.nn.Conv2d(2, 2, 1), "spatial-2d", "spatial-2d", 2)
         )
     else:
         preprocessor = None
@@ -130,21 +133,54 @@ def test_convolutional_wave_automatic_context_is_sample_preserving_across_runtim
         batch_size=4,
         random_state=0,
         device="cpu",
-    ).fit(X, y, validation_data=(X[:2], y[:2]))
+        scaler="standard",
+    )
+    context_inputs: list[np.ndarray] = []
+    build_automatic_context = estimator._auto_context
 
-    prepared, meta, automatic_context = estimator._prepare_inference_inputs(X[:2])
+    def record_context_inputs(features: np.ndarray) -> np.ndarray | None:
+        context_inputs.append(np.asarray(features, dtype=np.float32).copy())
+        return build_automatic_context(features)
+
+    monkeypatch.setattr(estimator, "_auto_context", record_context_inputs)
+    estimator.fit(X, y, validation_data=(X[:2], y[:2]))
+
+    # Fit, validation and prediction must share exact values/order, not merely
+    # the same sample count.  This is the scaled N x (C * spatial) representation.
+    assert len(context_inputs) == 2
+    train_context_inputs, validation_context_inputs = context_inputs
+    np.testing.assert_allclose(train_context_inputs[:2], validation_context_inputs)
+    assert train_context_inputs.shape == (X.shape[0], 18)
+    assert validation_context_inputs.shape == (2, 18)
+    assert not np.allclose(train_context_inputs, X_cf.reshape(X_cf.shape[0], -1))
+
+    prepared, meta, generated_context = estimator._prepare_inference_inputs(X[:2])
     assert prepared.shape[0] == meta["n_samples"] == 2
-    assert automatic_context is not None and automatic_context.shape[0] == 2
+    assert generated_context is not None and generated_context.shape[0] == 2
     predicted = estimator.predict(X[:2])
     assert predicted.shape == (2,)
+    assert len(context_inputs) == 4
+    np.testing.assert_allclose(train_context_inputs[:2], context_inputs[2])
+    np.testing.assert_allclose(train_context_inputs[:2], context_inputs[3])
 
     path = tmp_path / f"wave-{data_format}-{preprocessor_kind}.pt"
     estimator.save(str(path))
     restored = PSANNRegressor.load(str(path), map_location="cpu")
+    restored_context_inputs: list[np.ndarray] = []
+    restored_auto_context = restored._auto_context
+
+    def record_restored_context_inputs(features: np.ndarray) -> np.ndarray | None:
+        restored_context_inputs.append(np.asarray(features, dtype=np.float32).copy())
+        return restored_auto_context(features)
+
+    monkeypatch.setattr(restored, "_auto_context", record_restored_context_inputs)
     _, restored_meta, restored_context = restored._prepare_inference_inputs(X[:2])
     assert restored_meta["n_samples"] == 2
     assert restored_context is not None and restored_context.shape[0] == 2
     np.testing.assert_allclose(restored.predict(X[:2]), predicted, rtol=1e-6)
+    assert len(restored_context_inputs) == 2
+    np.testing.assert_allclose(train_context_inputs[:2], restored_context_inputs[0])
+    np.testing.assert_allclose(train_context_inputs[:2], restored_context_inputs[1])
 
 
 def test_attention_rejects_dense_lsm_before_pretraining(monkeypatch) -> None:
@@ -208,6 +244,26 @@ def test_conv1d_spatial_preprocessor_is_not_misclassified_as_tokens() -> None:
     ).fit(X, y)
     assert estimator.preprocessor_capabilities_.input_topology == "spatial-1d"
     assert estimator.predict(X[:2]).shape == (2,)
+
+
+def test_stateful_canonical_lsm_preprocessor_reaches_step_and_sequence_paths() -> None:
+    """Canonical preprocessing remains attached in stateful single/sequence inference."""
+
+    X, y = _dense_data()
+    estimator = _small_estimator(
+        PreprocessorConfig(LSMConfig.dense(output_dim=4, random_state=0)),
+        architecture=ArchitectureConfig.dense(
+            state=StateConfig(rho=0.9, beta=1.0, max_abs=2.0, init=0.0, detach=True)
+        ),
+    ).fit(X, y)
+    assert estimator.preprocessor_ is estimator.model_.preproc
+    estimator.reset_state()
+    stepped = estimator.step(X[0], update_state=True)
+    rollout = estimator.predict_sequence(X[:3], reset_state=True, return_sequence=True)
+    final = estimator.predict_sequence(X[:3], reset_state=True, return_sequence=False)
+    assert np.asarray(stepped).shape == ()
+    assert rollout.shape == (3,)
+    assert np.asarray(final).shape == ()
 
 
 def test_custom_input_topology_and_declared_width_are_validated_before_fit() -> None:

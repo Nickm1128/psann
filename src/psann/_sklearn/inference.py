@@ -71,7 +71,7 @@ class _PSANNRegressorInferenceMixin:
             # Derive context from the scaled channel-first tensor independently
             # of whether the predictive model consumes channel-first or flattened
             # inputs.
-            flat_for_context = X_cf.reshape(N, -1).astype(np.float32, copy=False)
+            flat_for_context = self._context_features_from_channel_first(X_cf)
             use_cf_inputs = bool(
                 self.per_element or getattr(self, "_use_channel_first_train_inputs_", False)
             )
@@ -79,7 +79,12 @@ class _PSANNRegressorInferenceMixin:
             if use_cf_inputs:
                 inputs_np = X_cf.astype(np.float32, copy=False)
             else:
-                inputs_np = X_cf.reshape(N, -1).astype(np.float32, copy=False)
+                model_layout = (
+                    np.moveaxis(X_cf, 1, -1)
+                    if self.data_format == "channels_last"
+                    else X_cf
+                )
+                inputs_np = self._flatten(model_layout).astype(np.float32, copy=False)
 
         if context_np is None and flat_for_context is not None:
             auto_ctx = self._auto_context(flat_for_context.astype(np.float32, copy=False))

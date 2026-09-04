@@ -61,17 +61,24 @@ def test_conv_lsm_rejects_dense_only_pretraining_options() -> None:
 
 
 @pytest.mark.parametrize(
-    ("alias", "expected_field"),
+    ("topology", "alias", "expected_field"),
     [
-        ("out_channels", "output_dim"),
-        ("hidden_width", "hidden_units"),
-        ("hidden_channels", "hidden_units"),
+        ("dense", "hidden_width", "hidden_units"),
+        ("conv2d", "out_channels", "output_dim"),
+        ("conv2d", "hidden_channels", "hidden_units"),
     ],
+    ids=["dense-hidden-width", "conv2d-out-channels", "conv2d-hidden-channels"],
 )
 def test_canonical_mapping_alias_matrix_normalizes_without_mutation(
-    alias: str, expected_field: str
+    topology: str, alias: str, expected_field: str
 ) -> None:
-    lsm: dict[str, object] = {"topology": "dense", "output_dim": 4, "hidden_units": 5}
+    lsm: dict[str, object] = {
+        "topology": topology,
+        "output_dim": 4,
+        "hidden_units": 5,
+    }
+    if topology == "conv2d":
+        lsm["kernel_size"] = 1
     lsm.pop(expected_field)
     lsm[alias] = 6
     source = {"kind": "lsm", "lsm": lsm, "training": {"trainable": False, "lr": None}}
