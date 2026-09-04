@@ -159,6 +159,13 @@ class EpisodeConfig:
     spatial_pool: str = "mean"  # for segmentation or spatial outputs
     random_state: Optional[int] = None
 
+    def __post_init__(self) -> None:
+        warnings.warn(
+            "psann.episodes.EpisodeConfig is deprecated; use psann.episodic.HISSOConfig.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     def resolved_transition_penalty(self) -> float:
         """Return the configured transition penalty, falling back to legacy trans_cost."""
         penalty = self.transition_penalty
@@ -211,6 +218,11 @@ class EpisodeTrainer:
         price_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
         context_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> None:
+        warnings.warn(
+            "psann.episodes.EpisodeTrainer is deprecated; use psann.episodic.EpisodicTrainer.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.model = model
         self.reward_fn = reward_fn
         self.cfg = ep_cfg
