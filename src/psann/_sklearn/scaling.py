@@ -8,6 +8,14 @@ import torch
 from .._aliases import resolve_int_alias
 
 
+def context_features_from_channel_first(X_cf: np.ndarray) -> np.ndarray:
+    """Return one scaled, channel-first context row per original sample."""
+    array = np.asarray(X_cf, dtype=np.float32)
+    if array.ndim < 2:
+        raise ValueError("channel-first context inputs must include a sample axis.")
+    return array.reshape(array.shape[0], -1).astype(np.float32, copy=False)
+
+
 class _PSANNRegressorScalingMixin:
     @staticmethod
     def _normalize_param_aliases(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -127,20 +135,6 @@ class _PSANNRegressorScalingMixin:
                 "Context builder must preserve the number of samples along the first dimension."
             )
         return context_arr
-
-    @staticmethod
-    def _context_features_from_channel_first(X_cf: np.ndarray) -> np.ndarray:
-        """Return the canonical one-row-per-sample context representation.
-
-        Convolutional scalers operate on ``(sample * spatial, channel)`` rows.
-        Automatic context must instead see the *scaled* channel-first tensor
-        flattened only after its original sample axis, irrespective of the
-        predictive model's configured layout.
-        """
-        array = np.asarray(X_cf, dtype=np.float32)
-        if array.ndim < 2:
-            raise ValueError("channel-first context inputs must include a sample axis.")
-        return array.reshape(array.shape[0], -1).astype(np.float32, copy=False)
 
     # ------------------------- Scaling helpers -------------------------
     def _make_internal_scaler(self) -> Optional[Dict[str, Any]]:

@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from .._sklearn.scaling import context_features_from_channel_first
 from ._fit_types import PreparedInputState, ValidationInput
 
 if TYPE_CHECKING:
@@ -90,7 +91,7 @@ def _prepare_validation_tensors(
             else:
                 X_val_scaled = X_val_cf_scaled
             inputs_np = estimator._flatten(X_val_scaled).astype(np.float32, copy=False)
-        flat_for_context = estimator._context_features_from_channel_first(X_val_cf_scaled)
+        flat_for_context = context_features_from_channel_first(X_val_cf_scaled)
     else:
         n_features = int(np.prod(estimator.input_shape_))
         actual_shape = tuple(X_val.shape[1:])

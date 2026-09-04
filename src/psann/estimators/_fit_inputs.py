@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Tuple
 
 import numpy as np
 
+from .._sklearn.scaling import context_features_from_channel_first
 from ._fit_types import NormalisedFitArgs, PreparedInputState
 
 if TYPE_CHECKING:
@@ -208,7 +209,7 @@ def _prepare_preserve_shape_inputs(
         X_scaled = X_cf
     X_flat = estimator._flatten(X_scaled).astype(np.float32, copy=False)
     if train_context is None:
-        auto_context = estimator._auto_context(estimator._context_features_from_channel_first(X_cf))
+        auto_context = estimator._auto_context(context_features_from_channel_first(X_cf))
         if auto_context is not None:
             train_context = auto_context.astype(np.float32, copy=False)
             context_dim = int(train_context.shape[1])

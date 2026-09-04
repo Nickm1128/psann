@@ -6,6 +6,7 @@ import numpy as np
 import torch
 
 from .shared import _sk_r2_score
+from .scaling import context_features_from_channel_first
 
 
 class _PSANNRegressorInferenceMixin:
@@ -71,7 +72,7 @@ class _PSANNRegressorInferenceMixin:
             # Derive context from the scaled channel-first tensor independently
             # of whether the predictive model consumes channel-first or flattened
             # inputs.
-            flat_for_context = self._context_features_from_channel_first(X_cf)
+            flat_for_context = context_features_from_channel_first(X_cf)
             use_cf_inputs = bool(
                 self.per_element or getattr(self, "_use_channel_first_train_inputs_", False)
             )
@@ -80,9 +81,9 @@ class _PSANNRegressorInferenceMixin:
                 inputs_np = X_cf.astype(np.float32, copy=False)
             else:
                 model_layout = (
-                    np.moveaxis(X_cf, 1, -1) if self.data_format == "channels_last" else X_cf
+                    np.moveaxis(X_cf, 1, -1) if meta["data_format"] == "channels_last" else X_cf
                 )
-                inputs_np = self._flatten(model_layout).astype(np.float32, copy=False)
+                inputs_np = model_layout.reshape(N, -1).astype(np.float32, copy=False)
 
         if context_np is None and flat_for_context is not None:
             auto_ctx = self._auto_context(flat_for_context.astype(np.float32, copy=False))
