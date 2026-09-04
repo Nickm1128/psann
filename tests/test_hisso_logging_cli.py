@@ -19,14 +19,19 @@ def _write_config(path: Path) -> None:
                 "random_state": 11,
             },
         },
-        "hisso": {
+        "episodic": {
             "enabled": True,
-            "window": 12,
-            "batch_episodes": 3,
-            "updates_per_epoch": 2,
-            "primary_transform": "softmax",
-            "transition_penalty": 0.05,
-            "mixed_precision": False,
+            "strategy": {
+                "kind": "hisso",
+                "schedule": {
+                    "episode_length": 12,
+                    "batch_episodes": 3,
+                    "updates_per_epoch": 2,
+                },
+                "primary_transform": "softmax",
+                "transition_penalty": 0.05,
+                "mixed_precision": False,
+            },
         },
         "data": {
             "loader": "psann.scripts.hisso_log_run.toy_hisso_dataset",
