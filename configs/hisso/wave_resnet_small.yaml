@@ -13,7 +13,7 @@ estimator:
     data_format: channels_first
     w0_warmup_epochs: 10
 
-hisso:
+episodic:
   enabled: true
   window: 48
   batch_episodes: 8

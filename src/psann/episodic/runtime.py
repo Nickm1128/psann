@@ -71,4 +71,20 @@ def call_reward(
     return output
 
 
-__all__ = ["align_context", "call_reward", "transform_actions"]
+def validate_reward_penalty(reward: object, penalty: float) -> None:
+    """Reject an unconsumable canonical penalty before model construction."""
+
+    if not penalty:
+        return
+    callable_reward = cast(Callable[..., object], reward)
+    signature = inspect.signature(callable_reward)
+    if "transition_penalty" in signature.parameters or "trans_cost" in signature.parameters:
+        return
+    if any(parameter.kind == parameter.VAR_KEYWORD for parameter in signature.parameters.values()):
+        return
+    raise ValueError(
+        "strategy.transition_penalty requires a reward accepting transition_penalty or trans_cost."
+    )
+
+
+__all__ = ["align_context", "call_reward", "transform_actions", "validate_reward_penalty"]

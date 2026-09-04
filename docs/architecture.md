@@ -43,8 +43,8 @@ psannlm/                     -> separate distribution (LM training/CLI utilities
 
 ## HISSO flow (episodic)
 
-- `HISSOOptions` resolves reward, transforms, and context configuration.
-- `EpisodeTrainer` runs episodes on the estimator’s device and logs rewards.
+- `HISSOConfig` and `EpisodeScheduleConfig` are frozen canonical episodic configuration.
+- `EpisodicTrainer` runs canonical episodes on the estimator’s device and logs rewards.
 - `hisso_infer_series` and `hisso_evaluate_reward` reuse the stored episode config.
 
 ## LM flow (experimental)

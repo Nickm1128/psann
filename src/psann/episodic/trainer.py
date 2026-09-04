@@ -11,7 +11,7 @@ import torch
 
 from .config import HISSOConfig, normalize_strategy, replace_strategy
 from .rewards import resolve_reward
-from .runtime import align_context, call_reward, transform_actions
+from .runtime import align_context, call_reward, transform_actions, validate_reward_penalty
 
 
 class EpisodicTrainer:
@@ -85,6 +85,7 @@ class EpisodicTrainer:
             raise ValueError("strategy.warm_start requires fit targets y.")
         if not hasattr(self.estimator, "fit"):
             raise TypeError("estimator must provide fit.")
+        validate_reward_penalty(resolve_reward(strategy.reward), strategy.transition_penalty)
         # The estimator still owns construction/scaling/preprocessing, but the
         # typed request is consumed by its episodic stage directly. Do not
         # round canonical fields through the deprecated flat keyword adapter.

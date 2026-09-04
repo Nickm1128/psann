@@ -15,6 +15,7 @@ from psann.episodic import (
     SupervisedWarmStartConfig,
     normalize_strategy,
 )
+from psann.episodic.rewards import FINANCE_PORTFOLIO_STRATEGY
 from psann.episodic.runtime import transform_actions
 from psann.preprocessing import LSMConfig, PreprocessorConfig, PreprocessorTrainingConfig
 
@@ -244,3 +245,101 @@ def test_legacy_facades_warn_once_at_the_user_call_site():
     with pytest.warns(DeprecationWarning) as caught:
         get_reward_strategy("default")
     assert len(caught) == 1
+
+
+def test_canonical_runtime_honors_schedule_clip_and_invalidation(monkeypatch):
+    X = np.arange(24, dtype=np.float32).reshape(12, 2) + 1
+    clip_values: list[float] = []
+    from psann.episodic import runtime_loop
+
+    original_clip = runtime_loop.clip_grad_norm_
+
+    def capture_clip(parameters, value):
+        clip_values.append(float(value))
+        return original_clip(parameters, value)
+
+    monkeypatch.setattr(runtime_loop, "clip_grad_norm_", capture_clip)
+    estimator = PSANNRegressor(epochs=1, batch_size=2, random_state=11, device="cpu")
+    trainer = EpisodicTrainer(
+        estimator=estimator,
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(
+                episode_length=3, batch_episodes=2, updates_per_epoch=2, random_state=99
+            ),
+            gradient_clip=0.25,
+        ),
+    ).fit(X)
+    assert estimator._hisso_cfg_.random_state == 99
+    assert trainer.profile_["updates_per_epoch"] == 2
+    assert clip_values == [0.25, 0.25]
+    trainer.set_params(strategy__schedule__random_state=7)
+    for name in (
+        "_episodic_strategy_",
+        "_episodic_history_",
+        "_episodic_profile_",
+        "_hisso_trainer_",
+        "_hisso_options_",
+        "_hisso_cfg_",
+        "_hisso_reward_fn_",
+        "_hisso_context_extractor_",
+    ):
+        assert name not in estimator.__dict__
+
+
+@pytest.mark.parametrize(
+    "extractor, message",
+    [
+        (
+            lambda data: np.ones((data.shape[0], data.shape[1], 3), dtype=np.float32),
+            "must return a torch.Tensor",
+        ),
+        (
+            lambda data: torch.ones((data.shape[0], data.shape[1], 3), device=data.device),
+            "width mismatch",
+        ),
+    ],
+)
+def test_canonical_runtime_rejects_non_tensor_and_width_mismatched_context(extractor, message):
+    X = np.ones((8, 2), dtype=np.float32)
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2, device="cpu"),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2), context_extractor=extractor
+        ),
+    )
+    with pytest.raises((TypeError, ValueError), match=message):
+        trainer.fit(X, np.ones((len(X), 2), dtype=np.float32))
+
+
+def test_canonical_nonzero_penalty_requires_consuming_reward_before_runtime():
+    X = np.ones((8, 2), dtype=np.float32)
+
+    def reward(actions, context):
+        return -(actions - context.mean(dim=-1, keepdim=True)).square().mean(dim=(-1, -2))
+
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2), reward=reward, transition_penalty=0.5
+        ),
+    )
+    with pytest.raises(ValueError, match="transition_penalty"):
+        trainer.fit(X)
+    assert "model_" not in trainer.estimator.__dict__
+
+
+def test_schema_v3_registered_bundle_closes_two_generations(tmp_path):
+    X = np.arange(20, dtype=np.float32).reshape(10, 2) + 1
+    trainer = EpisodicTrainer(
+        estimator=PSANNRegressor(epochs=1, batch_size=2),
+        strategy=HISSOConfig(
+            schedule=EpisodeScheduleConfig(episode_length=2), reward=FINANCE_PORTFOLIO_STRATEGY
+        ),
+    ).fit(X)
+    first, second = tmp_path / "bundle-1.pt", tmp_path / "bundle-2.pt"
+    trainer.save(first)
+    payload = torch.load(first, weights_only=False)
+    assert payload["fitted"]["episodic"]["config"]["reward"] == "finance"
+    restored = EpisodicTrainer.load(first)
+    restored.save(second)
+    assert EpisodicTrainer.load(second).strategy.reward == "finance"

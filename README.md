@@ -456,7 +456,10 @@ This keeps bespoke research loops aligned with the estimator's preprocessing con
 - **State controllers** (`psann.StateController`) keep per-feature persistent gains for streaming/online workflows. Configurable via `StateConfig`.
 - **Shared fit helpers** (`psann.estimators._fit_utils`) normalise arguments, materialise scalers, route through residual and convolutional builders, and orchestrate HISSO plans.
 - **Wave backbones** (`psann.WaveResNet`, `psann.WaveEncoder`, `psann.WaveRNNCell`, `psann.scan_regimes`) surface the standalone components for experiments and spectral diagnostics outside the sklearn wrappers.
-- **HISSO** (`psann.HISSOOptions`, `psann.hisso_infer_series`, `psann.hisso_evaluate_reward`) offers declarative reward configuration, supervised warm starts, episode construction, and inference helpers that reuse the cached configuration.
+- **Episodic training** (`psann.episodic.EpisodicTrainer`, `HISSOConfig`, and
+  `EpisodeScheduleConfig`) offers frozen declarative reward configuration, supervised
+  warm starts, episode construction, inference, and evaluation. `psann.hisso` remains
+  a deprecated 0.x compatibility facade.
 - **Utilities** (`psann.jacobian_spectrum`, `psann.ntk_eigens`, `psann.participation_ratio`, `psann.mutual_info_proxy`, `psann.encode_and_probe`, `psann.fit_linear_probe`, `psann.make_context_rotating_moons`, `psann.make_drift_series`, `psann.make_shock_series`, `psann.make_regime_switch_ts`) cover diagnostics and synthetic regimes.
 - **Token helpers** (`SimpleWordTokenizer`, `SineTokenEmbedder`) remain for experiments that need sine embeddings, but no language-model trainer ships in this release.
 
