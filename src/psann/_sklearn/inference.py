@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, cast
 
 import numpy as np
 import torch
@@ -9,6 +9,9 @@ import torch
 from .shared import _sk_r2_score
 from .scaling import context_features_from_channel_first
 from ..nn import WithPreprocessor
+
+if TYPE_CHECKING:
+    from .sequence import _PSANNRegressorSequenceMixin
 
 
 @dataclass(frozen=True)
@@ -203,15 +206,16 @@ class _PSANNRegressorInferenceMixin:
                     # Prepare the whole request once, then visit the predictive
                     # core in time order.  The preprocessor is not a stateful
                     # predictor and must not be rerun for each sequence step.
+                    predictor = model
                     if isinstance(model, WithPreprocessor):
                         tensor = tensor if model.preproc is None else model.preproc(tensor)
-                        model = model.core
+                        predictor = model.core
                     outputs = torch.cat(
                         [
                             (
-                                model(tensor[idx : idx + 1], context_tensor[idx : idx + 1])
+                                predictor(tensor[idx : idx + 1], context_tensor[idx : idx + 1])
                                 if context_tensor is not None
-                                else model(tensor[idx : idx + 1])
+                                else predictor(tensor[idx : idx + 1])
                             )
                             for idx in range(tensor.shape[0])
                         ],
@@ -225,7 +229,6 @@ class _PSANNRegressorInferenceMixin:
                     )
                 return outputs.detach().cpu().numpy()
         finally:
-            model = self.model_
             model.train(prev_training)
             if hasattr(model, "set_state_updates"):
                 model.set_state_updates(bool(prev_training))
@@ -243,12 +246,12 @@ class _PSANNRegressorInferenceMixin:
         update_state: bool = False,
     ) -> _PreparedPrediction:
         if sequence:
-            X = self._coerce_sequence_inputs(X)
+            X = cast("_PSANNRegressorSequenceMixin", self)._coerce_sequence_inputs(X)
             if len(X) == 0:
                 raise ValueError("predict_sequence requires at least one timestep.")
         inputs_np, meta, context_np = self._prepare_inference_inputs(X, context)
         if reset_state:
-            self.reset_state()
+            cast("_PSANNRegressorSequenceMixin", self).reset_state()
         preds = self._run_model(
             inputs_np, context_np=context_np, state_updates=update_state, sequence=sequence
         )

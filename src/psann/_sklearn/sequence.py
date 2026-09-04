@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import numpy as np
 import torch
+
+if TYPE_CHECKING:
+    from .inference import _PSANNRegressorInferenceMixin
 
 
 class _PSANNRegressorSequenceMixin:
@@ -56,9 +59,13 @@ class _PSANNRegressorSequenceMixin:
         update_state: bool = True,
     ) -> Any:
         if not update_state:
-            result = self._predict_with_prepared_inputs(
-                X, context=context, sequence=True, reset_state=reset_state
-            ).predictions
+            result = (
+                cast("_PSANNRegressorInferenceMixin", self)
+                ._predict_with_prepared_inputs(
+                    X, context=context, sequence=True, reset_state=reset_state
+                )
+                .predictions
+            )
             return result if return_sequence else result[-1]
         return self._sequence_rollout(
             X,
