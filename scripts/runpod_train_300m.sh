@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RunPod training script for ~300M PSANN-LM (6B tokens target, Chinchilla-style)
 # Prereqs (PyPI-style): `pip install psann psannlm` and CUDA-ready PyTorch.
-# For local development from this repo: `pip install -e .[dev]` and `pip install -e ./psannlm`.
+# For local development from this repo: `pip install -e .[dev]` and `pip install ./psannlm`.
 
 set -euo pipefail
 
@@ -60,7 +60,7 @@ else
   echo "[env] SKIP_VENV=1; using existing Python environment."
 fi
 $PYTHON_BIN -m pip install --upgrade pip
-$PYTHON_BIN -m pip install -e .[lm]
+$PYTHON_BIN -m pip install -e . ./psannlm
 $PYTHON_BIN -m pip install hf_transfer langdetect datasets tokenizers accelerate
 $PYTHON_BIN - <<'PY'
 import torch
@@ -68,7 +68,7 @@ import torch
 if not torch.cuda.is_available():
     raise SystemExit(
         "CUDA is not available in this environment. Install a GPU-enabled PyTorch "
-        "(cu13.0+ for Blackwell) or set SKIP_VENV=1 with a container that already "
+        "(CUDA 12.8 or a compatible build for your GPU) or set SKIP_VENV=1 with a container that already "
         "has PyTorch configured."
     )
 
@@ -154,6 +154,41 @@ SINE_DAMP_INIT=${SINE_DAMP_INIT:-0.001}
 SINE_FREQ_INIT=${SINE_FREQ_INIT:-2.25}
 SINE_FREQ_INIT_STD=${SINE_FREQ_INIT_STD:-0.25}
 
+# Write the canonical nested policy while preserving these environment overrides.
+MODEL_CONFIG=${MODEL_CONFIG:-$LOG_DIR/${RUN_NAME}_model.json}
+export SINE_AMP_INIT SINE_DAMP_INIT SINE_FREQ_INIT SINE_FREQ_INIT_STD ATTN_FLAGS
+"$PYTHON_BIN" - "$MODEL_CONFIG" <<'MODEL_CONFIG'
+import argparse
+import json
+import os
+from pathlib import Path
+import shlex
+import sys
+
+from psann.architectures import ActivationConfig
+from psannlm import LMConfig, LMArchitectureConfig
+from psannlm.architectures import LMActivationInitializationConfig, to_mapping
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--attn-impl", choices=["math", "sdpa", "auto"], default="sdpa")
+attention = parser.parse_args(shlex.split(os.environ["ATTN_FLAGS"]))
+config = LMConfig(
+    architecture=LMArchitectureConfig.wave(
+        activation=ActivationConfig(
+            amplitude_init=float(os.environ["SINE_AMP_INIT"]),
+            frequency_init=float(os.environ["SINE_FREQ_INIT"]),
+            decay_init=float(os.environ["SINE_DAMP_INIT"]),
+        ),
+        activation_initialization=LMActivationInitializationConfig(
+            frequency_std=float(os.environ["SINE_FREQ_INIT_STD"]),
+        ),
+    ),
+    d_model=1024, n_layers=16, n_heads=16, d_mlp=4096,
+    attention_implementation=attention.attn_impl,
+)
+Path(sys.argv[1]).write_text(json.dumps(to_mapping(config), indent=2) + "\n")
+MODEL_CONFIG
+
 # Sweep-inspired LR (tune as needed; recommended to run a short pilot sweep at full scale)
 LR=${LR:-0.0025}
 WARMUP_STEPS=${WARMUP_STEPS:-500}
@@ -191,8 +226,7 @@ CMD="${LAUNCHER} \
   --tokenizer-backend tokenizers --train-tokenizer \
   --tokenizer-save-dir ${TOKENIZER_DIR} --tokenizer-sample-limit 150000 \
   --hf-cache-limit-gb 40 \
-  --base waveresnet --d-model 1024 --n-layers 16 --n-heads 16 --d-mlp 4096 \
-  --sine-amp-init ${SINE_AMP_INIT} --sine-damp-init ${SINE_DAMP_INIT} --sine-freq-init ${SINE_FREQ_INIT} --sine-freq-init-std ${SINE_FREQ_INIT_STD} \
+  --model-config \"${MODEL_CONFIG}\" \
   --seq_len ${SEQ_LEN} --dataset_streaming true --max_steps ${MAX_STEPS} \
   --tokens_target ${TOKENS_TARGET} \
   --dataloader_num_workers 0 \

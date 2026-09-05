@@ -1,4 +1,6 @@
-"""Finalize BMRK-01 tiny-corpus benchmark artifacts.
+"""Compatibility diagnostic; see docs/migration.md for canonical workflows.
+
+Finalize BMRK-01 tiny-corpus benchmark artifacts.
 
 Tasks:
 - Optionally parse training log to metrics.csv and loss_curve.png (if matplotlib present)

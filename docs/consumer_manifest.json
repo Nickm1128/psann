@@ -512,7 +512,7 @@
     {
       "path": "psannlm/sft.py",
       "module": "psannlm.sft",
-      "classification": "canonical"
+      "classification": "compatibility/migration"
     },
     {
       "path": "psannlm/train.py",
@@ -695,6 +695,11 @@
       "classification": "canonical"
     },
     {
+      "path": "scripts/train_psann_lm.py",
+      "module": "scripts.train_psann_lm",
+      "classification": "canonical"
+    },
+    {
       "path": "scripts/train_psannlm_chat.py",
       "module": "scripts.train_psannlm_chat",
       "classification": "canonical"
@@ -815,6 +820,48 @@
       "consumer": "examples/quickstarts.py",
       "function": "lm",
       "preprocessing": false
+    }
+  ],
+  "shell": [
+    {
+      "path": "scripts/next_gpu_batch.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_bmrk01.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_cuda_suite.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_outstanding_gpu_tests.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_sft_generations.sh",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "scripts/runpod_psannlm.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/runpod_sft_300m.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/runpod_smoke_train.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/runpod_train_1b.sh",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/runpod_train_300m.sh",
+      "classification": "canonical"
     }
   ]
 }

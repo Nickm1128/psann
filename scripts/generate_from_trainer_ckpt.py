@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generate text from a PSANN-LM *trainer* checkpoint (.pt).
+"""Compatibility diagnostic; see docs/migration.md for canonical workflows.
+
+Generate text from a PSANN-LM *trainer* checkpoint (.pt).
 
 This works with the checkpoints produced by pretraining (`psannlm.train`) and
 SFT (`psannlm.sft`), which store the model state dict under the `"model"` key.

@@ -115,7 +115,7 @@ else
 fi
 
 $PYTHON_BIN -m pip install --upgrade pip
-$PYTHON_BIN -m pip install -e .[lm]
+$PYTHON_BIN -m pip install -e . ./psannlm
 $PYTHON_BIN -m pip install datasets tokenizers accelerate hf_transfer langdetect || true
 $PYTHON_BIN - <<'PY'
 import torch
@@ -163,7 +163,7 @@ if [ -n "$SFT_DATA_FILES" ]; then
   DATA_FILES_FLAG="--data-files $SFT_DATA_FILES"
 fi
 
-CMD="$PYTHON_BIN -u -m psannlm.sft \
+CMD="$PYTHON_BIN -u -m psannlm sft \
   $CKPT_FLAG \
   --tokenizer-dir $TOKENIZER_DIR \
   --sft-source $SFT_SOURCE \

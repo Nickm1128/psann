@@ -26,7 +26,10 @@ def test_manifest_classifies_every_shell_helper():
     assert {row["path"] for row in MANIFEST.get("shell", [])} == {
         path.relative_to(ROOT).as_posix() for path in SHELLS
     }
-    assert all(row["classification"] == "canonical" for row in MANIFEST["shell"])
+    for row in MANIFEST["shell"]:
+        assert row["classification"] in {"canonical", "compatibility/migration"}
+        if row["classification"] == "compatibility/migration":
+            assert "Compatibility sampling diagnostic" in (ROOT / row["path"]).read_text()
 
 
 @pytest.mark.parametrize("path", SHELLS, ids=lambda p: p.name)
@@ -41,7 +44,7 @@ def test_shell_syntax_references_and_canonical_commands(path):
     result = subprocess.run([bash, "-n", str(path)], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     source = path.read_text()
-    assert not re.search(r"-m psannlm\.(?:train|cli|lm\.train\.cli)\b", source)
+    assert not re.search(r"-m psannlm\.(?:train|cli|lm\.train\.cli|sft)\b", source)
     assert not re.search(r"--(?:base|sine-[\w-]+)\s", source)
     assert not re.search(r"\.(?:\[lm(?:,viz)?\])|install -e ./psannlm", source)
     for referenced in re.findall(
@@ -107,6 +110,7 @@ def test_shell_300m_configuration_preserves_initialization_and_trained_model(
         ("SINE_AMP_INIT", "SINE_DAMP_INIT", "SINE_FREQ_INIT", "SINE_FREQ_INIT_STD"), values
     ):
         monkeypatch.setenv(key, str(value))
+    monkeypatch.setenv("ATTN_FLAGS", "--attn-impl=sdpa")
     output = tmp_path / "model.json"
     monkeypatch.setattr(sys, "argv", ["shell-model-config", str(output)])
     exec(compile(match[1], "runpod_train_300m.sh:model", "exec"), {"__name__": "__main__"})
@@ -118,6 +122,7 @@ def test_shell_300m_configuration_preserves_initialization_and_trained_model(
             n_layers=16,
             n_heads=16,
             d_mlp=4096,
+            attn_impl="sdpa",
             sine=SineConfig(
                 amp_init=values[0],
                 damp_init=values[1],

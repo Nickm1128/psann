@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""
+"""Compatibility diagnostic; see docs/migration.md for canonical workflows.
+
+
 Quick text-generation driver for the ckpt_step006500 checkpoint.
 
 Usage:

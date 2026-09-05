@@ -14,13 +14,13 @@ case "$CMD" in
     echo "[setup] creating venv .venv"; python3 -m venv .venv
     source .venv/bin/activate
     python -m pip install --upgrade pip
-    echo "[setup] installing torch/cu121 (nightly)"
-    python -m pip install --index-url https://download.pytorch.org/whl/nightly/cu121 \
+    echo "[setup] installing CUDA PyTorch (override TORCH_INDEX_URL for your host)"
+    python -m pip install --index-url "${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu128}" \
       torch torchvision torchaudio
     echo "[setup] installing deps"
     python -m pip install datasets transformers pynvml matplotlib hf_transfer || true
     echo "[setup] installing repo"
-    python -m pip install -e .[lm,viz]
+    python -m pip install -e '.[viz]' ./psannlm
     echo "[setup] done";;
 
   train)

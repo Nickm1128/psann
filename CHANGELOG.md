@@ -10,6 +10,8 @@ Core schema-v3 and LM schema-v1 persistence preserve accepted migration routes a
 
 Documentation, examples, notebooks, and benchmark configurations teach the canonical surface. Maintained consumer coverage checks configuration semantics and executable workflows. Unusable extras-head examples and a notebook requiring an unprovided private database were removed with their unsupported scope made explicit. Numerical cleanup repairs recursive PyTorch module traversal for state controllers and tensor-valued dictionary handling in linear probes. Geometric-sparse preprocessing now uses the composed output width in construction and checkpoint reconstruction.
 
+Bash helpers install the two distributions separately and use canonical LM commands and nested model policies. Their configured activation initialization, dimensions, datasets, and training budgets are preserved. `python -m psannlm sft` delegates to the existing prompt/response fine-tuning implementation.
+
 Both distributions use version 0.13.0. The LM distribution directly requires `psann>=0.13.0` and declares its numerical, data, tokenizer, and YAML dependencies. Core-only installations do not contain LM code; distribution contents remain disjoint. Static checks cover the configured repository/source scope without a retained debt baseline.
 
 Wave estimator cloning and parameter updates preserve an absent context policy. Compatibility constructors issue one caller warning when flat preprocessing is also supplied. Parameter counting routes residual and wave options correctly. Allocation examples declare one output per asset so their softmax represents a portfolio rather than a single constant weight.

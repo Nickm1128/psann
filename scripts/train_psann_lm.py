@@ -3,7 +3,7 @@
 
 Usage (after installing the LM add-on alongside psann, e.g. ``pip install psann psannlm``):
 
-    python scripts/train_psann_lm.py [args...]
+    python -m psannlm train [args...]
 
 This forwards to ``python -m psannlm train``.
 """

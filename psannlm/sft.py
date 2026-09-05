@@ -4,10 +4,10 @@
 This script fine-tunes a pretrained PSANN-LM checkpoint on prompt/response
 pairs. It masks loss on the prompt tokens (only the assistant response is
 trained), and saves standard trainer checkpoints compatible with the existing
-`psannlm.train` + `scripts/eval_ppl_sidecar.py` tooling.
+`python -m psannlm train` and `python -m psannlm eval` tooling.
 
 Example (OpenAssistant/oasst1):
-  python -m psannlm.sft \
+  python -m psannlm sft \
     --init-ckpt runs/lm/300m_en/ckpt_step078000.pt \
     --tokenizer-dir runs/tokenizer_300m_shuffle_v4 \
     --sft-source oasst1 \
@@ -16,7 +16,7 @@ Example (OpenAssistant/oasst1):
     --lr 5e-5 --warmup-steps 200 --max-steps 2000
 
 Example (local JSONL with {"prompt": "...", "response": "..."}):
-  python -m psannlm.sft \
+  python -m psannlm sft \
     --init-ckpt runs/lm/300m_en/ckpt_step078000.pt \
     --tokenizer-dir runs/tokenizer_300m_shuffle_v4 \
     --sft-source pairs --dataset json --data-files sft_data.jsonl \

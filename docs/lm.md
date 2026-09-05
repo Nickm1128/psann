@@ -47,11 +47,14 @@ python -m psannlm train --config examples/lm/configs/waveresnet_cpu.yaml
 python -m psannlm resume --config examples/lm/configs/waveresnet_cpu.yaml --resume-ckpt runs/lm/wrn_cpu_local/final.pt
 python -m psannlm generate --ckpt lm.pt --prompt "waves learn" --temperature 0 --max-new-tokens 16 --device cpu
 python -m psannlm eval --help
+python -m psannlm sft --help
 ```
 
 The YAML `model` section is an LMConfig mapping; `train` is TrainConfig and `data` selects sources/tokenization. Paths and output locations come from the selected file, so use the checkpoint path actually created by your run when resuming. Long options accept both `--config path.yaml` and `--config=path.yaml`. Streaming CLI mode also supports `--architecture` or `--model-config`; conflicting architecture sources and unknown keys reject early. Train/resume/eval/generate use the same canonical construction and persistence path.
 
 ## Checkpoints and runtime limits
+
+Supervised fine-tuning uses `python -m psannlm sft` with a saved checkpoint and prompt/response pairs. It retains the checkpoint's architecture and masks prompt tokens from the training loss. `scripts/runpod_sft_300m.sh` provides the full dataset and training settings; `scripts/runpod_train_300m.sh` writes an explicit nested model configuration while preserving its environment-controlled activation initialization.
 
 Model and trainer artifacts use schema version 1. Trainer checkpoints include optimizer, step, scaler/scheduler, and resume state where applicable; a model export is intended for inference. `map_location="cpu"` reconstructs CUDA artifacts on CPU, and CUDA map location requires a working CUDA runtime. State/configuration and greedy generation are preserved through repeated new-format saves. See [migration](migration.md) for historical artifacts and explicit configuration requirements for raw weights.
 

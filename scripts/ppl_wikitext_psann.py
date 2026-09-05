@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-"""Compute perplexity on WikiText using PSANN-LM directly (fallback when lm-eval rolling API is finicky).
+"""Compatibility diagnostic; see docs/migration.md for canonical workflows.
+
+Compute perplexity on WikiText using PSANN-LM directly (fallback when lm-eval rolling API is finicky).
 
 Example:
   python scripts/ppl_wikitext_psann.py \

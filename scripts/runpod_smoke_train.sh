@@ -19,18 +19,18 @@ export NCCL_ASYNC_ERROR_HANDLING=1
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -e .[lm]
+pip install -e . ./psannlm
 pip install hf_transfer langdetect datasets tokenizers bitsandbytes accelerate
 
 NUM_GPUS=${NUM_GPUS:-1}
 BATCH_TOKENS=${BATCH_TOKENS:-4096}
 
-CMD="torchrun --nproc_per_node=${NUM_GPUS} scripts/train_psann_lm.py \
+CMD="torchrun --nproc_per_node=${NUM_GPUS} -m psannlm train \
   --hf-dataset allenai/c4 --hf-name en --hf-text-key text \
   --hf-keep-ascii-only --hf-lang en \
   --tokenizer-backend tokenizers --train-tokenizer \
   --tokenizer-save-dir runs/tokenizer_smoke --tokenizer-sample-limit 5000 \
-  --base waveresnet --d-model 512 --n-layers 4 --n-heads 4 --d-mlp 2048 \
+  --architecture wave --d-model 512 --n-layers 4 --n-heads 4 --d-mlp 2048 \
   --batch-tokens ${BATCH_TOKENS} --grad-accum-steps 1 \
   --lr 5e-4 --weight-decay 0.01 \
   --amp bf16 --fsdp off \

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Compatibility sampling diagnostic; see docs/migration.md for canonical workflows.
 # Runs a small batch of chat-style prompts through an SFT trainer checkpoint.
 #
 # Defaults assume you ran the OASST1 SFT example and saved checkpoints into:

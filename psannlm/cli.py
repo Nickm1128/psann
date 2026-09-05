@@ -269,6 +269,9 @@ def build_parser() -> argparse.ArgumentParser:
     resume_p = sub.add_parser("resume", help="Resume training (alias of train)")
     resume_p.add_argument("args", nargs=argparse.REMAINDER)
 
+    sft_p = sub.add_parser("sft", help="Fine-tune a checkpoint on prompt/response pairs")
+    sft_p.add_argument("args", nargs=argparse.REMAINDER)
+
     eval_p = sub.add_parser("eval", help="Evaluate perplexity on a dataset")
     eval_p.add_argument("--ckpt", required=True)
     eval_p.add_argument(
@@ -328,6 +331,10 @@ def _read_prompts(prompt_list: Optional[List[str]], prompts_file: Optional[str])
 
 def main(argv: Optional[Iterable[str]] = None, *, _legacy_entry: bool = False) -> int:
     tokens = list(argv) if argv is not None else sys.argv[1:]
+    if tokens and tokens[0] == "sft":
+        from .sft import main as run_sft
+
+        return run_sft(tokens[1:])
     if tokens and tokens[0] in {"train", "resume"}:
         command, flags = tokens[0], tokens[1:]
         options = {token.split("=", 1)[0] for token in flags if token.startswith("--")}

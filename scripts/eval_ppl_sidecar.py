@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""
+"""Compatibility diagnostic; see docs/migration.md for canonical workflows.
+
+
 Sidecar perplexity eval for PSANN-LM checkpoints.
 
 Example:

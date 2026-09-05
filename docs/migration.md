@@ -125,6 +125,8 @@ Use `python -m psannlm train`, `resume`, `eval`, and `generate`. The legacy `pyt
 
 ## Checkpoint families
 
+`python -m psannlm sft` delegates to the existing supervised fine-tuning runtime. The direct `python -m psannlm.sft` route remains usable. Source-checkout checkpoint diagnostics (`eval_ppl_sidecar.py`, `generate_from_trainer_ckpt.py`, `generate_from_ckpt_step6500.py`, `ppl_wikitext_psann.py`, and `finalize_bmrk01.py`) retain their historical evaluation or sampling settings; use the canonical CLI for new workflows. `profile_hisso.py` retains the old model-level trainer solely to reproduce its GELU-network timing workload; replacing its model would change that measurement.
+
 | Input family | Supported route and result |
 | --- | --- |
 | Core unversioned/class-named, schema v1/v2 | `PSANNRegressor.load(path, map_location=...)`; normalizes architecture/preprocessing/episodic metadata; saving produces schema v3 |
