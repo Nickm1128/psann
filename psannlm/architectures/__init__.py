@@ -16,7 +16,8 @@ from .registry import (
     LMCapabilities,
     available_lm_architectures,
     build_lm_model,
-    register_lm_builder,
+    register_lm_builder as register_lm_builder,
+    replace_lm_builder,
 )
 
 __all__ = [
@@ -33,5 +34,5 @@ __all__ = [
     "LMCapabilities",
     "available_lm_architectures",
     "build_lm_model",
-    "register_lm_builder",
+    "replace_lm_builder",
 ]

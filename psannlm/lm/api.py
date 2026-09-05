@@ -331,7 +331,6 @@ class PSANNLM:
         top_p: Optional[float] = 0.9,
         temperature: float = 1.0,
         repetition_penalty: Optional[float] = None,
-        **kwargs: Any,
     ) -> str:
         """Generate text from one prompt using top-k/top-p sampling."""
 
@@ -572,6 +571,33 @@ class psannLM(PSANNLM):
         if self.vocab_size is None:
             self._ensure_model(32000)
         super().save(path)
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        max_new_tokens: int = 128,
+        top_k: Optional[int] = None,
+        top_p: Optional[float] = 0.9,
+        temperature: float = 1.0,
+        repetition_penalty: Optional[float] = None,
+        **kwargs: Any,
+    ) -> str:
+        """Preserve ignored 0.x options only in the deprecated adapter."""
+        if kwargs:
+            compatibility_warning(
+                "psannLM.generate ignored legacy options: "
+                + ", ".join(sorted(kwargs))
+                + ". PSANNLM.generate rejects unknown options."
+            )
+        return super().generate(
+            prompt,
+            max_new_tokens=max_new_tokens,
+            top_k=top_k,
+            top_p=top_p,
+            temperature=temperature,
+            repetition_penalty=repetition_penalty,
+        )
 
 
 class psannLMDataPrep(PSANNLMDataPrep):

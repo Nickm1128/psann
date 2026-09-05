@@ -440,9 +440,21 @@ warmup, optimizer, accumulation and checkpoint policy fields explicitly.
 
 `get_base`, `list_bases`, and `register_base` retain external 0.x factory signatures in
 the canonical registry's compatibility namespace. Replacing a name requires `replace=True`.
-Such external factories remain noncanonical low-level extensions; new extensions use
-`register_lm_builder` and `LMBuildRequest`/`LMBuildResult`. Direct legacy transformer config
+Such external factories remain noncanonical low-level extensions. The canonical
+`replace_lm_builder(name, builder)` API replaces an implementation for one of the four
+typed kinds; it does not register new architecture names. A replacement consumes the
+complete `LMBuildRequest` and returns `LMBuildResult` with matching `LMCapabilities`.
+Configuration and capability validation remain enforced. Install the same replacement
+before loading its artifacts; checkpoints store the kind and policies, not Python code.
+The deprecated `register_lm_builder(..., replace=True)` spelling delegates to this
+replacement contract and rejects new names. See the
+[contributor guide](how_to_add_model_benchmark_dataset.md) for a runnable example.
+Direct legacy transformer config
 classes remain documented low-level compatibility surfaces with numerical parity tests.
+
+`PSANNLM.generate` rejects unknown keyword options, including misspelled sampling
+controls. The lowercase `psannLM.generate` adapter retains ignored 0.x options with
+one deprecation warning naming them; use the canonical signature for new calls.
 
 New model files have schema `psannlm.model`, integer version 1, package version, canonical
 configuration, tensor state, device and fitted tokenizer state. New trainer files have

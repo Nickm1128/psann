@@ -46,5 +46,6 @@ def register_base(name: str, factory: Callable[..., nn.Module], *, replace: bool
         raise ValueError(f"registry.{key} is already registered; replacement must be explicit.")
     register_legacy_factory(key, factory, replace=replace)
     compatibility_warning(
-        "register_base is deprecated; use register_lm_builder for typed construction."
+        "register_base is deprecated; replace_lm_builder replaces an existing typed kind. "
+        "External 0.x names retain their legacy factory contract."
     )

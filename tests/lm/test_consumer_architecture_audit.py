@@ -1,9 +1,38 @@
 """Import direction and maintained construction routes are executable boundaries."""
 
 import ast
+import re
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "docs/lm.md",
+        "docs/how_to_add_model_benchmark_dataset.md",
+        "psannlm/README.md",
+    ],
+)
+def test_maintained_lm_documents_teach_canonical_builder_registration(document):
+    text = (ROOT / document).read_text(encoding="utf-8")
+    assert "psannlm/lm/models/registry.py" not in text
+    for snippet in re.findall(r"```python\n(.*?)```", text, re.S):
+        tree = ast.parse(snippet)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                name = (
+                    node.func.id
+                    if isinstance(node.func, ast.Name)
+                    else (node.func.attr if isinstance(node.func, ast.Attribute) else "")
+                )
+                assert name not in {"register_base", "get_base", "register_lm_builder"}, (
+                    document,
+                    name,
+                )
 
 
 def test_lm_imports_only_documented_shared_core_modules_and_exports():

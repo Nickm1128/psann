@@ -1,6 +1,7 @@
 """Inspect real independently built distribution artifacts."""
 
 from pathlib import Path
+from email.parser import Parser
 import subprocess
 import sys
 import tarfile
@@ -46,6 +47,8 @@ def test_built_distribution_has_exact_package_boundary(distribution, tmp_path):
         assert "Requires-Dist: psannlm" not in metadata
     else:
         assert "Requires-Dist: psann>=" in metadata
+        requirements = Parser().parsestr(metadata).get_all("Requires-Dist", [])
+        assert any(requirement.lower() == "pyyaml>=6.0" for requirement in requirements)
         assert not any(
             name.startswith(("psann/", "src/psann/")) for name in wheel_names | sdist_names
         )

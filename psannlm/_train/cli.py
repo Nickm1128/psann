@@ -347,7 +347,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[list[str]] = None) -> int:
     tokens = list(argv) if argv is not None else sys.argv[1:]
-    args = build_parser().parse_args(tokens)
+    parser = build_parser()
+    args = parser.parse_args(tokens)
+    # Let argparse resolve aliases, equals syntax and unambiguous abbreviations.
+    # A second parse without defaults distinguishes explicit options from defaults.
+    for action in parser._actions:
+        action.default = argparse.SUPPRESS
+    explicit = set(vars(parser.parse_args(tokens)))
+    if (args.model_config or args.architecture) and (
+        "base" in explicit or any(name.startswith("sine_") for name in explicit)
+    ):
+        raise ValueError(
+            "--base/--sine options cannot accompany --architecture or --model-config; "
+            "put canonical policies in --model-config."
+        )
 
     seq_len = int(args.seq_len) if args.seq_len is not None else int(args.max_length)
     args.max_length = seq_len
@@ -636,30 +649,21 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         raw = yaml.safe_load(Path(args.model_config).read_text(encoding="utf-8"))
         config = normalize_lm_config(raw)
-        explicit = {token.split("=", 1)[0] for token in tokens if token.startswith("--")}
         aliases = {
-            "--d-model": "d_model",
-            "--n-layers": "n_layers",
-            "--n-heads": "n_heads",
-            "--d-mlp": "d_mlp",
-            "--vocab-size": "vocab_size",
-            "--pos-enc": "positional_encoding",
-            "--attn-impl": "attn_impl",
+            "d_model": "d_model",
+            "n_layers": "n_layers",
+            "n_heads": "n_heads",
+            "d_mlp": "d_mlp",
+            "vocab_size": "vocab_size",
+            "pos_enc": "positional_encoding",
+            "attn_impl": "attn_impl",
         }
         normalize_lm_config(
             config, **{name: flat[name] for flag, name in aliases.items() if flag in explicit}
         )
         if args.architecture and config.architecture.kind != args.architecture:
             raise ValueError("--architecture conflicts with --model-config.architecture.kind.")
-        if "--base" in explicit or any(flag.startswith("--sine-") for flag in explicit):
-            raise ValueError(
-                "--base/--sine options cannot accompany --model-config; put policies in the config."
-            )
     elif args.architecture:
-        if "--base" in tokens or any(token.startswith("--sine-") for token in tokens):
-            raise ValueError(
-                "--architecture requires canonical activation policy via --model-config instead of --base/--sine options."
-            )
         config = LMConfig(
             architecture=normalize_architecture(args.architecture),
             d_model=args.d_model,

@@ -185,7 +185,11 @@ def test_benchmark_main_all_five_factories_train_eval_and_save_canonical_metadat
 
 
 @pytest.mark.parametrize("kind", ["transformer", "residual", "wave", "geometric-sparse"])
-def test_unified_cli_real_yaml_train_resume_eval_generate(kind, tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("config_equals", [False, True], ids=["config-spaced", "config-equals"])
+@pytest.mark.parametrize("resume_equals", [False, True], ids=["resume-spaced", "resume-equals"])
+def test_unified_cli_real_yaml_train_resume_eval_generate(
+    kind, config_equals, resume_equals, tmp_path, monkeypatch, capsys
+):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     text = tmp_path / "texts.txt"
     text.write_text(TEXT, encoding="utf-8")
@@ -215,14 +219,20 @@ def test_unified_cli_real_yaml_train_resume_eval_generate(kind, tmp_path, monkey
     original = deepcopy(raw)
     config = tmp_path / "config.yaml"
     config.write_text(yaml.safe_dump(raw), encoding="utf-8")
-    assert main(["train", "--config", str(config)]) == 0
+    config_args = [f"--config={config}"] if config_equals else ["--config", str(config)]
+    assert main(["train", *config_args]) == 0
     first = torch.load(output / "final.pt", weights_only=True)
     assert first["state"]["step"] == 3
     assert first["config"]["architecture"]["kind"] == kind
     assert yaml.safe_load(config.read_text()) == original
     raw["train"]["steps_per_epoch"] = 6
     config.write_text(yaml.safe_dump(raw), encoding="utf-8")
-    assert main(["resume", "--config", str(config), "--resume-ckpt", str(output / "final.pt")]) == 0
+    resume_args = (
+        [f"--resume-ckpt={output / 'final.pt'}"]
+        if resume_equals
+        else ["--resume-ckpt", str(output / "final.pt")]
+    )
+    assert main(["resume", *config_args, *resume_args]) == 0
     final = torch.load(output / "final.pt", weights_only=True)
     assert final["state"]["step"] == 6 and final["config"] == first["config"]
     assert not torch.equal(final["model"]["lm_head.weight"], first["model"]["lm_head.weight"])
@@ -346,8 +356,9 @@ def test_maintained_examples_execute_builder_optimizer_and_generation(
 
 
 @pytest.mark.parametrize("entrypoint", ["canonical", "legacy-stream", "legacy-yaml"])
+@pytest.mark.parametrize("equals", [False, True], ids=["spaced", "equals"])
 def test_training_entrypoints_delegate_identical_nondefault_config_updates_and_export(
-    entrypoint, tmp_path, capsys
+    entrypoint, equals, tmp_path, capsys
 ):
     from psannlm.architectures import LMArchitectureConfig, to_mapping
     from psann.architectures import SpectralConfig
@@ -410,6 +421,10 @@ def test_training_entrypoints_delegate_identical_nondefault_config_updates_and_e
         "legacy-stream": legacy_stream,
         "legacy-yaml": legacy_yaml,
     }[entrypoint]
+    entry = function
+    function = lambda argv: entry(
+        [f"{name}={value}" for name, value in zip(argv[::2], argv[1::2])] if equals else argv
+    )
     assert (
         function(
             [

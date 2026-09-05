@@ -330,9 +330,10 @@ def main(argv: Optional[Iterable[str]] = None, *, _legacy_entry: bool = False) -
     tokens = list(argv) if argv is not None else sys.argv[1:]
     if tokens and tokens[0] in {"train", "resume"}:
         command, flags = tokens[0], tokens[1:]
-        if command == "resume" and "--resume-ckpt" not in flags:
+        options = {token.split("=", 1)[0] for token in flags if token.startswith("--")}
+        if command == "resume" and "--resume-ckpt" not in options:
             raise SystemExit("resume requires --resume-ckpt.")
-        if "--config" in flags:
+        if "--config" in options:
             parser = argparse.ArgumentParser(description="Train PSANN-LM from canonical YAML")
             parser.add_argument("--config", required=True)
             parser.add_argument("--resume-ckpt")

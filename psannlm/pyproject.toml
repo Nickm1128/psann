@@ -28,6 +28,7 @@ dependencies = [
   "sentencepiece>=0.1.99",
   "tokenizers>=0.13",
   "datasets>=2.14",
+  "PyYAML>=6.0",
 ]
 
 [project.urls]
