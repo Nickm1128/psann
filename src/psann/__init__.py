@@ -9,8 +9,8 @@ import importlib
 
 __all__ = [
     # Estimators
-    "AttentionConfig",
     "PSANNRegressor",
+    "ArchitectureConfig",
     "EpisodicTrainer",
     "EpisodeScheduleConfig",
     "HISSOConfig",
@@ -27,8 +27,6 @@ __all__ = [
     "PreprocessorTrainingConfig",
     "SineParam",
     "ReLUSigmoidPSANN",
-    "ActivationConfig",
-    "StateConfig",
     "StateController",
     "ensure_state_config",
     # Token utilities
@@ -65,6 +63,7 @@ _LAZY_ATTRS = {
     # Estimator surfaces
     "AttentionConfig": ".attention",
     "PSANNRegressor": ".sklearn",
+    "ArchitectureConfig": ".architectures",
     "EpisodicTrainer": ".episodic",
     "EpisodeScheduleConfig": ".episodic",
     "HISSOConfig": ".episodic",
@@ -154,4 +153,4 @@ def __dir__() -> list[str]:
     return sorted(list(globals().keys()) + list(_LAZY_ATTRS.keys()))
 
 
-__version__ = "0.12.4"
+__version__ = "0.13.0"

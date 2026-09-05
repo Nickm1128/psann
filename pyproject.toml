@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psann"
-version = "0.12.4"
+version = "0.13.0"
 description = "PSANN: Parameterized Sine-Activated Neural Networks (primary-output, sklearn-style, PyTorch backend)"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
   "numpy>=1.23",
   "torch>=2.1",
+  "PyYAML>=6.0",
 ]
 
 [project.urls]
@@ -33,7 +34,7 @@ Homepage = "https://github.com/psann-project/psann"
 Repository = "https://github.com/psann-project/psann"
 Issues = "https://github.com/psann-project/psann/issues"
 Documentation = "https://github.com/psann-project/psann/tree/main/docs"
-Changelog = "https://github.com/psann-project/psann/blob/main/docs/migration.md"
+Changelog = "https://github.com/psann-project/psann/blob/main/CHANGELOG.md"
 Contributing = "https://github.com/psann-project/psann/blob/main/docs/CONTRIBUTING.md"
 
 [tool.hatch.build.targets.wheel]
@@ -87,6 +88,7 @@ exclude = [
 [project.optional-dependencies]
 dev = [
   "pytest>=7.0",
+  "ipython>=8.0",
   "pytest-json-report>=1.5",
   "ruff>=0.5.0",
   "black>=24.0",
