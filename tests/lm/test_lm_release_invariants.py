@@ -11,7 +11,10 @@ from psannlm import persistence
 
 @pytest.mark.parametrize("streaming", [False, True], ids=["local", "exhausted-stream"])
 def test_cli_budget_and_exhaustion_text_after_real_training_and_versioned_resaves(
-    streaming, tmp_path, monkeypatch, capsys,
+    streaming,
+    tmp_path,
+    monkeypatch,
+    capsys,
 ):
     from psannlm._train import cli
 
@@ -29,18 +32,45 @@ def test_cli_budget_and_exhaustion_text_after_real_training_and_versioned_resave
 
     monkeypatch.setattr(cli, "build_lm_model", build)
     if streaming:
+
         def stream(**kwargs):
             assert kwargs["seq_len"] == 2
             yield {"input_ids": torch.tensor([1, 2]), "labels": torch.tensor([2, 3])}
+
         monkeypatch.setattr(cli, "streamed_token_iterator", stream)
 
     args = [
-        "train", "--data-manifest", str(manifest), "--tokenizer-backend", "simple",
-        "--architecture", "transformer", "--d-model", "8", "--n-layers", "1",
-        "--n-heads", "2", "--max-length", "2", "--batch-tokens", "2",
-        "--max-steps", "3", "--warmup-steps", "0", "--amp", "fp32",
-        "--ddp", "off", "--device", "cpu", "--num-workers", "0",
-        "--checkpoint-dir", str(tmp_path / "checkpoint"),
+        "train",
+        "--data-manifest",
+        str(manifest),
+        "--tokenizer-backend",
+        "simple",
+        "--architecture",
+        "transformer",
+        "--d-model",
+        "8",
+        "--n-layers",
+        "1",
+        "--n-heads",
+        "2",
+        "--max-length",
+        "2",
+        "--batch-tokens",
+        "2",
+        "--max-steps",
+        "3",
+        "--warmup-steps",
+        "0",
+        "--amp",
+        "fp32",
+        "--ddp",
+        "off",
+        "--device",
+        "cpu",
+        "--num-workers",
+        "0",
+        "--checkpoint-dir",
+        str(tmp_path / "checkpoint"),
     ]
     if streaming:
         args[1:3] = ["--hf-dataset", "local-test-stream"]
@@ -65,9 +95,11 @@ def test_cli_budget_and_exhaustion_text_after_real_training_and_versioned_resave
     loaded.model.eval()
     ids = torch.tensor([[1, 2]])
     expected = loaded.model(ids).detach()
+
     # Exercise the source fallback while emitting real model checkpoints too.
     def missing(_):
         raise importlib.metadata.PackageNotFoundError("psannlm")
+
     monkeypatch.setattr(persistence, "version", missing)
     for generation in (1, 2):
         path = tmp_path / f"model-{generation}.pt"
