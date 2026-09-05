@@ -46,12 +46,15 @@ def test_legacy_wave_without_context_survives_parameter_reconstruction(route, tm
     ],
 )
 @pytest.mark.parametrize("lsm", [None, {"output_dim": 4, "hidden_units": 8, "hidden_layers": 1}])
-def test_legacy_wrapper_with_flat_preprocessing_emits_one_caller_warning(name, lsm):
+@pytest.mark.parametrize("hidden_width", [None, 8])
+def test_legacy_wrapper_with_flat_preprocessing_emits_one_caller_warning(name, lsm, hidden_width):
     import psann
     import warnings
     from pathlib import Path
 
     kwargs = {"lsm": lsm, "lsm_train": False, "lsm_pretrain_epochs": 0, "lsm_lr": None}
+    if hidden_width is not None:
+        kwargs["hidden_width"] = hidden_width
     if name == "GeoSparseRegressor":
         kwargs["shape"] = (2, 2)
     with warnings.catch_warnings(record=True) as caught:
