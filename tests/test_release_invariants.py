@@ -207,7 +207,7 @@ MOJIBAKE = (
 )
 
 
-def test_maintained_public_text_contains_no_common_mojibake():
+def test_maintained_public_text_has_no_encoding_or_citation_artifacts():
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
     suffixes = {".py", ".md", ".rst", ".toml", ".yaml", ".yml", ".json", ".ipynb", ".sh", ".txt"}
     failures = []
@@ -215,7 +215,12 @@ def test_maintained_public_text_contains_no_common_mojibake():
         path = ROOT / name
         if path.suffix.lower() in suffixes and path.is_file():
             text = path.read_text(encoding="utf-8")
-            failures.extend((name, sequence) for sequence in MOJIBAKE if sequence in text)
+            unresolved_citations = (":content" + "Reference[", "oai" + "cite:")
+            failures.extend(
+                (name, sequence)
+                for sequence in (*MOJIBAKE, *unresolved_citations)
+                if sequence in text
+            )
     assert failures == []
     assert not any(sequence in "café ≈ 2 — 中文" for sequence in MOJIBAKE)
 
