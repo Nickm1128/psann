@@ -373,3 +373,58 @@ def test_compile_mode_neighbors_are_explicit(mode):
     assert normalize_train_config({"torch_compile_mode": mode}).torch_compile_mode == mode
     with pytest.raises(ValueError, match="train.torch_compile_mode"):
         normalize_train_config({"torch_compile_mode": mode + "-unknown"})
+
+
+@pytest.mark.parametrize(
+    "duplicate",
+    [
+        {"epochs": True},
+        {"epochs": "1"},
+        {"lr": "0.003"},
+        {"grad_checkpoint": 0},
+        {"__class__": TrainConfig},
+        {"lr": 0.004},
+    ],
+)
+def test_canonical_fit_duplicates_validate_types_before_construction_and_matching_values_execute(
+    duplicate, tmp_path
+):
+    data = PSANNLMDataPrep(
+        ["abc def ghij klmn opq rst uvw xyz " * 8], tokenizer="simple", max_length=7
+    )
+    config = LMConfig(
+        architecture="residual",
+        d_model=24,
+        n_layers=2,
+        n_heads=3,
+        d_mlp=36,
+        vocab_size=data.vocab_size,
+    )
+    train = TrainConfig(
+        steps_per_epoch=3,
+        batch_tokens=14,
+        lr=0.003,
+        warmup_steps=0,
+        amp="fp32",
+        ddp="off",
+        checkpoint_dir=str(tmp_path),
+    )
+    lm = PSANNLM(config=config, device="cpu")
+    with pytest.raises((ValueError, TypeError), match="train."):
+        lm.fit(data, train=train, **duplicate)
+    assert lm._model is None and lm._trainer is None
+    states = []
+    for matching in (False, True):
+        torch.manual_seed(761)
+        model = PSANNLM(config=config, device="cpu")
+        before = model._ensure_model(data.vocab_size).lm_head.weight.detach().clone()
+        if matching:
+            with pytest.warns(DeprecationWarning) as warnings:
+                model.fit(data, train=train, epochs=1, lr=0.003, grad_checkpoint=False)
+            assert len(warnings) == 1 and warnings[0].filename == __file__
+        else:
+            model.fit(data, train=train)
+        assert model._trainer.cfg is train and not torch.equal(before, model._model.lm_head.weight)
+        states.append(model._model.state_dict())
+    for key in states[0]:
+        torch.testing.assert_close(states[0][key], states[1][key], rtol=0, atol=0)

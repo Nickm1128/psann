@@ -377,3 +377,32 @@ def test_single_depth_geometric_drop_path_legacy_identity_and_canonical_runtime(
         torch.testing.assert_close(a, b, rtol=0, atol=0)
     a.square().mean().backward()
     assert torch.count_nonzero(active.lm_head.weight.grad) > 10
+
+
+@pytest.mark.parametrize("field", ["amp", "freq", "damp"])
+@pytest.mark.parametrize("spread", [-0.23, 0.0, 0.23])
+def test_legacy_spread_range_precedence_preserves_parameters_logits_gradients_and_rng(
+    field, spread
+):
+    sine = SineConfig(
+        amp_init=1.3,
+        freq_init=0.8,
+        damp_init=0.04,
+        **{field + "_init_std": spread, field + "_range": (0.8, 0.13)},
+    )
+    raw = dict(vocab_size=29, d_model=24, n_heads=3, n_layers=2, d_mlp=36, sine=sine)
+    seed()
+    expected = ResPSANNTransformer(ResPSANNTransformerConfig(**raw))
+    rng = torch.get_rng_state().clone(), random.getstate()
+    seed()
+    with pytest.warns(DeprecationWarning) as warnings:
+        config = legacy_lm_config("respsann", raw)
+    assert len(warnings) == 1 and warnings[0].filename == __file__
+    assert ("wins" in str(warnings[0].message)) == (spread > 0)
+    actual = build_lm_model(config).model
+    assert torch.equal(torch.get_rng_state(), rng[0]) and random.getstate() == rng[1]
+    compare(actual, expected)
+    name = {"amp": "amplitude", "freq": "frequency", "damp": "decay"}[field]
+    init = config.architecture.activation_initialization
+    assert getattr(init, name + "_std") == max(spread, 0)
+    assert getattr(init, name + "_range") == (None if spread > 0 else (0.13, 0.8))

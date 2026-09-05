@@ -261,9 +261,19 @@ class PSANNLM:
             raise TypeError("train_data must be PSANNLMDataPrep.")
         if train is not None:
             training = normalize_train_config(train)
-            for name, value in flat.items():
-                if not hasattr(training, name) or getattr(training, name) != value:
-                    raise ValueError(f"flat.{name} conflicts with train.{name}.")
+            if flat:
+                # Validate duplicates with the same strict policy boundary as all
+                # other canonical training input (True must not compare as 1).
+                from dataclasses import fields
+
+                values = {field.name: getattr(training, field.name) for field in fields(training)}
+                for name in flat:
+                    if name not in values:
+                        raise ValueError(f"flat.{name} conflicts with train.{name}.")
+                duplicated = normalize_train_config(dict(values, **flat))
+                for name in flat:
+                    if getattr(training, name) != getattr(duplicated, name):
+                        raise ValueError(f"flat.{name} conflicts with train.{name}.")
             if flat:
                 compatibility_warning(
                     "Flat fit arguments are deprecated; matching values were normalized once."
