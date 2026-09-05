@@ -123,10 +123,17 @@ def test_release_helper_advances_all_version_writers_on_temporary_copies(
 
 
 @pytest.mark.parametrize("name", LEGACY)
-def test_legacy_lifecycle_warns_only_at_direct_construction_and_preserves_parity(name, tmp_path):
+@pytest.mark.parametrize("clone_hook", [True, False], ids=["clone-hook", "constructor-clone"])
+def test_legacy_lifecycle_warns_only_at_direct_construction_and_preserves_parity(
+    name, clone_hook, tmp_path, monkeypatch
+):
     from sklearn.base import clone
 
     facade = getattr(psann, name)
+    if not clone_hook:
+        # sklearn 1.2 uses constructor reconstruction; newer versions retain
+        # that same fallback when the estimator has no custom cloning hook.
+        monkeypatch.delattr(facade.__mro__[1], "__sklearn_clone__")
     options = dict(
         hidden_layers=2,
         hidden_width=8,
@@ -218,8 +225,11 @@ def test_unversioned_checkpoint_facade_reconstruction_is_silent_and_closes_twice
     import importlib
 
     module = {
-        "ResPSANNRegressor": "residual", "ResConvPSANNRegressor": "residual",
-        "SGRPSANNRegressor": "sgr", "WaveResNetRegressor": "wave", "GeoSparseRegressor": "geosparse",
+        "ResPSANNRegressor": "residual",
+        "ResConvPSANNRegressor": "residual",
+        "SGRPSANNRegressor": "sgr",
+        "WaveResNetRegressor": "wave",
+        "GeoSparseRegressor": "geosparse",
     }[name]
     old_class = getattr(importlib.import_module(f"psann._sklearn.{module}"), name)
     options = dict(hidden_layers=2, hidden_units=8, epochs=2, random_state=71, device="cpu")
@@ -248,18 +258,20 @@ def test_unversioned_checkpoint_facade_reconstruction_is_silent_and_closes_twice
 
 @pytest.mark.parametrize("defect", ["missing-floor", "duplicate-floor", "missing-fallback"])
 def test_lm_release_writer_rejects_missing_or_ambiguous_version_fields_without_writing(
-    defect, tmp_path, monkeypatch,
+    defect,
+    tmp_path,
+    monkeypatch,
 ):
     from scripts import release
 
     project = (ROOT / "psannlm/pyproject.toml").read_text()
     fallback = (ROOT / "psannlm/persistence.py").read_text()
     if defect == "missing-floor":
-        project = project.replace('"psann>=0.13.0",', '')
+        project = project.replace('"psann>=0.13.0",', "")
     elif defect == "duplicate-floor":
         project = project.replace('"psann>=0.13.0",', '"psann>=0.13.0", "psann>=0.12.4",')
     else:
-        fallback = fallback.replace('_PACKAGE_VERSION = "0.13.0"', '')
+        fallback = fallback.replace('_PACKAGE_VERSION = "0.13.0"', "")
     project_path, fallback_path = tmp_path / "pyproject.toml", tmp_path / "persistence.py"
     project_path.write_text(project)
     fallback_path.write_text(fallback)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import warnings
 from inspect import Parameter, Signature
 from typing import Any, Mapping, cast
@@ -257,7 +258,19 @@ class _LegacyFacade(PSANNRegressor):
     _legacy_signature: Signature
 
     def _warn(self) -> None:
-        if not self.__dict__.get("_compat_internal_reconstruction", False):
+        # sklearn 1.2 predates __sklearn_clone__ and invokes the constructor
+        # directly. Recognize only sklearn's actual clone function code, not
+        # arbitrary library callers, while retaining external caller warnings.
+        caller = sys._getframe(2)
+        sklearn_base = sys.modules.get("sklearn.base")
+        clone_function = (
+            getattr(sklearn_base, caller.f_code.co_name, None)
+            if caller.f_code.co_name in {"clone", "_clone_parametrized"}
+            else None
+        )
+        framework_clone = getattr(clone_function, "__code__", None) is caller.f_code
+        del caller
+        if not framework_clone and not self.__dict__.get("_compat_internal_reconstruction", False):
             warnings.warn(
                 f"{self._legacy_name} is deprecated; use PSANNRegressor(architecture=...).",
                 DeprecationWarning,
@@ -283,7 +296,10 @@ class _LegacyFacade(PSANNRegressor):
         from sklearn.base import clone
 
         return self._from_constructor_params(
-            **{name: clone(value, safe=False) for name, value in self.get_params(deep=False).items()}
+            **{
+                name: clone(value, safe=False)
+                for name, value in self.get_params(deep=False).items()
+            }
         )
 
     def _capture_legacy_params(self, supplied: Mapping[str, Any]) -> None:
