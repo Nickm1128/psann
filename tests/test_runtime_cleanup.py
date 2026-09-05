@@ -8,6 +8,51 @@ from psann.state import StateController
 from psann.utils.linear_probe import _unpack_batch
 
 
+@pytest.mark.parametrize("route", ["explicit-none", "set-params", "clone"])
+def test_legacy_wave_without_context_survives_parameter_reconstruction(route, tmp_path):
+    import numpy as np
+    from sklearn.base import clone
+    from psann import PSANNRegressor, WaveResNetRegressor
+
+    kwargs = dict(hidden_layers=2, hidden_units=8, epochs=2, random_state=31, device="cpu")
+    if route == "explicit-none":
+        kwargs["context_dim"] = None
+    model = WaveResNetRegressor(**kwargs)
+    if route == "set-params":
+        model.set_params(lr=0.003)
+    elif route == "clone":
+        model = clone(model)
+    x = np.random.default_rng(13).normal(size=(16, 4)).astype(np.float32)
+    y = x[:, :1] * 0.3
+    model.fit(x, y)
+    expected = model.predict(x)
+    assert model.architecture.context is None
+    for generation in (1, 2):
+        path = tmp_path / f"wave-{generation}.pt"
+        model.save(path)
+        model = PSANNRegressor.load(path)
+        assert model.architecture.context is None
+        np.testing.assert_array_equal(model.predict(x), expected)
+
+
+@pytest.mark.parametrize("name", ["ResPSANNRegressor", "ResConvPSANNRegressor", "SGRPSANNRegressor", "WaveResNetRegressor", "GeoSparseRegressor"])
+@pytest.mark.parametrize("lsm", [None, {"output_dim": 4, "hidden_units": 8, "hidden_layers": 1}])
+def test_legacy_wrapper_with_flat_preprocessing_emits_one_caller_warning(name, lsm):
+    import psann
+    import warnings
+    from pathlib import Path
+
+    kwargs = {"lsm": lsm, "lsm_train": False, "lsm_pretrain_epochs": 0, "lsm_lr": None}
+    if name == "GeoSparseRegressor":
+        kwargs["shape"] = (2, 2)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        getattr(psann, name)(**kwargs)
+    deprecations = [warning for warning in caught if warning.category is DeprecationWarning]
+    assert len(deprecations) == 1
+    assert Path(deprecations[0].filename).resolve() == Path(__file__).resolve()
+
+
 def test_state_controller_preserves_recursive_module_apply_and_tensor_updates():
     controller = StateController(3, init=2.0)
     model = nn.Sequential(nn.Linear(3, 3), controller)
