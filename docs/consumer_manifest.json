@@ -1,0 +1,804 @@
+{
+  "schema_version": 1,
+  "documents": [
+    {
+      "path": "CHANGELOG.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "TECHNICAL_DETAILS.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "benchmarks/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "benchmarks/psann_results_assessment.md",
+      "classification": "historical result"
+    },
+    {
+      "path": "datasets/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/API.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/CONTRIBUTING.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/PROJECT_MAP.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/PSANN_Results_Compendium.md",
+      "classification": "historical result"
+    },
+    {
+      "path": "docs/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/REPO_STRUCTURE.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/analysis_claims.md",
+      "classification": "historical result"
+    },
+    {
+      "path": "docs/architecture.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/architecture_components.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/architecture_contract.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/benchmarks/hisso_variants.md",
+      "classification": "historical result"
+    },
+    {
+      "path": "docs/benchmarks/lm_base_sweeps.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/benchmarks/promotion_guide.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/deprecation_policy.md",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "docs/diagnostics.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/episodic.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/examples/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/geo_sparse.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/geo_sparse_benchmarks_report.md",
+      "classification": "historical result"
+    },
+    {
+      "path": "docs/geo_sparse_benchmarks_summary.md",
+      "classification": "historical result"
+    },
+    {
+      "path": "docs/how_to_add_model_benchmark_dataset.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/lm.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/lm_3b_quickstart.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/migration.md",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "docs/performance_tips.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/preprocessing.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/public_api.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/wave_resnet.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "logs/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "outputs/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "psannlm/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "reports/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "runs/README.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/README.md",
+      "classification": "canonical"
+    }
+  ],
+  "examples": [
+    {
+      "path": "examples/01_basic_regression.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/02_verbose_val_noise.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/03_custom_loss.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/04_multidim_flatten_mlp.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/05_conv_preserve_shape_regression.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/06_segmentation_2d.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/07_recurrent_forecasting.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/08_psann_vs_lstm.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/09_stateful_attached_vs_lstm.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/10_2d_timeseries_attention_vs_lstm.py",
+      "format": "python",
+      "boundary": "torch-composition",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/11_2d_classification_psann_vs_cnn.py",
+      "format": "python",
+      "boundary": "torch-composition",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/12_online_streaming_updates.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/13_online_vs_freerun_plot.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/14_psann_with_vs_without_lsm.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/15_episode_training_portfolio.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/16_episode_training_psann_vs_lsm.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/17_episode_training_conv_psann.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/21_psann_config_benchmark.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/26_hisso_unsupervised_allocation.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/27_hisso_lsm_allocation.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/28_geosparse_regression.py",
+      "format": "python",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/generate.py",
+      "format": "python",
+      "boundary": "lm-example",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/minimal_train.py",
+      "format": "python",
+      "boundary": "lm-example",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/quickstarts.py",
+      "format": "python",
+      "boundary": "complete-workflows",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/torch_backbone.py",
+      "format": "python",
+      "boundary": "torch-builder",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/HISSO_Logging_CLI_Walkthrough.ipynb",
+      "format": "notebook",
+      "boundary": "logging-config",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/HISSO_Logging_GPU_Run.ipynb",
+      "format": "notebook",
+      "boundary": "logging-config",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/PSANN_Parity_and_Probes.ipynb",
+      "format": "notebook",
+      "boundary": "torch-probes",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/PSANN_SineParam_Comparison.ipynb",
+      "format": "notebook",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/PSANN_WaveResNet_Context_Demo.ipynb",
+      "format": "notebook",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/bitcoin_5m_lsm_mixed_geosparse_direction.ipynb",
+      "format": "notebook",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/geosparse_vs_relu_benchmarks.ipynb",
+      "format": "notebook",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    },
+    {
+      "path": "notebooks/mixed_activation_geosparse_vs_relu.ipynb",
+      "format": "notebook",
+      "boundary": "core-estimator",
+      "classification": "canonical"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "configs/hisso/dense_cpu_smoke.yaml",
+      "runner": "hisso",
+      "classification": "canonical"
+    },
+    {
+      "path": "configs/hisso/wave_resnet_cpu_smoke.yaml",
+      "runner": "hisso",
+      "classification": "canonical"
+    },
+    {
+      "path": "configs/hisso/wave_resnet_small.yaml",
+      "runner": "hisso",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/base_compare_geosparse_quick.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/base_compare_quick.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/base_param_sweep_hypotheses_v1.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/base_param_sweep_hypotheses_v1_small.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/base_param_sweep_next_train.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/base_param_sweep_quick.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/geosparse_mixed50_vs_transformer_relu_quick.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/geosparse_mixed50_vs_transformer_relu_quick_distill.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/tiny_corpus_benchmark.yaml",
+      "runner": "lm-task",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/transformer_lr0.0022_vs_waveresnet_v1_small.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/transformer_match_waveresnet_v1_small.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/waveresnet_3b_fsdp.yaml",
+      "runner": "lm-task",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/waveresnet_compile_throughput_v1_small.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/waveresnet_cpu.yaml",
+      "runner": "lm-task",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/waveresnet_freq_gauss_tune_v2_small.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/waveresnet_freq_init_up_v1_small.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/waveresnet_lr_creep_v1_small.yaml",
+      "runner": "lm-benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/configs/waveresnet_small.yaml",
+      "runner": "lm-task",
+      "classification": "canonical"
+    }
+  ],
+  "cli": [
+    {
+      "path": "examples/21_psann_config_benchmark.py",
+      "module": "examples.21_psann_config_benchmark",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/lm/minimal_train.py",
+      "module": "examples.lm.minimal_train",
+      "classification": "canonical"
+    },
+    {
+      "path": "examples/quickstarts.py",
+      "module": "examples.quickstarts",
+      "classification": "canonical"
+    },
+    {
+      "path": "src/psann/scripts/hisso_log_run.py",
+      "module": "psann.scripts.hisso_log_run",
+      "classification": "canonical"
+    },
+    {
+      "path": "psannlm/__main__.py",
+      "module": "psannlm",
+      "classification": "canonical"
+    },
+    {
+      "path": "psannlm/cli.py",
+      "module": "psannlm.cli",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "psannlm/lm/train/cli.py",
+      "module": "psannlm.lm.train.cli",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "psannlm/sft.py",
+      "module": "psannlm.sft",
+      "classification": "canonical"
+    },
+    {
+      "path": "psannlm/train.py",
+      "module": "psannlm.train",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "scripts/aggregate_benchmarks.py",
+      "module": "scripts.aggregate_benchmarks",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/bench_lm_bases.py",
+      "module": "scripts.bench_lm_bases",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/benchmark_geo_sparse_micro.py",
+      "module": "scripts.benchmark_geo_sparse_micro",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/benchmark_geo_sparse_vs_dense.py",
+      "module": "scripts.benchmark_geo_sparse_vs_dense",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/benchmark_hisso_variants.py",
+      "module": "scripts.benchmark_hisso_variants",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/benchmark_kv_cache.py",
+      "module": "scripts.benchmark_kv_cache",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/benchmark_regressor_ablations.py",
+      "module": "scripts.benchmark_regressor_ablations",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/compare_geosparse_vs_dense_speed.py",
+      "module": "scripts.compare_geosparse_vs_dense_speed",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/compare_hisso_benchmarks.py",
+      "module": "scripts.compare_hisso_benchmarks",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/compare_tokenizers.py",
+      "module": "scripts.compare_tokenizers",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/count_psannlm_params.py",
+      "module": "scripts.count_psannlm_params",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/eval_ppl_sidecar.py",
+      "module": "scripts.eval_ppl_sidecar",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "scripts/fetch_benchmark_data.py",
+      "module": "scripts.fetch_benchmark_data",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/finalize_bmrk01.py",
+      "module": "scripts.finalize_bmrk01",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "scripts/gen_psannlm_chat.py",
+      "module": "scripts.gen_psannlm_chat",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/generate_from_ckpt_step6500.py",
+      "module": "scripts.generate_from_ckpt_step6500",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "scripts/generate_from_trainer_ckpt.py",
+      "module": "scripts.generate_from_trainer_ckpt",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "scripts/geo_sparse_sweep.py",
+      "module": "scripts.geo_sparse_sweep",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/gpu_env_report.py",
+      "module": "scripts.gpu_env_report",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/make_tiny_corpus.py",
+      "module": "scripts.make_tiny_corpus",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/microbench_psann.py",
+      "module": "scripts.microbench_psann",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/parse_trainer_log.py",
+      "module": "scripts.parse_trainer_log",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/plot_loss_from_csv.py",
+      "module": "scripts.plot_loss_from_csv",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/postprocess_full_suite.py",
+      "module": "scripts.postprocess_full_suite",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/ppl_wikitext_psann.py",
+      "module": "scripts.ppl_wikitext_psann",
+      "classification": "compatibility/migration"
+    },
+    {
+      "path": "scripts/profile_hisso.py",
+      "module": "scripts.profile_hisso",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/profile_psann.py",
+      "module": "scripts.profile_psann",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/release.py",
+      "module": "scripts.release",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_cuda_tests.py",
+      "module": "scripts.run_cuda_tests",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_full_suite.py",
+      "module": "scripts.run_full_suite",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_geosparse_vs_relu_benchmarks.py",
+      "module": "scripts.run_geosparse_vs_relu_benchmarks",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_gpu_tests.py",
+      "module": "scripts.run_gpu_tests",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_gpu_validation.py",
+      "module": "scripts.run_gpu_validation",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_light_probes.py",
+      "module": "scripts.run_light_probes",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/run_lm_eval_psann.py",
+      "module": "scripts.run_lm_eval_psann",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/train_psannlm_chat.py",
+      "module": "scripts.train_psannlm_chat",
+      "classification": "canonical"
+    },
+    {
+      "path": "tools/build_manifest.py",
+      "module": "tools.build_manifest",
+      "classification": "canonical"
+    },
+    {
+      "path": "tools/decontaminate.py",
+      "module": "tools.decontaminate",
+      "classification": "canonical"
+    },
+    {
+      "path": "tools/dedupe.py",
+      "module": "tools.dedupe",
+      "classification": "canonical"
+    },
+    {
+      "path": "tools/repo_hygiene_audit.py",
+      "module": "tools.repo_hygiene_audit",
+      "classification": "canonical"
+    }
+  ],
+  "inputs": [
+    {
+      "path": "datasets/wave_resnet_small.npz",
+      "kind": "tracked",
+      "consumer": "configs/hisso"
+    },
+    {
+      "path": "examples/lm/sample_texts.txt",
+      "kind": "tracked",
+      "consumer": "lm-task"
+    },
+    {
+      "path": "examples/lm/tokenizer/sample_texts.model",
+      "kind": "tracked",
+      "consumer": "tokenizer"
+    },
+    {
+      "path": "examples/lm/tokenizer/sample_texts.vocab",
+      "kind": "tracked",
+      "consumer": "tokenizer"
+    },
+    {
+      "path": "datasets/lm/tiny_books.txt",
+      "kind": "generated",
+      "generator": "scripts/make_tiny_corpus.py",
+      "arguments": [
+        "--out",
+        "datasets/lm/tiny_books.txt",
+        "--mb",
+        "1"
+      ],
+      "consumer": "examples/lm/configs/tiny_corpus_benchmark.yaml"
+    },
+    {
+      "path": "benchmarks/hisso_portfolio_prices.csv",
+      "kind": "tracked",
+      "consumer": "hisso-benchmark"
+    },
+    {
+      "kind": "external",
+      "provider": "Hugging Face datasets/tokenizers",
+      "consumer": "lm-benchmark",
+      "description": "Dataset/revision/split/tokenizer settings come from each configuration; local smoke coverage substitutes a declared synthetic corpus."
+    },
+    {
+      "kind": "external",
+      "provider": "yfinance",
+      "consumer": "notebooks/bitcoin_5m_lsm_mixed_geosparse_direction.ipynb",
+      "description": "Public provider data with changing five-minute retention; network/full experiment is opt-in."
+    }
+  ],
+  "workflows": [
+    {
+      "name": "core",
+      "consumer": "examples/quickstarts.py",
+      "function": "core",
+      "preprocessing": false
+    },
+    {
+      "name": "preprocessing",
+      "consumer": "examples/quickstarts.py",
+      "function": "core",
+      "preprocessing": true
+    },
+    {
+      "name": "episodic",
+      "consumer": "examples/quickstarts.py",
+      "function": "episodic",
+      "preprocessing": false
+    },
+    {
+      "name": "lm",
+      "consumer": "examples/quickstarts.py",
+      "function": "lm",
+      "preprocessing": false
+    }
+  ]
+}
