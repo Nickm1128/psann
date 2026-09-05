@@ -382,7 +382,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         global_tokens_per_step = tokens_per_step * world_size
         print(
             f"[budget] seq_len={seq_len} micro_batch={micro_batch} tokens_per_step={tokens_per_step:,} "
-            f"tokens_per_step_globalâ‰ˆ{global_tokens_per_step:,} target_tokensâ‰ˆ{target_msg} max_steps={max_steps_msg}"
+            f"tokens_per_step_global~{global_tokens_per_step:,} target_tokens~{target_msg} max_steps={max_steps_msg}"
         )
 
     if args.cuda_memory_fraction is not None:
@@ -776,7 +776,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(
             "[warn] Streaming dataset exhausted early "
             f"(step={trainer.state.step} < max_steps={int(args.max_steps):,}; "
-            f"trained_tokensâ‰ˆ{trained_tokens:,} vs target_tokensâ‰ˆ{target_msg})."
+            f"trained_tokens~{trained_tokens:,} vs target_tokens~{target_msg})."
         )
 
     # Copy final artifact if requested
