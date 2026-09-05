@@ -141,9 +141,9 @@ def available_lm_architectures() -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class LegacyFactoryRegistration:
-    """Opaque 0.x extension stored in the same registry, outside typed dispatch.
+    """Opaque legacy extension stored in the same registry, outside typed dispatch.
 
-    External 0.x factories retain their own keyword contract. Maintained model
+    External legacy factories retain their own keyword contract. Maintained model
     construction uses typed builders; registering this adapter does not replace
     a canonical architecture or claim canonical persistence for arbitrary modules.
     """

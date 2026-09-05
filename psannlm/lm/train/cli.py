@@ -1,4 +1,4 @@
-"""0.x YAML entrypoint delegating to the canonical training command."""
+"""Legacy YAML entrypoint delegating to the canonical training command."""
 
 from __future__ import annotations
 import argparse

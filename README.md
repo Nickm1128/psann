@@ -2,7 +2,7 @@
 
 PSANN is a PyTorch library for regression with trainable sinusoidal activations, composed preprocessing, and episodic optimization. The separate `psannlm` distribution provides language modeling.
 
-The source tree prepares **0.13.0** for both packages. This is release preparation, not a claim that artifacts have been published. The existing `v1.0.0` Git tag is historical; package metadata resumes at 0.13.0 without changing that tag.
+Version **2.0.0** is the authoritative API track for both packages. New code should use the typed configuration interfaces shown here. Older constructors and flat configuration inputs are migration-only compatibility routes and are not part of the canonical public surface.
 
 ## Install from this checkout
 
@@ -46,7 +46,7 @@ Use nested architecture policies to select residual, convolutional, wave, sequen
 - [Executable quickstarts](examples/quickstarts.py): regression, preprocessing, episodic optimization, and LM training; each saves and reloads twice.
 - [Architecture contract](docs/architecture_contract.md): supported combinations and validation.
 - [API reference](docs/API.md): construction, fit, inference, and persistence.
-- [Migration](docs/migration.md) and [deprecation policy](docs/deprecation_policy.md): remaining 0.x compatibility.
+- [Migration](docs/migration.md) and [deprecation policy](docs/deprecation_policy.md): compatibility routes for older applications and checkpoints.
 - [Changelog](CHANGELOG.md), [contributing](docs/CONTRIBUTING.md), and [license](LICENSE).
 
 Research examples illustrate experiments; they do not establish general accuracy or performance advantages. Historical result reports are labeled and are not current executable configurations.

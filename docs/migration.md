@@ -1,8 +1,8 @@
-# Migrating to the canonical 0.13.0 API
+# Migrating to the canonical 2.0 API
 
-Version 0.13.0 makes the new task/configuration API authoritative. Existing direct imports and constructor routes remain available throughout the remaining 0.x line. They are compatibility facades, not additional recommended estimators or LM kinds. No 1.x compatibility removal occurs here.
+Version 2.0 makes the typed task/configuration API authoritative. Existing direct imports and constructor routes remain available as migration facades during 2.x; they are not additional recommended estimators or LM kinds. New applications should use only the canonical forms shown in the main guides.
 
-The repository's `v1.0.0` tag is historical. Both package metadata versions resume at **0.13.0**, and the existing tag is not moved, deleted, or recreated. This source tree prepares artifacts; it does not claim an upload or a new release tag.
+The repository's existing `v1.0.0` tag is historical and remains unchanged. Both distributions now share version **2.0.0**.
 
 ## Regression constructors
 

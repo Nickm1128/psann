@@ -14,7 +14,7 @@ from .architectures import LMConfig, build_lm_model, normalize_lm_config, to_map
 from .architectures.compat import legacy_lm_config
 from .lm.data.tokenizer import Tokenizer
 
-_PACKAGE_VERSION = "0.13.0"
+_PACKAGE_VERSION = "2.0.0"
 
 
 def package_version() -> str:
@@ -25,7 +25,7 @@ def package_version() -> str:
 
 
 def model_config(model: nn.Module) -> LMConfig:
-    """Read canonical metadata, or translate a documented direct 0.x model."""
+    """Read canonical metadata, or translate a documented legacy model."""
     config = getattr(model, "lm_config", None)
     if config is not None:
         return normalize_lm_config(config, for_build=True)

@@ -38,9 +38,14 @@ PROVENANCE_RULES = {
     "chatgpt": r"\bchatgpt\b",
     "claude": r"\bclaude\b",
     "copilot": r"\bcopilot\b",
-    "gpt-5 family": r"\bgpt[ -]?5(?:\.\d+)?\b",
-    "AI-authored/generated claim": r"\bai[- ](?:authored|generated)\b",
-    "agent-authored/generated claim": r"\bagent[- ](?:authored|generated)\b",
+    "gemini": r"\bgemini\b",
+    "openai": r"\bopenai\b",
+    "development-model reference": r"\bgpt[ -]?(?:3|4|5|6)(?:\.\d+)?\b",
+    "AI development claim": r"\bai[- ](?:assisted|authored|developed|generated|written)\b",
+    "agent development claim": r"\bagent[- ](?:assisted|authored|developed|generated|written)\b",
+    "developed with automation claim": (
+        r"\bdeveloped (?:by|with) (?:an? )?(?:ai|agent|language model|llm)\b"
+    ),
 }
 PROVENANCE_EXCLUSIONS = {"tools/repo_hygiene_audit.py", "tests/test_repo_hygiene_audit.py"}
 TEXT_SUFFIXES = {

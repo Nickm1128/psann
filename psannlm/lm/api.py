@@ -1,4 +1,4 @@
-"""Canonical high-level language modeling, data preparation and 0.x adapters."""
+"""Canonical high-level language modeling, data preparation, and legacy adapters."""
 
 from __future__ import annotations
 
@@ -256,7 +256,7 @@ class PSANNLM:
         resume_checkpoint: str | None = None,
         **flat: Any,
     ) -> PSANNLM:
-        """Fit using TrainConfig; flat 0.x fit values remain a warning adapter."""
+        """Fit using TrainConfig; flat legacy fit values remain a warning adapter."""
         if not isinstance(train_data, PSANNLMDataPrep):
             raise TypeError("train_data must be PSANNLMDataPrep.")
         if train is not None:
@@ -528,7 +528,7 @@ class PSANNLM:
 
     @classmethod
     def load(cls, path: str, *, map_location: str | torch.device | None = None) -> PSANNLM:
-        """Load a model artifact, including 0.x files; trainer files use load_lm_checkpoint."""
+        """Load a model artifact, including legacy files; trainer files use load_lm_checkpoint."""
         from ..persistence import load_lm_checkpoint
 
         loaded = load_lm_checkpoint(path, map_location=map_location, require_model=True)
@@ -539,7 +539,7 @@ class PSANNLM:
 
 
 class psannLM(PSANNLM):
-    """Deprecated 0.x flat constructor; prefer PSANNLM(config=...)."""
+    """Deprecated legacy flat constructor; prefer PSANNLM(config=...)."""
 
     def __init__(
         self,
@@ -583,7 +583,7 @@ class psannLM(PSANNLM):
         repetition_penalty: Optional[float] = None,
         **kwargs: Any,
     ) -> str:
-        """Preserve ignored 0.x options only in the deprecated adapter."""
+        """Preserve ignored legacy options only in the deprecated adapter."""
         if kwargs:
             compatibility_warning(
                 "psannLM.generate ignored legacy options: "
@@ -601,7 +601,7 @@ class psannLM(PSANNLM):
 
 
 class psannLMDataPrep(PSANNLMDataPrep):
-    """Deprecated 0.x spelling of PSANNLMDataPrep."""
+    """Deprecated legacy spelling of PSANNLMDataPrep."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         compatibility_warning("psannLMDataPrep is deprecated; use PSANNLMDataPrep.")

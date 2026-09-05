@@ -1,4 +1,4 @@
-"""Deprecated 0.x façade for canonical episodic warm starts."""
+"""Deprecated legacy façade for canonical episodic warm starts."""
 
 from ..episodic.warmstart import run_hisso_supervised_warmstart
 

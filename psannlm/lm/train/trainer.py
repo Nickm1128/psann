@@ -923,7 +923,7 @@ class LMTrainer:
 
 
 class Trainer(LMTrainer):
-    """Deprecated 0.x spelling of LMTrainer."""
+    """Deprecated legacy spelling of LMTrainer."""
 
     def __init__(self, cfg: TrainConfig | Mapping[str, Any] | None = None) -> None:
         compatibility_warning("Trainer is deprecated; use LMTrainer.")

@@ -11,7 +11,7 @@ Patch release with an explicit token:
 
 Provide a fully qualified version instead of bumping:
 
-    python scripts/release.py --version 0.13.1
+    python scripts/release.py --version 2.0.1
 
 If TWINE_USERNAME / TWINE_PASSWORD are already configured, omit --token.
 """

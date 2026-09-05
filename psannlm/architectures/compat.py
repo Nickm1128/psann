@@ -1,4 +1,4 @@
-"""Explicit 0.x translations; canonical configuration never filters keys."""
+"""Explicit legacy translations; canonical configuration never filters keys."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ BASE_KINDS = {
 
 
 def legacy_api_config(**values: Any) -> LMConfig:
-    """Translate stored 0.x benchmark/API options into the canonical model policy."""
+    """Translate stored legacy benchmark/API options into the canonical model policy."""
     base = values.pop("base", "waveresnet")
     return legacy_lm_config(base, values, high_level=True, warn=False)
 
@@ -464,6 +464,6 @@ def legacy_lm_config(
     result = LMConfig(architecture=LMArchitectureConfig(**architecture), **dims)
     if warn:
         compatibility_warning(
-            f"{base} is a 0.x compatibility base; use canonical LMConfig. " + "; ".join(notes)
+            f"{base} is a legacy compatibility base; use canonical LMConfig. " + "; ".join(notes)
         )
     return result

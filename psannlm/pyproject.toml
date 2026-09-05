@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psannlm"
-version = "0.13.0"
+version = "2.0.0"
 description = "PSANN-LM: language modeling and training utilities for PSANN"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -24,7 +24,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-  "psann>=0.13.0",
+  "psann>=2.0.0",
   "numpy>=1.23",
   "torch>=2.1",
   "sentencepiece>=0.1.99",
@@ -40,10 +40,10 @@ language-filter = ["langdetect>=1.0.9"]
 training-extras = ["transformers>=4.30", "bitsandbytes>=0.41"]
 
 [project.urls]
-Homepage = "https://github.com/psann-project/psann"
-Repository = "https://github.com/psann-project/psann"
-Issues = "https://github.com/psann-project/psann/issues"
-Documentation = "https://github.com/psann-project/psann/tree/main/docs"
+Homepage = "https://github.com/Nickm1128/psann"
+Repository = "https://github.com/Nickm1128/psann"
+Issues = "https://github.com/Nickm1128/psann/issues"
+Documentation = "https://github.com/Nickm1128/psann/tree/main/docs"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["__init__.py", "__main__.py", "cli.py", "train.py", "sft.py", "eval_adapter.py", "data_loader.py", "data_stream.py", "persistence.py", "configuration.py", "lm", "_train", "architectures"]

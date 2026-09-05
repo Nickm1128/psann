@@ -517,7 +517,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         estimator = EstimatorCls(**estimator_params)
 
         # ``episodic.strategy`` is the maintained tagged configuration.  The
-        # old flat ``hisso`` section is intentionally isolated below as a 0.x
+        # old flat ``hisso`` section is intentionally isolated below as a legacy
         # compatibility adapter; canonical fields must never make that round trip.
         canonical_strategy: HISSOConfig | None = None
         canonical_section = config.get("episodic")

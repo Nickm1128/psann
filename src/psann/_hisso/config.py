@@ -1,4 +1,4 @@
-"""Deprecated 0.x façade for episodic legacy-configuration adapters."""
+"""Deprecated legacy façade for episodic compatibility-configuration adapters."""
 
 from ..episodic.legacy_config import (
     HISSOOptions,

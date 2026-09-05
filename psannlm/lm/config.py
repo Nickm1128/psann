@@ -26,7 +26,7 @@ def normalize_positional_encoding(value: Optional[str]) -> str:
 
 @dataclass
 class ModelConfig:
-    """0.x flat configuration shell; use LMConfig for maintained construction."""
+    """Legacy flat configuration shell; use LMConfig for maintained construction."""
 
     base: str = "waveresnet"  # or "respsann"
     d_model: int = 512

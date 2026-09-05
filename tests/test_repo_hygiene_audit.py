@@ -69,18 +69,24 @@ def test_repo_hygiene_audit_detects_every_private_path_family_and_inventory(tmp_
 def test_repo_hygiene_audit_detects_provenance_and_excludes_detector_terms(tmp_path):
     public = tmp_path / "README.md"
     public.write_text(
-        "Codex\nChatGPT\nClaude\nCopilot\nGPT-5.4\nai-generated\nagent-authored\n",
+        "Codex\nChatGPT\nClaude\nCopilot\nGemini\nOpenAI\nGPT-5.4\nGPT-6\n"
+        "ai-generated\nAI-assisted\nagent-authored\nagent-developed\n"
+        "developed with an LLM\n",
         encoding="utf-8",
     )
     detector = tmp_path / "tools" / "repo_hygiene_audit.py"
     detector.parent.mkdir()
     detector.write_text(
-        "Codex ChatGPT Claude Copilot GPT-5 ai-generated agent-authored\n", encoding="utf-8"
+        "Codex ChatGPT Claude Copilot Gemini OpenAI GPT-5 GPT-6 ai-generated "
+        "AI-assisted agent-authored agent-developed developed with an LLM\n",
+        encoding="utf-8",
     )
     tests = tmp_path / "tests" / "test_repo_hygiene_audit.py"
     tests.parent.mkdir()
     tests.write_text(
-        "Codex ChatGPT Claude Copilot GPT-5 ai-generated agent-authored\n", encoding="utf-8"
+        "Codex ChatGPT Claude Copilot Gemini OpenAI GPT-5 GPT-6 ai-generated "
+        "AI-assisted agent-authored agent-developed developed with an LLM\n",
+        encoding="utf-8",
     )
     notebook = tmp_path / "notebooks" / "provenance.ipynb"
     notebook.parent.mkdir()
@@ -88,7 +94,7 @@ def test_repo_hygiene_audit_detects_provenance_and_excludes_detector_terms(tmp_p
 
     payload = _run_audit(tmp_path)
     references = payload["provenance_references"]
-    assert len(references) == 8
+    assert len(references) == 14
     assert {item["path"] for item in references} == {"README.md", "notebooks/provenance.ipynb"}
 
 

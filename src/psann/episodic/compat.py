@@ -1,4 +1,4 @@
-"""Small conversion helpers for retained 0.x HISSO call sites.
+"""Small conversion helpers for retained legacy HISSO call sites.
 
 The helpers intentionally translate values only; model preparation remains owned by
 the estimator and the canonical strategy remains free of legacy option objects.

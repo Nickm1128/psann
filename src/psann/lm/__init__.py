@@ -3,7 +3,7 @@
 The LM utilities were moved to the separate `psannlm` distribution so that
 `pip install psann` stays lean. Install `psannlm` and import from that package:
 
-  from psannlm import psannLM, psannLMDataPrep
+  from psannlm import PSANNLM, PSANNLMDataPrep
 """
 
 raise ImportError(

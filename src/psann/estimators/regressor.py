@@ -5,7 +5,7 @@ streaming implementation.  This class replaces only the former subclass-based mo
 selection with immutable architecture configuration and registry requests.
 """
 
-# The retained 0.x flat adapter intentionally receives heterogeneous omitted
+# The retained legacy flat adapter intentionally receives heterogeneous omitted
 # sentinel values and normalizes them before construction; its boundary is dynamic.
 # mypy cannot narrow that generated compatibility surface argument-by-argument.
 # mypy: disable-error-code=arg-type
@@ -463,7 +463,7 @@ def _legacy_architecture(
     compute_mode: str,
     geo_seed: int | None,
 ) -> ArchitectureConfig:
-    """Translate the retained 0.x flat constructor surface exactly once."""
+    """Translate the retained legacy flat constructor surface exactly once."""
 
     activation_values: dict[str, object] = (
         dict(activation) if isinstance(activation, Mapping) else {}
@@ -655,7 +655,7 @@ class PSANNRegressor(_Phase2Regressor):
         compile_mode: str = "default",
         compile_fullgraph: bool = False,
         compile_dynamic: bool = False,
-        # Explicit 0.x compatibility inputs retained through this line.
+        # Explicit legacy compatibility inputs retained through this line.
         hidden_width: int | None = None,
         w0: float = 30.0,
         preprocessor: PreprocessorLike = None,
@@ -1158,7 +1158,7 @@ class PSANNRegressor(_Phase2Regressor):
     ) -> tuple[nn.Module | None, int | None]:
         """Prepare canonical preprocessing before architecture construction.
 
-        The inherited method remains the isolated 0.x route for a supplied legacy
+        The inherited method remains the isolated legacy route for a supplied
         ``lsm`` argument; canonical callers never enter that compatibility builder.
         """
 
@@ -1654,7 +1654,7 @@ class PSANNRegressor(_Phase2Regressor):
         elif configured_preprocessor is not None:
             params["preprocessor"] = preprocessor_to_mapping(configured_preprocessor)
         elif attached_preprocessor is not None:
-            # Old ``lsm=`` objects remain a 0.x adapter.  Persist the actual
+            # Old ``lsm=`` objects remain a legacy adapter. Persist the actual
             # prepared module as a module-boundary artifact so that a new v2
             # save does not discard its graph structure or fitted weights.
             input_topology = (
@@ -1886,7 +1886,7 @@ class PSANNRegressor(_Phase2Regressor):
                 legacy_wave_model: Any = legacy.model_
                 while hasattr(legacy_wave_model, "core"):
                     legacy_wave_model = legacy_wave_model.core
-                # The 0.x shaped Wave options were accepted before all fit
+                # The legacy shaped Wave options were accepted before all fit
                 # routes used channel-first hooks.  Migrate what the retained
                 # module actually executed, not merely an option that its old
                 # fit route ignored; the latter cannot be reconstructed from a

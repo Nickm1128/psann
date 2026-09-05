@@ -84,5 +84,10 @@ examples/results_*.csv
 # Office/editor scratch
 *.odt
 .~lock.*#
+
+# Local publishing credentials
+pypi_token.txt
+pypi/_token.txt
+
 .psann-dev/
 docs/internal/

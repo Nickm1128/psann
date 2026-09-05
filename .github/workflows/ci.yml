@@ -97,7 +97,11 @@ jobs:
           import importlib.util
 
           import psann
-          from psann import PSANNRegressor, WaveResNetRegressor
+          from psann import PSANNRegressor
+          from psann.architectures import ArchitectureConfig
+
+          model = PSANNRegressor(architecture=ArchitectureConfig.dense())
+          assert hasattr(model, "fit") and hasattr(model, "predict")
 
           # psannlm package should NOT be importable yet
           assert importlib.util.find_spec("psannlm") is None, "psannlm should not be installed with psann only"
@@ -114,9 +118,8 @@ jobs:
           python -m pip install psannlm/dist/*.whl
           python - << 'PY'
           import psannlm
-          import psannlm.train  # noqa: F401
-          from psannlm import psannLM, psannLMDataPrep
+          from psannlm import LMArchitectureConfig, LMConfig, PSANNLM, PSANNLMDataPrep
 
-          m = psannLM()
+          m = PSANNLM(config=LMConfig(architecture=LMArchitectureConfig.transformer()))
           assert hasattr(m, "fit") and hasattr(m, "generate")
           PY

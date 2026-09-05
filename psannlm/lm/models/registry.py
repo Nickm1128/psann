@@ -1,4 +1,4 @@
-"""0.x base spellings delegating to the canonical typed registry."""
+"""Legacy base spellings delegating to the canonical typed registry."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def get_base(name: str) -> Callable[..., nn.Module]:
     def factory(**kwargs: Any) -> nn.Module:
         if registered is not None:
             compatibility_warning(
-                "get_base is deprecated; this external 0.x factory retains its original keyword contract."
+                "get_base is deprecated; this external legacy factory retains its original keyword contract."
             )
             return registered(**kwargs)
         return build_lm_model(legacy_lm_config(key, kwargs)).model
@@ -38,7 +38,7 @@ def list_bases() -> list[str]:
 
 
 def register_base(name: str, factory: Callable[..., nn.Module], *, replace: bool = False) -> None:
-    """Keep external 0.x factory signatures in the canonical registry's legacy namespace."""
+    """Keep external legacy factory signatures in the canonical registry's compatibility namespace."""
     key = name.strip().lower()
     if not key:
         raise ValueError("registry.name must be nonempty.")
@@ -47,5 +47,5 @@ def register_base(name: str, factory: Callable[..., nn.Module], *, replace: bool
     register_legacy_factory(key, factory, replace=replace)
     compatibility_warning(
         "register_base is deprecated; replace_lm_builder replaces an existing typed kind. "
-        "External 0.x names retain their legacy factory contract."
+        "External legacy names retain their original factory contract."
     )

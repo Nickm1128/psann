@@ -1,4 +1,4 @@
-"""Deprecated 0.x façade for canonical episodic reward dispatch."""
+"""Deprecated legacy façade for canonical episodic reward dispatch."""
 
 from ..episodic.reward import (
     _align_context_for_reward,

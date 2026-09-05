@@ -42,7 +42,7 @@ def run_hisso_supervised_warmstart(
     )
 
     # Canonical callers resolve the state-aware default before constructing the
-    # compatibility payload.  ``None`` is retained only for the flat 0.x path,
+    # compatibility payload. ``None`` is retained only for the flat legacy path,
     # whose historical default disabled shuffling for persistent state.
     shuffle = (
         not (estimator.stateful and estimator.state_reset in ("epoch", "none"))

@@ -1,4 +1,4 @@
-"""Deprecated 0.x facade for :mod:`psann.episodic.rewards`.
+"""Deprecated legacy facade for :mod:`psann.episodic.rewards`.
 
 The registry has one owner. Keeping this module deliberately small avoids a
 second registry whose names can silently diverge from canonical episodic runs.

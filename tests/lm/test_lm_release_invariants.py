@@ -85,7 +85,7 @@ def test_cli_budget_and_exhaustion_text_after_real_training_and_versioned_resave
         assert "Streaming dataset exhausted early" not in output
     path = tmp_path / "checkpoint/final.pt"
     payload = torch.load(path, weights_only=True)
-    assert payload["package_version"] == "0.13.0"
+    assert payload["package_version"] == "2.0.0"
     assert (payload["schema"], payload["schema_version"]) == ("psannlm.trainer", 1)
     steps = 1 if streaming else 3
     assert payload["state"]["step"] == steps
@@ -105,7 +105,7 @@ def test_cli_budget_and_exhaustion_text_after_real_training_and_versioned_resave
         path = tmp_path / f"model-{generation}.pt"
         torch.save(persistence.model_payload(loaded.model, loaded.tokenizer), path)
         payload = torch.load(path, weights_only=True)
-        assert payload["package_version"] == "0.13.0"
+        assert payload["package_version"] == "2.0.0"
         assert (payload["schema"], payload["schema_version"]) == ("psannlm.model", 1)
         loaded = persistence.load_lm_checkpoint(path)
         loaded.model.eval()

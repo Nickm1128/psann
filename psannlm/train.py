@@ -1,4 +1,4 @@
-"""0.x training command delegating to python -m psannlm train."""
+"""Legacy training command delegating to python -m psannlm train."""
 
 from __future__ import annotations
 import sys

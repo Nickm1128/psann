@@ -54,7 +54,7 @@ class PSANNLM(LM):
     """Custom model wrapper for EleutherAI lm-eval.
 
     Args (via --model_args):
-      - ckpt: path to psannLM.save(".../final_model.pt") checkpoint
+      - ckpt: path to a PSANNLM.save(".../final_model.pt") checkpoint
       - device: "cuda" or "cpu" (defaults to auto)
       - tokenizer_backend: one of {auto,sentencepiece,tokenizers,simple}
       - tokenizer_model_path: path to SPM .model or HF tokenizers .json (RECOMMENDED)

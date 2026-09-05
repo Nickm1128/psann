@@ -54,7 +54,7 @@ class EpisodeConfig:
 
 
 class EpisodeTrainer:
-    """0.x adapter over :class:`psann.episodic.runtime_loop.HISSOTrainer`.
+    """Legacy adapter over :class:`psann.episodic.runtime_loop.HISSOTrainer`.
 
     It deliberately owns no sampler, transform, reward dispatch, state lifecycle, or
     optimizer step.  Historical model-level constructor choices are translated into

@@ -44,7 +44,7 @@ def test_current_core_checkpoint_version_and_two_generation_prediction_closure(t
         path = tmp_path / f"core-{generation}.pt"
         model.save(path)
         payload = torch.load(path, weights_only=False)
-        assert payload["package_version"] == psann.__version__ == "0.13.0"
+        assert payload["package_version"] == psann.__version__ == "2.0.0"
         assert (payload["schema"], payload["schema_version"]) == ("psann.regressor", 3)
         model = psann.PSANNRegressor.load(path)
         np.testing.assert_array_equal(model.predict(x), expected)
@@ -60,13 +60,13 @@ def test_lm_runtime_version_with_and_without_distribution_metadata(metadata_pres
         assert name == "psannlm"
         if not metadata_present:
             raise importlib.metadata.PackageNotFoundError(name)
-        return "0.13.0"
+        return "2.0.0"
 
     monkeypatch.setattr(persistence, "version", metadata)
-    assert persistence.package_version() == psann.__version__ == "0.13.0"
+    assert persistence.package_version() == psann.__version__ == "2.0.0"
 
 
-@pytest.mark.parametrize("part,expected", [("patch", "0.13.1"), ("minor", "0.14.0")])
+@pytest.mark.parametrize("part,expected", [("patch", "2.0.1"), ("minor", "2.1.0")])
 def test_release_helper_advances_all_version_writers_on_temporary_copies(
     part,
     expected,
@@ -282,17 +282,17 @@ def test_lm_release_writer_rejects_missing_or_ambiguous_version_fields_without_w
     project = (ROOT / "psannlm/pyproject.toml").read_text()
     fallback = (ROOT / "psannlm/persistence.py").read_text()
     if defect == "missing-floor":
-        project = project.replace('"psann>=0.13.0",', "")
+        project = project.replace('"psann>=2.0.0",', "")
     elif defect == "duplicate-floor":
-        project = project.replace('"psann>=0.13.0",', '"psann>=0.13.0", "psann>=0.12.4",')
+        project = project.replace('"psann>=2.0.0",', '"psann>=2.0.0", "psann>=0.12.4",')
     else:
-        fallback = fallback.replace('_PACKAGE_VERSION = "0.13.0"', "")
+        fallback = fallback.replace('_PACKAGE_VERSION = "2.0.0"', "")
     project_path, fallback_path = tmp_path / "pyproject.toml", tmp_path / "persistence.py"
     project_path.write_text(project)
     fallback_path.write_text(fallback)
     monkeypatch.setattr(release, "PSANNLM_PYPROJECT_PATH", project_path)
     monkeypatch.setattr(release, "PSANNLM_PERSISTENCE_PATH", fallback_path)
     with pytest.raises(RuntimeError, match="Expected one"):
-        release.write_psannlm_version("0.13.1")
+        release.write_psannlm_version("2.0.1")
     assert project_path.read_text() == project
     assert fallback_path.read_text() == fallback

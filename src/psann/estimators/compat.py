@@ -27,7 +27,7 @@ from .regressor import PSANNRegressor
 
 
 def _legacy_signature(defaults: dict[str, object]) -> Signature:
-    """Define 0.x wrapper signatures without importing derivative estimators."""
+    """Define legacy wrapper signatures without importing derivative estimators."""
 
     return Signature(
         [Parameter("self", Parameter.POSITIONAL_OR_KEYWORD)]
@@ -174,7 +174,7 @@ def _common(kwargs: dict[str, Any]) -> dict[str, Any]:
         "hidden_width",
         "w0",
         # Checkpoint reconstruction may supply the canonical boundary even
-        # though the retained facade signature intentionally presents 0.x LSM
+        # though the retained facade signature intentionally presents legacy LSM
         # keywords.  It is not added to the public facade signature.
         "preprocessor",
         "lsm",
@@ -319,7 +319,7 @@ class _LegacyFacade(PSANNRegressor):
         return dict(self._legacy_params_)
 
     def set_params(self, **params: object) -> "_LegacyFacade":
-        # Retain the established 0.x channel spelling before reconstructing
+        # Retain the established legacy channel spelling before reconstructing
         # the thin facade.  The canonical estimator owns the actual rebuild.
         if "hidden_channels" in params:
             params = self._normalize_param_aliases(dict(params))
