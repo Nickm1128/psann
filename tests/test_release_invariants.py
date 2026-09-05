@@ -2,6 +2,7 @@
 
 import ast
 import importlib.metadata
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,6 +15,7 @@ import pytest
 import torch
 
 import psann
+from tools.text_encoding import find_mojibake
 
 ROOT = Path(__file__).resolve().parents[1]
 LEGACY = [
@@ -195,34 +197,42 @@ def test_legacy_lifecycle_warns_only_at_direct_construction_and_preserves_parity
     assert all(Path(w.filename).resolve() == Path(__file__).resolve() for w in deprecations)
 
 
-# Escapes keep the detector's own source free of corrupted text. Valid non-ASCII
-# prose, mathematical notation, and multilingual training data remain supported.
-MOJIBAKE = (
-    "\u00e2\u2030\u02c6",
-    "\u00e2\u20ac",
-    "\u00ef\u00bf\u00bd",
-    "\ufffd",
-    "\u00c3\u00a9",
-    "\u00c2\u00a0",
-)
-
-
 def test_maintained_public_text_has_no_encoding_or_citation_artifacts():
     tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=ROOT).decode().split("\0")
-    suffixes = {".py", ".md", ".rst", ".toml", ".yaml", ".yml", ".json", ".ipynb", ".sh", ".txt"}
+    suffixes = {
+        "",
+        ".py",
+        ".md",
+        ".rst",
+        ".toml",
+        ".yaml",
+        ".yml",
+        ".json",
+        ".ipynb",
+        ".sh",
+        ".ps1",
+        ".txt",
+        ".ini",
+        ".cfg",
+        ".csv",
+        ".vocab",
+    }
     failures = []
     for name in tracked:
         path = ROOT / name
         if path.suffix.lower() in suffixes and path.is_file():
             text = path.read_text(encoding="utf-8")
+            failures.extend((name, finding) for finding in find_mojibake(text))
+            if path.suffix.lower() in {".json", ".ipynb"}:
+                # JSON escaping must not hide corrupt cell text or configuration.
+                decoded = json.dumps(json.loads(text), ensure_ascii=False)
+                failures.extend((name, finding) for finding in find_mojibake(decoded))
             unresolved_citations = (":content" + "Reference[", "oai" + "cite:")
             failures.extend(
-                (name, sequence)
-                for sequence in (*MOJIBAKE, *unresolved_citations)
-                if sequence in text
+                (name, sequence) for sequence in unresolved_citations if sequence in text
             )
     assert failures == []
-    assert not any(sequence in "café ≈ 2 — 中文" for sequence in MOJIBAKE)
+    assert find_mojibake("café ≈ 2 — 中文") == []
 
 
 @pytest.mark.parametrize("name", LEGACY)
