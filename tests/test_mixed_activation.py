@@ -69,4 +69,3 @@ def test_mixed_activation_supports_relu_sigmoid_psann() -> None:
     y.backward()
     mixed = act.acts["relu_sigmoid_psann"]
     assert mixed._slope.grad is not None
-

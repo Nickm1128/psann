@@ -60,7 +60,9 @@ def build_geo_connectivity(
         if pattern == "local":
             chosen = _tile_or_truncate(candidates, k, allow_repeats=allow_repeats)
         elif pattern == "random":
-            chosen = _sample_candidates(candidates, k, rng if seed is not None else None, allow_repeats)
+            chosen = _sample_candidates(
+                candidates, k, rng if seed is not None else None, allow_repeats
+            )
         else:
             base_seed = 0 if seed is None else int(seed)
             local_rng = torch.Generator()
@@ -81,9 +83,7 @@ def expand_in_indices_to_edges(
         raise ValueError("in_index_per_out must be 2D (n_out, k).")
     n_out, k = in_index_per_out.shape
     src = in_index_per_out.reshape(-1).to(dtype=torch.long)
-    dst = torch.arange(n_out, dtype=torch.long, device=in_index_per_out.device).repeat_interleave(
-        k
-    )
+    dst = torch.arange(n_out, dtype=torch.long, device=in_index_per_out.device).repeat_interleave(k)
     return src, dst
 
 
@@ -120,9 +120,7 @@ class GeoSparseLinear(nn.Module):
         self.k = int(in_index_per_out.shape[1])
         self.compute_mode = mode
 
-        self.register_buffer(
-            "in_index_per_out", in_index_per_out.to(dtype=torch.long).contiguous()
-        )
+        self.register_buffer("in_index_per_out", in_index_per_out.to(dtype=torch.long).contiguous())
         self.weight = nn.Parameter(torch.empty(self.out_features, self.k))
         self.bias = nn.Parameter(torch.empty(self.out_features)) if bias else None
         self.reset_parameters()

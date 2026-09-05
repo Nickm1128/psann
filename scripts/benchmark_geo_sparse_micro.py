@@ -206,7 +206,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--steps", type=int, default=50)
     p.add_argument("--warmup", type=int, default=10)
     p.add_argument("--device", type=str, default="auto")
-    p.add_argument("--dtype", type=str, default="float32", choices=["float32", "bfloat16", "float16"])
+    p.add_argument(
+        "--dtype", type=str, default="float32", choices=["float32", "bfloat16", "float16"]
+    )
     p.add_argument("--amp", action="store_true")
     p.add_argument("--amp-dtype", type=str, default="bfloat16", choices=["bfloat16", "float16"])
     p.add_argument("--tf32", action="store_true")
@@ -306,8 +308,10 @@ def main() -> None:
             linear_result["forward_backward_ms"] + block_result["forward_backward_ms"]
         ) / 2.0
 
-    out_dir = Path(args.out) if args.out else Path("reports") / "geo_sparse_micro" / time.strftime(
-        "%Y%m%d_%H%M%S"
+    out_dir = (
+        Path(args.out)
+        if args.out
+        else Path("reports") / "geo_sparse_micro" / time.strftime("%Y%m%d_%H%M%S")
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 

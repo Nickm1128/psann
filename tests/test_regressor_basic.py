@@ -263,6 +263,8 @@ def test_stream_target_is_scaled_when_target_scaler_active():
         "M2": np.array([4.0], dtype=np.float32),  # std=2
     }
     reference = torch.zeros((1, 1), dtype=torch.float32)
-    scaled = est._coerce_stream_target(np.asarray(10.0, dtype=np.float32), reference, torch.device("cpu"))
+    scaled = est._coerce_stream_target(
+        np.asarray(10.0, dtype=np.float32), reference, torch.device("cpu")
+    )
     assert scaled.shape == (1, 1)
     assert float(scaled.item()) == pytest.approx(0.0, abs=1e-6)

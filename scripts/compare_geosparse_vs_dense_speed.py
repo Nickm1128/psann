@@ -48,7 +48,7 @@ def _cuda_preflight(device: str) -> None:
         "In Docker, this usually means the container was started without GPU access.\n"
         "Check inside the container:\n"
         "  nvidia-smi\n"
-        "  python3 -c \"import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.device_count())\"\n"
+        '  python3 -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.device_count())"\n'
         "Then restart the container with `--gpus all` (or a working NVIDIA runtime).\n"
     )
 
@@ -201,9 +201,7 @@ def main() -> None:
     out_root = (
         Path(args.out)
         if args.out
-        else Path("reports")
-        / "geo_sparse_speed"
-        / time.strftime("%Y%m%d_%H%M%S")
+        else Path("reports") / "geo_sparse_speed" / time.strftime("%Y%m%d_%H%M%S")
     )
     out_root.mkdir(parents=True, exist_ok=True)
 

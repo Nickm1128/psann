@@ -226,9 +226,7 @@ def main() -> None:
                 for activation in activations:
                     for seed in seeds:
                         run_index += 1
-                        run_id = (
-                            f"task={task}_shape={shape}_depth={depth}_k={k}_act={activation}_seed={seed}"
-                        )
+                        run_id = f"task={task}_shape={shape}_depth={depth}_k={k}_act={activation}_seed={seed}"
                         slug = slugify(run_id, replace_commas=True, replace_equals=True)
                         run_dir = out_root / slug
                         results_path = run_dir / "results.json"
@@ -346,7 +344,9 @@ def main() -> None:
                                     "stderr": "missing results.json",
                                 }
                             )
-                            print(f"[sweep] {run_index}/{total_runs} ERROR missing results.json {slug}")
+                            print(
+                                f"[sweep] {run_index}/{total_runs} ERROR missing results.json {slug}"
+                            )
                             continue
                         rows.extend(_rows_from_results(payload, run_id, run_dir))
                         if run_index % max(1, int(args.progress_every)) == 0:

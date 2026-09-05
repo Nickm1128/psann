@@ -4,7 +4,6 @@ from pathlib import Path
 
 from psannlm.lm import psannLM, psannLMDataPrep
 
-
 SAMPLE_TEXTS = Path(__file__).resolve().parents[2] / "examples" / "lm" / "sample_texts.txt"
 TOKENIZER_MODEL = (
     Path(__file__).resolve().parents[2] / "examples" / "lm" / "tokenizer" / "sample_texts.model"
