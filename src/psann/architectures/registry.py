@@ -703,6 +703,7 @@ def _geometry_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
     geometry = cfg.geometry
     residual = cfg.residual
     assert geometry is not None and residual is not None
+    input_dim = request.preprocessor_output_dim or request.input_dim
     shape = geometry.shape
     if shape is None and len(request.input_shape) == 2:
         shape = (request.input_shape[0], request.input_shape[1])
@@ -710,10 +711,10 @@ def _geometry_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         raise ValueError(
             "geometric-sparse architecture requires geometry.shape or HxW input shape."
         )
-    if shape[0] * shape[1] != request.input_dim:
+    if shape[0] * shape[1] != input_dim:
         raise ValueError("geometry.shape product must equal input dimension.")
     core = GeoSparseNet(
-        request.input_dim,
+        input_dim,
         request.output_dim,
         shape=shape,
         depth=request.hidden_layers,

@@ -2293,23 +2293,28 @@ class PSANNRegressor(_Phase2Regressor):
                 int(np.prod(input_shape)), int(output_dim), input_shape=input_shape
             )
         if has_preprocessor and estimator.architecture.convolution is None:
-            # The core was trained on the preprocessor output, not raw X.  Its
-            # saved first projection is the authoritative dimension for schema
-            # reconstruction, including fitted LSMExpanders.
-            core_weight = next(
-                (
-                    value
-                    for key, value in state_dict.items()
-                    if str(key).startswith("core.") and str(key).endswith("linear.weight")
-                ),
-                None,
-            )
-            if core_weight is None:
-                raise ValueError(
-                    "Checkpoint preprocessor state is missing a dense core projection."
+            # Canonical preprocessing descriptors carry the validated core input
+            # width, including architectures without a dense first projection.
+            # Older artifacts without capabilities retain projection inference.
+            capabilities = estimator.preprocessor_capabilities_
+            if capabilities is not None:
+                core_input_dim = capabilities.output_dim
+            else:
+                core_weight = next(
+                    (
+                        value
+                        for key, value in state_dict.items()
+                        if str(key).startswith("core.") and str(key).endswith("linear.weight")
+                    ),
+                    None,
                 )
+                if not isinstance(core_weight, torch.Tensor):
+                    raise ValueError(
+                        "Checkpoint preprocessor state is missing a dense core projection."
+                    )
+                core_input_dim = int(core_weight.shape[1])
             estimator.model_ = estimator._build_dense_core(
-                int(cast(torch.Tensor, core_weight).shape[1]),
+                core_input_dim,
                 int(output_dim),
                 input_shape=input_shape,
             )
