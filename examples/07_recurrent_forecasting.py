@@ -1,5 +1,6 @@
 import numpy as np
 
+from psann.architectures import ArchitectureConfig, StateConfig
 from psann import PSANNRegressor
 
 
@@ -19,22 +20,19 @@ if __name__ == "__main__":
 
     # Train a small stateful PSANN on shuffled points (toy setup)
     model = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(
+            state=StateConfig(
+                **{"init": 1.0, "rho": 0.98, "beta": 1.0, "max_abs": 3.0, "detach": True},
+                reset="none",
+            )
+        ),
         hidden_layers=2,
-        hidden_width=32,
         epochs=200,
-        lr=1e-3,
+        lr=0.001,
         batch_size=256,
         early_stopping=True,
         patience=20,
-        stateful=True,
-        state={
-            "init": 1.0,
-            "rho": 0.98,  # persistence
-            "beta": 1.0,  # update scale from |activation|
-            "max_abs": 3.0,  # intelligent clipping bound
-            "detach": True,  # no BPTT across steps (recommended for long sequences)
-        },
-        state_reset="none",  # carry state across batches for sequence-wise behavior
+        hidden_units=32,
     )
     model.fit(X, y, verbose=1)
 

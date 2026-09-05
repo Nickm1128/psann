@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
+from psann.architectures import ArchitectureConfig, StateConfig
 from psann import PSANNRegressor
 
 
@@ -54,16 +55,19 @@ if __name__ == "__main__":
 
     # PSANN: stateful, attached (detach=False for the state update rule)
     ps = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(
+            state=StateConfig(
+                **{"rho": 0.985, "beta": 1.0, "max_abs": 3.0, "init": 1.0, "detach": False},
+                reset="none",
+            )
+        ),
         hidden_layers=2,
-        hidden_width=32,
         epochs=200,
         batch_size=256,
-        lr=1e-3,
+        lr=0.001,
         early_stopping=True,
         patience=25,
-        stateful=True,
-        state={"rho": 0.985, "beta": 1.0, "max_abs": 3.0, "init": 1.0, "detach": False},
-        state_reset="none",
+        hidden_units=32,
     )
     print("Training PSANN (stateful attached)...")
     ps.fit(X_tr, y_tr, validation_data=(X_va, y_va), verbose=1)

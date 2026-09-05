@@ -6,6 +6,7 @@ small transaction cost.
 
 import numpy as np
 
+from psann.architectures import ArchitectureConfig
 from psann import PSANNRegressor
 from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 from psann.preprocessing import LSMConfig, PreprocessorConfig
@@ -25,7 +26,13 @@ if __name__ == "__main__":
     M = X.shape[1]
 
     # Baseline PSANN producing M allocations
-    base = PSANNRegressor(hidden_layers=2, hidden_width=64, epochs=1, output_shape=(M,))
+    base = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
+        hidden_layers=2,
+        epochs=1,
+        output_shape=(M,),
+        hidden_units=64,
+    )
     cfg = HISSOConfig(
         schedule=EpisodeScheduleConfig(episode_length=64, batch_episodes=32, random_state=0),
         transition_penalty=0.001,
@@ -39,11 +46,12 @@ if __name__ == "__main__":
         LSMConfig.dense(output_dim=64, hidden_layers=2, hidden_units=64, sparsity=0.9)
     )
     with_lsm = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
         hidden_layers=2,
-        hidden_width=64,
         epochs=1,
         output_shape=(M,),
         preprocessor=preprocessor,
+        hidden_units=64,
     )
     tr_lsm = EpisodicTrainer(estimator=with_lsm, strategy=cfg)
     tr_lsm.fit(X, verbose=1)

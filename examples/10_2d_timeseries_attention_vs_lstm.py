@@ -5,7 +5,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from psann.conv import PSANNConv2dNet
+from psann.architectures import ArchitectureConfig, ConvolutionConfig
+
+try:
+    from examples.torch_backbone import build_backbone
+except ModuleNotFoundError:
+    from torch_backbone import build_backbone
 
 
 def make_seq_images(N=1200, T=10, H=8, W=8, seed=0):
@@ -24,8 +29,10 @@ class PSANNWithAttention(nn.Module):
     def __init__(self, in_channels=1, embed=32, depth=2, heads=2):
         super().__init__()
         # per-frame encoder using PSANN
-        self.enc = PSANNConv2dNet(
-            in_channels, embed, hidden_layers=2, hidden_channels=32, kernel_size=3
+        self.enc = build_backbone(
+            ArchitectureConfig.convolutional(convolution=ConvolutionConfig(kernel_size=3)),
+            (in_channels, 8, 8),
+            embed,
         )
         enc_layer = nn.TransformerEncoderLayer(
             d_model=embed, nhead=heads, dim_feedforward=embed * 2, batch_first=True

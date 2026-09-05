@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 
+from psann.architectures import ArchitectureConfig
 from psann import PSANNRegressor
 
 
@@ -28,15 +29,16 @@ if __name__ == "__main__":
     X_test, y_test = X[te], y[te]
 
     model = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
         hidden_layers=3,
-        hidden_width=64,
         epochs=150,
-        lr=1e-3,
+        lr=0.001,
         loss=mape_loss,
-        loss_params={"eps": 1e-2},
+        loss_params={"eps": 0.01},
         loss_reduction="mean",
         early_stopping=True,
         patience=20,
+        hidden_units=64,
     )
 
     model.fit(X_train, y_train, verbose=1)

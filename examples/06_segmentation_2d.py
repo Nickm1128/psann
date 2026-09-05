@@ -1,5 +1,6 @@
 import numpy as np
 
+from psann.architectures import ArchitectureConfig, ConvolutionConfig
 from psann import PSANNRegressor
 
 
@@ -26,17 +27,18 @@ if __name__ == "__main__":
 
     # Per-pixel outputs with segmentation head
     model = PSANNRegressor(
-        preserve_shape=True,
-        data_format="channels_first",
-        per_element=True,
-        output_shape=(2,),  # two output channels per pixel
+        architecture=ArchitectureConfig.convolutional(
+            convolution=ConvolutionConfig(
+                data_format="channels_first", kernel_size=3, per_element=True
+            )
+        ),
+        output_shape=(2,),
         hidden_layers=2,
-        hidden_width=24,
-        conv_kernel_size=3,
         epochs=20,
         early_stopping=True,
         patience=5,
         loss="mse",
+        hidden_units=24,
     )
 
     model.fit(X_train, y_train, verbose=1)

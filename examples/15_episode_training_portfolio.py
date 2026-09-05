@@ -1,5 +1,6 @@
 import numpy as np
 
+from psann.architectures import ArchitectureConfig
 from psann import PSANNRegressor
 from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 
@@ -17,11 +18,11 @@ if __name__ == "__main__":
     prices = make_prices()
     # Build a PSANN producing 2 allocations (for 2 assets)
     est = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
         hidden_layers=2,
-        hidden_width=32,
-        epochs=1,  # we'll train with episodes
+        epochs=1,
         output_shape=(2,),
-        stateful=False,
+        hidden_units=32,
     )
     X = prices
     trainer = EpisodicTrainer(

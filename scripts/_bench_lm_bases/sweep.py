@@ -8,11 +8,12 @@ def _parse_bases(cli_value: Optional[str], cfg: Dict[str, Any]) -> List[str]:
     if cli_value:
         bases = [b.strip() for b in cli_value.split(",") if b.strip()]
         return bases
+    if cfg.get("models"):
+        return list(cfg["models"])
     bench_bases = cfg.get("bench", {}).get("bases") or []
     if bench_bases:
         return [str(b).strip() for b in bench_bases if str(b).strip()]
-    discovered = sorted(BASE_KINDS)
-    return discovered if discovered else ["respsann", "waveresnet"]
+    return ["transformer", "residual", "wave", "geometric-sparse"]
 
 
 def _flatten_sweep_spec(spec: Dict[str, Any]) -> Dict[str, Any]:

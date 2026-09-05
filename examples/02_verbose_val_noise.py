@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 
+from psann.architectures import ArchitectureConfig
 from psann import PSANNRegressor
 
 
@@ -16,13 +17,14 @@ if __name__ == "__main__":
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
 
     model = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
         hidden_layers=2,
-        hidden_width=64,
         epochs=200,
-        lr=1e-3,
+        lr=0.001,
         batch_size=128,
         early_stopping=True,
         patience=20,
+        hidden_units=64,
     )
 
     # Verbose training with validation and Gaussian input noise

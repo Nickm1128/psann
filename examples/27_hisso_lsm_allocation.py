@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from psann.architectures import ActivationConfig, ArchitectureConfig
 from psann import PSANNRegressor
 from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
@@ -44,14 +45,14 @@ if __name__ == "__main__":
 
     print("First HISSO run with frozen LSM preprocessing...")
     est = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(activation=ActivationConfig(kind="psann")),
         hidden_layers=2,
-        hidden_width=72,
-        activation_type="psann",
         epochs=60,
-        lr=6e-4,
+        lr=0.0006,
         batch_size=128,
         random_state=1,
         preprocessor=preprocessor,
+        hidden_units=72,
     )
     trainer = EpisodicTrainer(
         estimator=est,

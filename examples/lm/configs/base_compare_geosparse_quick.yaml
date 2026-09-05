@@ -1,11 +1,11 @@
+# Canonical model mappings; dimensions and sweep values preserve the original experiment.
 bench:
   run_name: base_compare_geosparse_quick
   out_dir: reports/benchmarks
-  bases: [transformer, respsann, sgrpsann, waveresnet, geosparse]
-  seeds: [1337]
+  seeds:
+  - 1337
   reuse_tokenizer: true
   with_lm_eval: false
-
 data:
   dataset: iohadrubin/wikitext-103-raw-v1
   name: null
@@ -20,7 +20,6 @@ data:
   languages: []
   lang_threshold: 0.8
   max_length: 512
-
 tokenizer:
   backend: tokenizers
   vocab_size: 16384
@@ -29,15 +28,7 @@ tokenizer:
   save_dir: runs/tokenizers_geosparse/base_compare_geosparse_quick
   model_path: null
   special_tokens_map_path: null
-
 train:
-  d_model: 256
-  n_layers: 4
-  n_heads: 4
-  d_mlp: 1024
-  dropout: 0.0
-  positional_encoding: rope
-  attn_impl: auto
   batch_tokens: 32768
   grad_accum_steps: 1
   lr: 0.0002
@@ -45,17 +36,202 @@ train:
   warmup_steps: 200
   amp: bf16
   grad_checkpoint: false
-  ddp: "off"
+  ddp: 'off'
   max_steps: 300
   log_interval_steps: 50
   save_interval_steps: 500
-  sine_params:
-    amp_init: 1.0
-    freq_init: 1.0
-    damp_init: 0.01
-    trainable: true
-
 eval:
   batch_tokens: 32768
   max_tokens: 200000
   max_batches: 0
+models:
+  transformer:
+    kind: lm
+    architecture:
+      kind: transformer
+      activation:
+        kind: gelu
+        amplitude_init: 1.0
+        frequency_init: 1.0
+        decay_init: 0.1
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        feature_dim: -1
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: auto
+  residual:
+    kind: lm
+    architecture:
+      kind: residual
+      activation:
+        kind: psann
+        amplitude_init: 1.0
+        frequency_init: 1.0
+        decay_init: 0.01
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        feature_dim: -1
+      residual:
+        norm: rms
+        alpha_init: 1.0
+        drop_path: 0.0
+        first_w0: 12.0
+        hidden_w0: 1.0
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: auto
+  spectral-residual:
+    kind: lm
+    architecture:
+      kind: residual
+      activation:
+        kind: psann
+        amplitude_init: 1.0
+        frequency_init: 1.0
+        decay_init: 0.01
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        feature_dim: -1
+      residual:
+        norm: rms
+        alpha_init: 1.0
+        drop_path: 0.0
+        first_w0: 12.0
+        hidden_w0: 1.0
+      spectral:
+        k_fft: 64
+        gate_type: rfft
+        groups: depthwise
+        init: 0.0
+        strength: 1.0
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: auto
+  wave:
+    kind: lm
+    architecture:
+      kind: wave
+      activation:
+        kind: psann
+        amplitude_init: 1.0
+        frequency_init: 1.0
+        decay_init: 0.01
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        feature_dim: -1
+      residual:
+        norm: rms
+        alpha_init: 1.0
+        drop_path: 0.0
+        first_w0: 12.0
+        hidden_w0: 1.0
+      temporal:
+        mode: disabled
+        kernel_size: 3
+        dilation_growth: 1
+        dropout: 0.0
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: auto
+  geometric-sparse:
+    kind: lm
+    architecture:
+      kind: geometric-sparse
+      activation:
+        kind: psann
+        amplitude_init: 1.0
+        frequency_init: 1.0
+        decay_init: 0.01
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        feature_dim: -1
+      residual:
+        norm: rms
+        alpha_init: 1.0
+        drop_path: 0.0
+        first_w0: 12.0
+        hidden_w0: 1.0
+      geometry:
+        k: 8
+        pattern: local
+        radius: 1
+        wrap_mode: clamp
+        bias: true
+        compute_mode: gather
+      geometry_execution:
+        depth: 1
+        chunk_size: 32
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: auto

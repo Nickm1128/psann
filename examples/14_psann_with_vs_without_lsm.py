@@ -1,5 +1,6 @@
 import numpy as np
 
+from psann.architectures import ArchitectureConfig
 from psann import PSANNRegressor
 from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
 
@@ -48,14 +49,15 @@ if __name__ == "__main__":
 
     # Baseline PSANN without LSM
     base = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
         hidden_layers=2,
-        hidden_width=64,
         epochs=200,
-        lr=1e-3,
+        lr=0.001,
         batch_size=256,
         early_stopping=True,
         patience=20,
         random_state=0,
+        hidden_units=64,
     )
     base.fit(X_train, y_train, validation_data=(X_val, y_val), verbose=1)
     r2_base = base.score(X_test, y_test)
@@ -66,15 +68,16 @@ if __name__ == "__main__":
 
     # PSANN with a frozen LSM preprocessing step.
     with_lsm = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
         hidden_layers=2,
-        hidden_width=64,
         epochs=200,
-        lr=1e-3,
+        lr=0.001,
         batch_size=256,
         early_stopping=True,
         patience=20,
         random_state=0,
         preprocessor=preprocessor,
+        hidden_units=64,
     )
     with_lsm.fit(X_train, y_train, validation_data=(X_val, y_val), verbose=1)
     r2_lsm = with_lsm.score(X_test, y_test)

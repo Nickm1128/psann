@@ -96,7 +96,7 @@ def run_config(
         hidden_layers=hidden_layers,
         hidden_units=hidden_width,
         epochs=int(epochs),
-        lr=1e-3,
+        lr=0.001,
         random_state=int(seed),
         preprocessor=preprocessor_from_benchmark_config(lsm_cfg),
         output_shape=(train.shape[1],),
@@ -164,7 +164,7 @@ def main():
         "--train_verbose",
         type=int,
         default=0,
-        help="Trainer verbosity passed to fit(hisso=...) (0/1)",
+        help="Trainer verbosity passed to EpisodicTrainer.fit (0/1)",
     )
     args = ap.parse_args()
 

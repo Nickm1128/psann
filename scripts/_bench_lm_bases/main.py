@@ -12,6 +12,7 @@ from .config import (
     _tee_run_logs,
     _write_json,
 )
+from .models import benchmark_model_config
 from .eval import _eval_model, _run_lm_eval
 from .shared import *
 from .sweep import _expand_sweep_configs, _parse_bases
@@ -19,11 +20,16 @@ from .tokenizer import _build_stream_dataset, _ensure_tokenizer
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Benchmark PSANN-LM bases quickly on WikiText-103")
+    ap = argparse.ArgumentParser(
+        description="Benchmark canonical LM architecture configurations on WikiText-103"
+    )
     ap.add_argument("--config", type=str, default=None, help="Optional YAML config path")
     ap.add_argument("--out", type=str, default=None, help="Override output directory")
     ap.add_argument("--run-name", type=str, default=None, help="Override run name suffix")
-    ap.add_argument("--bases", type=str, default=None, help="Comma-separated base list")
+    ap.add_argument(
+        "--models", type=str, default=None, help="Comma-separated names from the models mapping"
+    )
+    ap.add_argument("--bases", type=str, default=None, help=argparse.SUPPRESS)
     ap.add_argument("--seeds", type=str, default=None, help="Comma-separated seed list")
     ap.add_argument("--max-steps", type=int, default=None, help="Override training steps")
     ap.add_argument(
@@ -102,7 +108,7 @@ def main() -> int:
     if args.torch_compile_mode:
         cfg["train"]["torch_compile_mode"] = str(args.torch_compile_mode)
 
-    bases = _parse_bases(args.bases, cfg)
+    bases = _parse_bases(args.models or args.bases, cfg)
     bench_cfg = cfg.get("bench", {})
     seeds = bench_cfg.get("seeds") or [1337]
     if not isinstance(seeds, list):
@@ -243,60 +249,8 @@ def main() -> int:
                                 )
                             vocab_size = int(tokenizer.vocab_size)
 
-                            sine_cfg = train_cfg.get("sine_params", {}) or {}
-                            geosparse_kwargs: Dict[str, Any] = {}
-                            if str(teacher_base).lower() == "geosparse":
-                                for key in (
-                                    "geosparse_shape",
-                                    "geosparse_depth",
-                                    "geosparse_k",
-                                    "geosparse_pattern",
-                                    "geosparse_radius",
-                                    "geosparse_offsets",
-                                    "geosparse_wrap_mode",
-                                    "geosparse_activation",
-                                    "geosparse_activation_types",
-                                    "geosparse_activation_ratios",
-                                    "geosparse_activation_ratio_sum_tol",
-                                    "geosparse_activation_layout",
-                                    "geosparse_norm",
-                                    "geosparse_drop_path_max",
-                                    "geosparse_residual_alpha_init",
-                                    "geosparse_bias",
-                                    "geosparse_compute_mode",
-                                    "geosparse_seed",
-                                    "geosparse_chunk_size",
-                                ):
-                                    if key in train_cfg and train_cfg.get(key) is not None:
-                                        geosparse_kwargs[key] = train_cfg.get(key)
                             model = build_lm_model(
-                                legacy_lm_config(
-                                    teacher_base,
-                                    dict(
-                                        vocab_size=vocab_size,
-                                        d_model=int(train_cfg.get("d_model", 256)),
-                                        n_layers=int(train_cfg.get("n_layers", 4)),
-                                        n_heads=int(train_cfg.get("n_heads", 4)),
-                                        d_mlp=int(train_cfg.get("d_mlp", 1024)),
-                                        dropout=float(train_cfg.get("dropout", 0.0)),
-                                        positional_encoding=str(
-                                            train_cfg.get("positional_encoding", "rope")
-                                        ),
-                                        mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
-                                        sine=SineConfig(
-                                            amp_init=float(sine_cfg.get("amp_init", 1.0)),
-                                            amp_init_std=float(sine_cfg.get("amp_init_std", 0.0)),
-                                            freq_init=float(sine_cfg.get("freq_init", 1.0)),
-                                            freq_init_std=float(sine_cfg.get("freq_init_std", 0.0)),
-                                            damp_init=float(sine_cfg.get("damp_init", 0.01)),
-                                            damp_init_std=float(sine_cfg.get("damp_init_std", 0.0)),
-                                            trainable=bool(sine_cfg.get("trainable", True)),
-                                        ),
-                                        attn_impl=str(train_cfg.get("attn_impl", "auto")),
-                                        **geosparse_kwargs,
-                                    ),
-                                    warn=False,
-                                )
+                                benchmark_model_config(run_cfg, teacher_base, vocab_size)
                             ).model
 
                             train_ds = _build_stream_dataset(
@@ -416,60 +370,8 @@ def main() -> int:
                     try:
                         vocab_size = int(tokenizer.vocab_size)
 
-                        sine_cfg = train_cfg.get("sine_params", {}) or {}
-                        geosparse_kwargs: Dict[str, Any] = {}
-                        if str(base).lower() == "geosparse":
-                            for key in (
-                                "geosparse_shape",
-                                "geosparse_depth",
-                                "geosparse_k",
-                                "geosparse_pattern",
-                                "geosparse_radius",
-                                "geosparse_offsets",
-                                "geosparse_wrap_mode",
-                                "geosparse_activation",
-                                "geosparse_activation_types",
-                                "geosparse_activation_ratios",
-                                "geosparse_activation_ratio_sum_tol",
-                                "geosparse_activation_layout",
-                                "geosparse_norm",
-                                "geosparse_drop_path_max",
-                                "geosparse_residual_alpha_init",
-                                "geosparse_bias",
-                                "geosparse_compute_mode",
-                                "geosparse_seed",
-                                "geosparse_chunk_size",
-                            ):
-                                if key in train_cfg and train_cfg.get(key) is not None:
-                                    geosparse_kwargs[key] = train_cfg.get(key)
                         model = build_lm_model(
-                            legacy_lm_config(
-                                base,
-                                dict(
-                                    vocab_size=vocab_size,
-                                    d_model=int(train_cfg.get("d_model", 256)),
-                                    n_layers=int(train_cfg.get("n_layers", 4)),
-                                    n_heads=int(train_cfg.get("n_heads", 4)),
-                                    d_mlp=int(train_cfg.get("d_mlp", 1024)),
-                                    dropout=float(train_cfg.get("dropout", 0.0)),
-                                    positional_encoding=str(
-                                        train_cfg.get("positional_encoding", "rope")
-                                    ),
-                                    mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
-                                    sine=SineConfig(
-                                        amp_init=float(sine_cfg.get("amp_init", 1.0)),
-                                        amp_init_std=float(sine_cfg.get("amp_init_std", 0.0)),
-                                        freq_init=float(sine_cfg.get("freq_init", 1.0)),
-                                        freq_init_std=float(sine_cfg.get("freq_init_std", 0.0)),
-                                        damp_init=float(sine_cfg.get("damp_init", 0.01)),
-                                        damp_init_std=float(sine_cfg.get("damp_init_std", 0.0)),
-                                        trainable=bool(sine_cfg.get("trainable", True)),
-                                    ),
-                                    attn_impl=str(train_cfg.get("attn_impl", "auto")),
-                                    **geosparse_kwargs,
-                                ),
-                                warn=False,
-                            )
+                            benchmark_model_config(run_cfg, base, vocab_size)
                         ).model
                         param_count = sum(p.numel() for p in model.parameters())
                         record["param_count"] = int(param_count)

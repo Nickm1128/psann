@@ -1,5 +1,6 @@
 import numpy as np
 
+from psann.architectures import ActivationConfig, ArchitectureConfig
 from psann import PSANNRegressor
 
 
@@ -21,22 +22,26 @@ if __name__ == "__main__":
     X_test, y_test = X[te], y[te]
 
     model = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(
+            activation=ActivationConfig(
+                **{
+                    "amplitude_init": 1.0,
+                    "frequency_init": 1.0,
+                    "decay_init": 0.1,
+                    "learnable": ("amplitude", "frequency", "decay"),
+                    "decay_mode": "abs",
+                }
+            )
+        ),
         hidden_layers=2,
-        hidden_width=64,
         epochs=300,
-        lr=1e-3,
+        lr=0.001,
         batch_size=128,
-        activation={
-            "amplitude_init": 1.0,
-            "frequency_init": 1.0,
-            "decay_init": 0.1,
-            "learnable": ("amplitude", "frequency", "decay"),
-            "decay_mode": "abs",
-        },
         device="auto",
         random_state=42,
         early_stopping=True,
         patience=30,
+        hidden_units=64,
     )
 
     model.fit(X_train, y_train)

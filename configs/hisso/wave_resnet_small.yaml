@@ -1,7 +1,12 @@
 estimator:
   target: psann.PSANNRegressor
   params:
-    architecture: wave
+    architecture:
+      kind: wave
+      wave:
+        warmup:
+          epochs: 10
+      residual: {}
     hidden_layers: 4
     hidden_units: 64
     epochs: 60
@@ -9,10 +14,6 @@ estimator:
     lr: 0.0005
     random_state: 23
     device: cuda:0
-    preserve_shape: false
-    data_format: channels_first
-    w0_warmup_epochs: 10
-
 episodic:
   enabled: true
   strategy:
@@ -28,13 +29,10 @@ episodic:
     warm_start:
       epochs: 2
       batch_size: 32
-
 data:
   npz: ../../datasets/wave_resnet_small.npz
-
 training:
   verbose: 1
-
 evaluation:
   portfolio_prices_key: prices_test
   trans_cost: 0.001

@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from psann.architectures import ArchitectureConfig, StateConfig
 from psann import PSANNRegressor
 
 
@@ -25,17 +26,19 @@ if __name__ == "__main__":
     X_te, y_te = X[n_tr + n_va :], y[n_tr + n_va :]
 
     model = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(
+            state=StateConfig(
+                **{"rho": 0.985, "beta": 1.0, "max_abs": 3.0, "init": 1.0, "detach": True},
+                reset="epoch",
+                stream_lr=0.0003,
+            )
+        ),
         hidden_layers=2,
-        hidden_width=32,
         epochs=500,
         batch_size=256,
-        lr=1e-3,
-        stream_lr=3e-4,
+        lr=0.001,
         early_stopping=False,
-        # patience=20,
-        stateful=True,
-        state={"rho": 0.985, "beta": 1.0, "max_abs": 3.0, "init": 1.0, "detach": True},
-        state_reset="epoch",
+        hidden_units=32,
     )
     model.fit(X_tr, y_tr, validation_data=(X_va, y_va), verbose=1)
 

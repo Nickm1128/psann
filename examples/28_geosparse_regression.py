@@ -1,6 +1,7 @@
 import numpy as np
 
 from psann.architectures import ArchitectureConfig, GeometryConfig
+from psann.architectures import ActivationConfig
 from psann import PSANNRegressor
 
 
@@ -21,13 +22,13 @@ if __name__ == "__main__":
     X_test, y_test = X[te_idx], y[te_idx]
 
     model = PSANNRegressor(
-        architecture=ArchitectureConfig.geometric_sparse(geometry=GeometryConfig(shape=(4, 4))),
+        architecture=ArchitectureConfig.geometric_sparse(
+            geometry=GeometryConfig(shape=(4, 4), k=8), activation=ActivationConfig(kind="relu")
+        ),
         hidden_layers=4,
-        k=8,
-        activation_type="relu",
         epochs=60,
         batch_size=64,
-        lr=1e-3,
+        lr=0.001,
         random_state=0,
     )
     model.fit(X_train, y_train, verbose=0)

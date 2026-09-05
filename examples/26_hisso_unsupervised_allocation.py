@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from psann.architectures import ActivationConfig, ArchitectureConfig
 from psann import PSANNRegressor
 from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 
@@ -28,13 +29,13 @@ if __name__ == "__main__":
 
     print("Training HISSO policy on synthetic prices...")
     est = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(activation=ActivationConfig(kind="psann")),
         hidden_layers=2,
-        hidden_width=64,
-        activation_type="psann",
         epochs=70,
-        lr=8e-4,
+        lr=0.0008,
         batch_size=128,
         random_state=0,
+        hidden_units=64,
     )
 
     trainer = EpisodicTrainer(

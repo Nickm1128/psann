@@ -1,5 +1,6 @@
 import numpy as np
 
+from psann.architectures import ArchitectureConfig
 from psann import PSANNRegressor
 
 
@@ -24,11 +25,12 @@ if __name__ == "__main__":
 
     # Default MLP path flattens features internally
     model = PSANNRegressor(
+        architecture=ArchitectureConfig.dense(),
         hidden_layers=2,
-        hidden_width=128,
         epochs=120,
         early_stopping=True,
         patience=15,
+        hidden_units=128,
     )
 
     model.fit(X_train, y_train, verbose=1)

@@ -1,5 +1,6 @@
 import numpy as np
 
+from psann.architectures import ArchitectureConfig, ConvolutionConfig
 from psann import PSANNRegressor
 
 
@@ -24,14 +25,14 @@ if __name__ == "__main__":
 
     # Convolutional PSANN keeps (N,C,H,W) shape through the body
     model = PSANNRegressor(
-        preserve_shape=True,
-        data_format="channels_first",
+        architecture=ArchitectureConfig.convolutional(
+            convolution=ConvolutionConfig(data_format="channels_first", kernel_size=3)
+        ),
         hidden_layers=2,
-        hidden_width=32,
-        conv_kernel_size=3,
         epochs=80,
         early_stopping=True,
         patience=10,
+        hidden_units=32,
     )
 
     model.fit(X_train, y_train, verbose=1)

@@ -5,7 +5,12 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from psann.conv import PSANNConv2dNet
+from psann.architectures import ArchitectureConfig, ConvolutionConfig
+
+try:
+    from examples.torch_backbone import build_backbone
+except ModuleNotFoundError:
+    from torch_backbone import build_backbone
 
 
 def make_synthetic_images(N=2000, H=16, W=16, seed=0):
@@ -107,8 +112,10 @@ if __name__ == "__main__":
     class PSANNCNN(nn.Module):
         def __init__(self, num_classes=2):
             super().__init__()
-            self.net = PSANNConv2dNet(
-                1, num_classes, hidden_layers=2, hidden_channels=32, kernel_size=3
+            self.net = build_backbone(
+                ArchitectureConfig.convolutional(convolution=ConvolutionConfig(kernel_size=3)),
+                (1, 16, 16),
+                num_classes,
             )
 
         def forward(self, x):

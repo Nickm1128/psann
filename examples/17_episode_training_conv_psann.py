@@ -9,6 +9,7 @@ global averaging spatial dimensions per channel.
 import numpy as np
 import torch
 
+from psann.architectures import ArchitectureConfig, ConvolutionConfig
 from psann import PSANNRegressor
 from psann.episodic import EpisodeScheduleConfig, EpisodicTrainer, HISSOConfig
 
@@ -39,14 +40,15 @@ if __name__ == "__main__":
     M = C
 
     est = PSANNRegressor(
+        architecture=ArchitectureConfig.convolutional(
+            convolution=ConvolutionConfig(
+                data_format="channels_first", kernel_size=3, per_element=False
+            )
+        ),
         hidden_layers=2,
-        hidden_width=24,
         epochs=1,
-        preserve_shape=True,
-        data_format="channels_first",
-        conv_kernel_size=3,
-        per_element=False,
         output_shape=(M,),
+        hidden_units=24,
     )
     trainer = EpisodicTrainer(
         estimator=est,
