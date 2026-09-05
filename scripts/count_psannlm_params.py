@@ -5,14 +5,21 @@ from __future__ import annotations
 
 import argparse
 
-from psannlm.architectures import build_lm_model
+from psannlm.architectures import build_lm_model, LMConfig, LMArchitectureConfig, LMTemporalConfig
 from psannlm.architectures.compat import legacy_lm_config
 from psannlm.lm.models.sine import SineConfig
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Count parameters for a PSANN-LM configuration")
-    p.add_argument("--base", type=str, default="waveresnet", choices=["waveresnet", "respsann"])
+    p.add_argument(
+        "--architecture",
+        choices=["transformer", "residual", "wave", "geometric-sparse"],
+        default=None,
+    )
+    p.add_argument(
+        "--base", type=str, default=None, choices=["waveresnet", "respsann"], help=argparse.SUPPRESS
+    )
     p.add_argument("--vocab-size", type=int, default=50257)
     p.add_argument("--d-model", type=int, default=2048)
     p.add_argument("--n-layers", type=int, default=22)
@@ -30,26 +37,59 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     d_mlp = args.d_mlp if args.d_mlp is not None else 4 * int(args.d_model)
 
-    sine = SineConfig()
-    model = build_lm_model(
-        legacy_lm_config(
-            args.base,
-            dict(
-                vocab_size=int(args.vocab_size),
-                d_model=int(args.d_model),
-                n_layers=int(args.n_layers),
-                n_heads=int(args.n_heads),
-                d_mlp=int(d_mlp),
-                positional_encoding=str(args.pos_enc),
-                sine=sine,
-                wave_interleave=bool(args.wave_interleave),
-                wave_kernel_size=int(args.wave_kernel_size),
-                wave_dilation_growth=int(args.wave_dilation_growth),
-                wave_dropout=float(args.wave_dropout),
-            ),
-            warn=False,
+    if args.base is not None and args.architecture is not None:
+        raise ValueError("Use one architecture source; prefer --architecture.")
+    if args.base is not None:
+        sine = SineConfig()
+        model = build_lm_model(
+            legacy_lm_config(
+                args.base,
+                dict(
+                    vocab_size=int(args.vocab_size),
+                    d_model=int(args.d_model),
+                    n_layers=int(args.n_layers),
+                    n_heads=int(args.n_heads),
+                    d_mlp=int(d_mlp),
+                    positional_encoding=str(args.pos_enc),
+                    sine=sine,
+                    **(
+                        dict(
+                            wave_interleave=bool(args.wave_interleave),
+                            wave_kernel_size=int(args.wave_kernel_size),
+                            wave_dilation_growth=int(args.wave_dilation_growth),
+                            wave_dropout=float(args.wave_dropout),
+                        )
+                        if args.base == "waveresnet" else {}
+                    ),
+                ),
+                warn=False,
+            )
+        ).model
+    else:
+        kind = args.architecture or "wave"
+        architecture = (
+            LMArchitectureConfig.wave(
+                temporal=LMTemporalConfig(
+                    mode="interleave" if args.wave_interleave else "disabled",
+                    kernel_size=args.wave_kernel_size,
+                    dilation_growth=args.wave_dilation_growth,
+                    dropout=args.wave_dropout,
+                )
+            )
+            if kind == "wave"
+            else kind
         )
-    ).model
+        model = build_lm_model(
+            LMConfig(
+                architecture=architecture,
+                vocab_size=args.vocab_size,
+                d_model=args.d_model,
+                n_layers=args.n_layers,
+                n_heads=args.n_heads,
+                d_mlp=d_mlp,
+                positional_encoding=args.pos_enc,
+            )
+        ).model
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total:,}")

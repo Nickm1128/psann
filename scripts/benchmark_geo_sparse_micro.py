@@ -18,7 +18,10 @@ _SRC_ROOT = _REPO_ROOT / "src"
 if _SRC_ROOT.exists():
     sys.path.insert(0, str(_SRC_ROOT))
 
-from gpu_env_report import gather_env_info
+try:
+    from scripts.gpu_env_report import gather_env_info
+except ModuleNotFoundError:
+    from gpu_env_report import gather_env_info
 from psann.layers.geo_sparse import GeoSparseLinear, build_geo_connectivity
 from psann.nn_geo_sparse import GeoSparseResidualBlock
 from psann.utils import choose_device, seed_all

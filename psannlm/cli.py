@@ -284,7 +284,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_p.add_argument("--max-batches", type=int, default=128)
     eval_p.add_argument("--add-specials", action="store_true")
     eval_p.add_argument("--attn-impl", type=str, default="sdpa", choices=["math", "sdpa", "auto"])
-    eval_p.add_argument("--base", type=str, default="waveresnet")
+    eval_p.add_argument("--base", type=str, default="waveresnet", help=argparse.SUPPRESS)
     eval_p.add_argument("--pos-enc", type=str, default="rope")
     eval_p.add_argument("--n-heads", type=int, default=None)
     eval_p.add_argument("--device", type=str, default="auto")
@@ -304,7 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
     gen_p.add_argument("--add-bos", action="store_true")
     gen_p.add_argument("--stop-at-eos", action="store_true", default=True)
     gen_p.add_argument("--no-stop-at-eos", dest="stop_at_eos", action="store_false")
-    gen_p.add_argument("--base", type=str, default="waveresnet")
+    gen_p.add_argument("--base", type=str, default="waveresnet", help=argparse.SUPPRESS)
     gen_p.add_argument("--pos-enc", type=str, default="rope")
     gen_p.add_argument("--n-heads", type=int, default=None)
     gen_p.add_argument("--device", type=str, default="auto")
@@ -331,7 +331,11 @@ def main(argv: Optional[Iterable[str]] = None, *, _legacy_entry: bool = False) -
     if tokens and tokens[0] in {"train", "resume"}:
         command, flags = tokens[0], tokens[1:]
         options = {token.split("=", 1)[0] for token in flags if token.startswith("--")}
-        if command == "resume" and "--resume-ckpt" not in options:
+        if (
+            command == "resume"
+            and "--resume-ckpt" not in options
+            and not any(flag in ("--help", "-h") for flag in flags)
+        ):
             raise SystemExit("resume requires --resume-ckpt.")
         if "--config" in options:
             parser = argparse.ArgumentParser(description="Train PSANN-LM from canonical YAML")
@@ -402,4 +406,8 @@ def main(argv: Optional[Iterable[str]] = None, *, _legacy_entry: bool = False) -
 
 
 if __name__ == "__main__":
+    print(
+        "DeprecationWarning: python -m psannlm.cli is deprecated; use python -m psannlm.",
+        file=sys.stderr,
+    )
     raise SystemExit(main())

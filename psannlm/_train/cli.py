@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Train PSANN-LM with streaming data and FSDP")
 
     # Model
-    p.add_argument("--base", type=str, default="waveresnet")
+    p.add_argument("--base", type=str, default="waveresnet", help=argparse.SUPPRESS)
     p.add_argument(
         "--architecture", choices=["transformer", "residual", "wave", "geometric-sparse"]
     )
@@ -54,18 +54,13 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["math", "sdpa", "auto"],
         help="Attention implementation: 'math' = explicit matmul+softmax, 'sdpa'/'auto' use torch.scaled_dot_product_attention when available.",
     )
-    p.add_argument("--sine-amp-init", type=float, default=None)
-    p.add_argument("--sine-amp-init-std", type=float, default=None)
-    p.add_argument("--sine-freq-init", type=float, default=None)
-    p.add_argument("--sine-freq-init-std", type=float, default=None)
-    p.add_argument("--sine-damp-init", type=float, default=None)
-    p.add_argument("--sine-damp-init-std", type=float, default=None)
-    p.add_argument(
-        "--sine-trainable",
-        type=str2bool,
-        default=True,
-        help="Whether sine parameters are trainable (default: true).",
-    )
+    p.add_argument("--sine-amp-init", type=float, default=None, help=argparse.SUPPRESS)
+    p.add_argument("--sine-amp-init-std", type=float, default=None, help=argparse.SUPPRESS)
+    p.add_argument("--sine-freq-init", type=float, default=None, help=argparse.SUPPRESS)
+    p.add_argument("--sine-freq-init-std", type=float, default=None, help=argparse.SUPPRESS)
+    p.add_argument("--sine-damp-init", type=float, default=None, help=argparse.SUPPRESS)
+    p.add_argument("--sine-damp-init-std", type=float, default=None, help=argparse.SUPPRESS)
+    p.add_argument("--sine-trainable", type=str2bool, default=True, help=argparse.SUPPRESS)
 
     # Tokenizer
     p.add_argument(
@@ -387,7 +382,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         global_tokens_per_step = tokens_per_step * world_size
         print(
             f"[budget] seq_len={seq_len} micro_batch={micro_batch} tokens_per_step={tokens_per_step:,} "
-            f"tokens_per_step_global≈{global_tokens_per_step:,} target_tokens≈{target_msg} max_steps={max_steps_msg}"
+            f"tokens_per_step_globalâ‰ˆ{global_tokens_per_step:,} target_tokensâ‰ˆ{target_msg} max_steps={max_steps_msg}"
         )
 
     if args.cuda_memory_fraction is not None:
@@ -781,7 +776,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(
             "[warn] Streaming dataset exhausted early "
             f"(step={trainer.state.step} < max_steps={int(args.max_steps):,}; "
-            f"trained_tokens≈{trained_tokens:,} vs target_tokens≈{target_msg})."
+            f"trained_tokensâ‰ˆ{trained_tokens:,} vs target_tokensâ‰ˆ{target_msg})."
         )
 
     # Copy final artifact if requested

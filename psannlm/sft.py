@@ -390,7 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--add-eos", action="store_true", help="Append EOS token after each response.")
 
     # Model
-    p.add_argument("--base", type=str, default="waveresnet")
+    p.add_argument("--base", type=str, default="waveresnet", help=argparse.SUPPRESS)
     p.add_argument("--n-heads", type=int, default=None)
     p.add_argument("--pos-enc", type=str, default="rope", choices=["rope", "alibi", "sinusoidal"])
     p.add_argument("--attn-impl", type=str, default="sdpa", choices=["math", "sdpa", "auto"])

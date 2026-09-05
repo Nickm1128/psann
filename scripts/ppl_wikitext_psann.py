@@ -26,8 +26,6 @@ except ImportError:  # pragma: no cover - direct script execution from ./scripts
 
 ensure_src_dir(Path(__file__).resolve().parents[1])
 
-from psannlm.eval_adapter import PSANNLM  # reuse adapter for scoring
-
 
 def main() -> int:
     p = argparse.ArgumentParser()
@@ -40,6 +38,7 @@ def main() -> int:
     p.add_argument("--text-field", default="text", type=str)
     p.add_argument("--limit", default=1000, type=int)
     args = p.parse_args()
+    from psannlm.eval_adapter import PSANNLM
 
     lm = PSANNLM(
         ckpt=args.ckpt,

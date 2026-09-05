@@ -2,7 +2,7 @@
 Unified GPU validation and benchmarking runner for PSANN-LM.
 
 This script executes the GPU work block in one go and stores
-results in a timestamped reports directory that is easy to commit.
+results in a timestamped local reports directory.
 
 Outputs written to: reports/gpu/<UTC_yyyymmdd_HHMMSS>/
 
@@ -15,7 +15,7 @@ Contents:
 Usage (from repo root):
   python scripts/run_gpu_validation.py --out reports/gpu
 
-If not installed as editable, either install `-e .[lm]` or set PYTHONPATH=.
+Install core and the separate LM distribution before running this source utility.
 """
 
 from __future__ import annotations
@@ -33,11 +33,10 @@ from typing import Any, Dict, List, Sequence
 import torch
 
 try:
-    from psannlm.architectures.compat import legacy_api_config
-    from psannlm.lm import PSANNLM, PSANNLMDataPrep, TrainConfig
+    from psannlm import PSANNLM, PSANNLMDataPrep, TrainConfig, LMConfig
 except Exception:  # pragma: no cover - runner convenience
     print(
-        "Failed to import psannlm.lm — ensure PYTHONPATH=.<repo root> or install -e .",
+        "Failed to import psannlm; install the separate LM distribution.",
         file=sys.stderr,
     )
     raise
@@ -133,7 +132,7 @@ def _ddp_loss_worker(
             _torch.cuda.manual_seed_all(123)
 
         # Build model consistent with single-GPU baseline
-        lm = PSANNLM(config=legacy_api_config(**model_cfg))
+        lm = PSANNLM(config=LMConfig(**model_cfg))
         model = lm._ensure_model(int(vocab_size)).to(device).eval()
         model = _DDP(
             model, device_ids=[int(rank)], output_device=int(rank), find_unused_parameters=False
@@ -201,7 +200,7 @@ def _fsdp_loss_worker(
         if _torch.cuda.is_available():
             _torch.cuda.manual_seed_all(123)
 
-        lm = PSANNLM(config=legacy_api_config(**model_cfg))
+        lm = PSANNLM(config=LMConfig(**model_cfg))
         base_model = lm._ensure_model(int(vocab_size)).to(device)
         # Match evaluation mode with single-GPU baseline to avoid dropout-induced deltas
         base_model.eval()
@@ -249,13 +248,13 @@ def gpu_01_forward_backward() -> Dict[str, Any]:
         texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0
     )
     lm = PSANNLM(
-        config=legacy_api_config(
-            base="waveresnet",
+        config=LMConfig(
+            architecture="wave",
             d_model=128,
             n_layers=2,
             n_heads=4,
             vocab_size=dp.vocab_size,
-            rope=True,
+            positional_encoding="rope",
         )
     )
     t0 = time.time()
@@ -285,8 +284,13 @@ def gpu_02_amp_parity() -> Dict[str, Any]:
         texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
     )
     lm = PSANNLM(
-        config=legacy_api_config(
-            base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+        config=LMConfig(
+            architecture="residual",
+            d_model=128,
+            n_layers=2,
+            n_heads=4,
+            vocab_size=dp.vocab_size,
+            positional_encoding="rope",
         )
     )
 
@@ -368,8 +372,13 @@ def gpu_03_throughput() -> Dict[str, Any]:
             B = max(1, int(os.environ.get("PSANN_GPU03_B", "4")))
             target_tokens = B * T
         lm = PSANNLM(
-            config=legacy_api_config(
-                base=base, d_model=256, n_layers=4, n_heads=4, vocab_size=vocab, rope=True
+            config=LMConfig(
+                architecture=base,
+                d_model=256,
+                n_layers=4,
+                n_heads=4,
+                vocab_size=vocab,
+                positional_encoding="rope",
             )
         )
         model = lm._ensure_model(vocab).to(device).eval()
@@ -399,8 +408,8 @@ def gpu_03_throughput() -> Dict[str, Any]:
 
     return {
         "status": "ok",
-        "respsann": bench("respsann"),
-        "waveresnet": bench("waveresnet"),
+        "respsann": bench("residual"),
+        "waveresnet": bench("wave"),
     }
 
 
@@ -425,13 +434,13 @@ def gpu_04_checkpointing() -> Dict[str, Any]:
         texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
     )
     lm = PSANNLM(
-        config=legacy_api_config(
-            base="waveresnet",
+        config=LMConfig(
+            architecture="wave",
             d_model=128,
             n_layers=2,
             n_heads=4,
             vocab_size=dp.vocab_size,
-            rope=True,
+            positional_encoding="rope",
         )
     )
     # Reset and record CUDA memory stats for a clean measurement window
@@ -490,11 +499,16 @@ def gpu_05_ddp() -> Dict[str, Any]:
     batch_ids = [base_ids, base_ids]  # B=2
 
     model_cfg = dict(
-        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True
+        architecture="wave",
+        d_model=128,
+        n_layers=2,
+        n_heads=4,
+        vocab_size=vocab,
+        positional_encoding="rope",
     )
 
     device0 = torch.device("cuda", 0)
-    lm = PSANNLM(config=legacy_api_config(**model_cfg))
+    lm = PSANNLM(config=LMConfig(**model_cfg))
     model = lm._ensure_model(vocab).to(device0).eval()
     with torch.no_grad():
         import torch.nn.functional as F
@@ -562,7 +576,12 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
         base_ids = sample[:T]
         batch_ids = [base_ids, base_ids]
         model_cfg = dict(
-            base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=vocab, rope=True
+            architecture="wave",
+            d_model=128,
+            n_layers=2,
+            n_heads=4,
+            vocab_size=vocab,
+            positional_encoding="rope",
         )
 
         # Compute single-GPU baseline
@@ -570,7 +589,7 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
         torch.manual_seed(123)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(123)
-        lm = PSANNLM(config=legacy_api_config(**model_cfg))
+        lm = PSANNLM(config=LMConfig(**model_cfg))
         model = lm._ensure_model(vocab).to(device0).eval()
         with torch.no_grad():
             import torch.nn.functional as F
@@ -634,13 +653,13 @@ def gpu_07_generation_smoke() -> Dict[str, Any]:
         texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
     )
     lm = PSANNLM(
-        config=legacy_api_config(
-            base="waveresnet",
+        config=LMConfig(
+            architecture="wave",
             d_model=128,
             n_layers=2,
             n_heads=4,
             vocab_size=dp.vocab_size,
-            rope=True,
+            positional_encoding="rope",
         )
     )
     lm.fit(dp, train=TrainConfig(epochs=1, batch_tokens=4096, lr=3e-4))
@@ -659,8 +678,13 @@ def gpu_08_save_load(outdir: Path) -> Dict[str, Any]:
         texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0
     )
     lm = PSANNLM(
-        config=legacy_api_config(
-            base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+        config=LMConfig(
+            architecture="residual",
+            d_model=128,
+            n_layers=2,
+            n_heads=4,
+            vocab_size=dp.vocab_size,
+            positional_encoding="rope",
         )
     )
     lm.fit(dp, train=TrainConfig(epochs=1, batch_tokens=4096, lr=3e-4))

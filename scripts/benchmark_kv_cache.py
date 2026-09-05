@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 import torch
 from psannlm.architectures.compat import legacy_api_config
-from psannlm.lm import PSANNLM, PSANNLMDataPrep
+from psannlm import PSANNLM, PSANNLMDataPrep, LMConfig
 
 
 @contextmanager
@@ -121,9 +121,15 @@ def run_benchmark(cfg: BenchmarkConfig) -> Dict[str, Any]:
         pack_sequences=True,
         val_split=0.0,
     )
+    config_factory = (
+        LMConfig
+        if cfg.base in ("transformer", "residual", "wave", "geometric-sparse")
+        else legacy_api_config
+    )
+    architecture_key = "architecture" if config_factory is LMConfig else "base"
     model = PSANNLM(
-        config=legacy_api_config(
-            base=cfg.base,
+        config=config_factory(
+            **{architecture_key: cfg.base},
             d_model=cfg.d_model,
             n_layers=cfg.n_layers,
             n_heads=cfg.n_heads,
@@ -173,7 +179,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-length", type=int, default=96)
     parser.add_argument("--max-new-tokens", type=int, default=64)
     parser.add_argument(
-        "--base", type=str, default="waveresnet", choices=["waveresnet", "respsann"]
+        "--base", type=str, default=None, choices=["waveresnet", "respsann"], help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--architecture",
+        choices=["transformer", "residual", "wave", "geometric-sparse"],
+        default=None,
     )
     parser.add_argument("--d-model", type=int, default=512)
     parser.add_argument("--n-layers", type=int, default=8)
@@ -191,11 +202,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.base is not None and args.architecture is not None:
+        raise ValueError("Use one architecture source; prefer --architecture.")
     cfg = BenchmarkConfig(
         batch_size=args.batch_size,
         prompt_length=args.prompt_length,
         max_new_tokens=args.max_new_tokens,
-        base=args.base,
+        base=args.architecture or args.base or "wave",
         d_model=args.d_model,
         n_layers=args.n_layers,
         n_heads=args.n_heads,

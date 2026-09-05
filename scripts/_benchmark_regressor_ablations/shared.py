@@ -23,7 +23,10 @@ except ImportError:  # pragma: no cover - supports `python scripts/foo.py`
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = ensure_src_dir(_REPO_ROOT)
 
-from gpu_env_report import gather_env_info
+try:
+    from scripts.gpu_env_report import gather_env_info
+except ModuleNotFoundError:
+    from gpu_env_report import gather_env_info
 from psann import PSANNRegressor
 from psann.architectures import (
     ActivationConfig,

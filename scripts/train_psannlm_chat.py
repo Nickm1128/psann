@@ -195,9 +195,19 @@ def build_oasst_pair_stream(max_pairs: int) -> TextStream:
 
 def count_model_params(base: str, vocab_size: int, **cfg: int) -> int:
 
-    model = build_lm_model(
-        legacy_lm_config(base, dict(vocab_size=vocab_size, **cfg), warn=False)
-    ).model
+    if base in ("transformer", "residual", "wave", "geometric-sparse"):
+        from psannlm import LMConfig, LMArchitectureConfig
+        from psannlm.architectures import LMTemporalConfig
+
+        architecture = (
+            LMArchitectureConfig.wave(temporal=LMTemporalConfig(mode="interleave"))
+            if base == "wave"
+            else base
+        )
+        config = LMConfig(architecture=architecture, vocab_size=vocab_size, **cfg)
+    else:
+        config = legacy_lm_config(base, dict(vocab_size=vocab_size, **cfg), warn=False)
+    model = build_lm_model(config).model
     total = sum(p.numel() for p in model.parameters())
     del model
     return int(total)
@@ -493,7 +503,7 @@ def main() -> None:
         "chat300M",
         args.target_params,
         vocab_size=vocab_size,
-        base="waveresnet",
+        base="wave",
         width_choices=[1408, 1536, 1664, 1792, 1920],
         layer_choices=list(range(10, 22, 2)),
         max_heads=32,

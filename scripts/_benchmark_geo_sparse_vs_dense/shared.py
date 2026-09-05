@@ -24,7 +24,10 @@ except ImportError:  # pragma: no cover - supports `python scripts/foo.py`
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC_ROOT = ensure_src_dir(_REPO_ROOT)
 
-from gpu_env_report import gather_env_info
+try:
+    from scripts.gpu_env_report import gather_env_info
+except ModuleNotFoundError:
+    from gpu_env_report import gather_env_info
 from psann.layers.sine_residual import RMSNorm
 from psann.nn_geo_sparse import GeoSparseNet
 from psann.nn_geo_sparse import _build_activation as _build_geo_activation

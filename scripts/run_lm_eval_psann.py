@@ -18,9 +18,6 @@ import json
 import warnings
 from pathlib import Path, PurePosixPath
 
-from lm_eval import evaluator
-from lm_eval.api import registry
-
 try:
     from scripts._cli_utils import ensure_src_dir
 except ImportError:  # pragma: no cover - direct script execution from ./scripts
@@ -29,7 +26,6 @@ except ImportError:  # pragma: no cover - direct script execution from ./scripts
 ensure_src_dir(Path(__file__).resolve().parents[1])
 
 # Import adapter and register under a name
-from psannlm.eval_adapter import PSANNLM
 
 
 def main() -> int:
@@ -82,6 +78,9 @@ def main() -> int:
     )
     p.add_argument("--output", default="eval_out/psann_eval.json", type=str)
     args = p.parse_args()
+    from psannlm.eval_adapter import PSANNLM
+    from lm_eval import evaluator
+    from lm_eval.api import registry
 
     # Register locally
     registry.register_model("psann")(PSANNLM)
