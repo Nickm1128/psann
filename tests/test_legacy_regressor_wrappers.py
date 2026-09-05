@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
@@ -64,8 +66,13 @@ def test_wrapper_load_keeps_compatible_wrapper_type(tmp_path):
             X, np.ones(6, dtype=np.float32)
         )
     path = tmp_path / "residual.pt"
-    estimator.save(str(path))
-    with pytest.warns(DeprecationWarning):
-        loaded = ResPSANNRegressor.load(str(path))
-    assert isinstance(loaded, ResPSANNRegressor)
-    assert loaded.predict(X[:2]).shape == (2,)
+    expected = estimator.predict(X)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        for generation in (1, 2):
+            estimator.save(str(path))
+            estimator = ResPSANNRegressor.load(str(path))
+            assert isinstance(estimator, ResPSANNRegressor)
+            np.testing.assert_array_equal(estimator.predict(X), expected)
+            path = tmp_path / f"residual-{generation}.pt"
+    assert not [warning for warning in caught if warning.category is DeprecationWarning]
