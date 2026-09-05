@@ -1,5 +1,10 @@
 ﻿#!/usr/bin/env python
-"""Quick HISSO profiling harness for the primary-only trainer."""
+"""Compatibility profiler for the retained model-level HISSO trainer.
+
+This diagnostic preserves its original GELU network, constant allocation reward,
+and timing boundary. Canonical episodic workflows use the task API documented in
+docs/episodic.md; this profiler does not measure that complete estimator workflow.
+"""
 
 from __future__ import annotations
 

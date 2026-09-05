@@ -647,7 +647,7 @@
     {
       "path": "scripts/profile_hisso.py",
       "module": "scripts.profile_hisso",
-      "classification": "canonical"
+      "classification": "compatibility/migration"
     },
     {
       "path": "scripts/profile_psann.py",
