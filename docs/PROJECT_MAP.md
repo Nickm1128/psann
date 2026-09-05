@@ -40,7 +40,7 @@ These are under active iteration; APIs may change and performance characteristic
   - Benchmark scripts and sweep harnesses under `scripts/` and `reports/`
 - **Language modeling**
   - Core LM library code lives in the separate `psannlm` distribution
-  - `psannlm.train` remains the public LM training entrypoint and now delegates to `psannlm/_train/`
+  - `python -m psannlm` owns train/resume/eval/generate through the typed LM builder
 
 If you depend on any experimental pieces, pin a version and expect breaking changes across minor releases.
 

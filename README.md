@@ -150,10 +150,9 @@ At a glance, the main things you import from `psann` are:
 
 Language modeling entry points live under `psannlm`:
 
-- `from psannlm import psannLM, psannLMDataPrep`
+- `from psannlm import PSANNLM, PSANNLMDataPrep`
 
-The `psannlm` package provides the LM training CLIs (`python -m psannlm` or
-`python -m psannlm.train`) used by scripts such as `scripts/train_psann_lm.py`.
+The `psannlm` package provides the LM training CLIs (`python -m psannlm train`) used by scripts such as `scripts/train_psann_lm.py`.
 
 ## Quick Start
 
@@ -263,31 +262,25 @@ pip install psann psannlm
 ```
 
 Use the `psannlm` package for in-code training/generation and one-command training/CLI workflows:
-- High-level APIs: `from psannlm import psannLM, psannLMDataPrep`
+- High-level APIs: `from psannlm import PSANNLM, PSANNLMDataPrep`
 - CLI entrypoint: `python scripts/train_psann_lm.py` (thin wrapper around `python -m psannlm`)
 
 Then spin up a minimal CPU demo:
 
 ```python
-from psannlm import psannLM, psannLMDataPrep
+from psannlm import LMArchitectureConfig, LMConfig, PSANNLM, PSANNLMDataPrep, TrainConfig
 
-texts = ["hello world", "goodnight moon", "the quick brown fox jumps over the lazy dog"]
-dp = psannLMDataPrep(
-    texts,
-    tokenizer="auto",      # sentencepiece -> tokenizers -> char fallback
-    max_length=64,
-    pack_sequences=True,
+texts = ["hello world", "goodnight moon", "the quick brown fox jumps over the lazy dog"] * 8
+data = PSANNLMDataPrep(texts, tokenizer="simple", max_length=32)
+model = PSANNLM(
+    config=LMConfig(
+        architecture=LMArchitectureConfig.wave(),
+        d_model=128, n_layers=2, n_heads=4, vocab_size=data.vocab_size,
+    ),
+    device="cpu",
 )
-
-model = psannLM(
-    base="waveresnet",
-    d_model=256,
-    n_layers=4,
-    n_heads=4,
-    vocab_size=dp.vocab_size,
-)
-model.fit(dp, epochs=2, batch_tokens=8_192, lr=2e-4, amp="fp32", ddp="off")
-print(model.generate("Once upon a time", max_new_tokens=48, top_p=0.9))
+model.fit(data, train=TrainConfig(epochs=1, batch_tokens=256, lr=1e-3, amp="fp32"))
+print(model.generate("hello", max_new_tokens=32, top_p=0.9))
 ```
 
 For a fully scripted example (dataset prep → train → generation logging), run:

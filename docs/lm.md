@@ -26,30 +26,19 @@ Quickstart
 ----------
 
 ```python
-from psannlm import psannLM, psannLMDataPrep
+from psannlm import LMArchitectureConfig, LMConfig, PSANNLM, PSANNLMDataPrep, TrainConfig
 
-texts = ["hello world", "goodnight moon"]
-dp = psannLMDataPrep(
-    texts,
-    tokenizer="auto",             # sentencepiece -> tokenizers -> char fallback
-    tokenizer_model_path=None,
-    max_length=256,
-    pack_sequences=True,
+texts = ["hello world", "goodnight moon", "the quick brown fox jumps over the lazy dog"] * 8
+data = PSANNLMDataPrep(texts, tokenizer="simple", max_length=32)
+model = PSANNLM(
+    config=LMConfig(
+        architecture=LMArchitectureConfig.wave(),
+        d_model=128, n_layers=2, n_heads=4, vocab_size=data.vocab_size,
+    ),
+    device="cpu",
 )
-
-model = psannLM(
-    base="waveresnet",
-    d_model=512,
-    n_layers=8,
-    n_heads=8,
-    vocab_size=dp.vocab_size,
-    positional_encoding="rope",   # set to "alibi" or "sinusoidal" if desired
-    sine_params=dict(amp_init=1.0, freq_init=1.0, damp_init=0.01, trainable=True),
-)
-
-model.fit(dp, epochs=1, batch_tokens=65_536, lr=2e-4, amp="bf16")
-print(model.generate("Once upon a time", top_p=0.9, max_new_tokens=64))
-print(model.generate_batch(["hello", "goodnight"], max_new_tokens=32))
+model.fit(data, train=TrainConfig(epochs=1, batch_tokens=256, lr=1e-3, amp="fp32"))
+print(model.generate("hello", max_new_tokens=32, top_p=0.9))
 ```
 
 Canonical CLI
@@ -62,7 +51,7 @@ Use the unified CLI (`python -m psannlm`) for train, eval, and generation:
 python -m psannlm train --hf-dataset allenai/c4 --hf-name en --hf-split train \
   --hf-text-key text --hf-shuffle --hf-shuffle-buffer 10000 \
   --tokenizer-backend tokenizers --train-tokenizer --tokenizer-save-dir runs/tokenizer_300m \
-  --base waveresnet --d-model 1024 --n-layers 16 --n-heads 16 --d-mlp 4096 \
+  --architecture wave --d-model 1024 --n-layers 16 --n-heads 16 --d-mlp 4096 \
   --seq-len 2048 --dataset-streaming true --tokens-target 1000000000 \
   --batch-tokens 131072 --grad-accum-steps 1 --amp bf16 \
   --checkpoint-dir runs/lm/300m_en
@@ -77,7 +66,7 @@ python -m psannlm generate --ckpt runs/lm/300m_en/ckpt_step010000.pt \
   --tokenizer-dir runs/tokenizer_300m --prompt "The future of PSANN-LM is"
 ```
 
-The YAML helper (`python -m psannlm.lm.train.cli --config ...`) remains for tiny CPU
+The YAML helper (`python -m psannlm train --config ...`) remains for tiny CPU
 sanity checks, but the canonical entrypoint for production runs is `python -m psannlm`.
 
 Minimal End-to-End Example
@@ -112,7 +101,7 @@ Public API Reference
 The Python surface intentionally mirrors the minimal example above. Everything lives under
 `psannlm` so imports stay stable across releases.
 
-**`psannLMDataPrep`**
+**`PSANNLMDataPrep`**
 - Inputs: iterable of texts or file paths plus tokenizer options (`tokenizer="auto"` resolves in the documented order with `tokenizer_model_path` opt-in).
 - Key knobs: `max_length`, `pack_sequences`, `val_split`, `seed`.
 - Properties:
@@ -122,12 +111,12 @@ The Python surface intentionally mirrors the minimal example above. Everything l
   - `tokenizer_backend`: string literal describing which backend is active.
 - Implements `__len__` so you can log dataset sizes in scripts.
 
-**`psannLM`**
-- Constructor mirrors the model config: `base`, `d_model`, `n_layers`, `n_heads`, optional `d_mlp`, `vocab_size`, `positional_encoding`, and `sine_params`.
-- `.fit(train_data, val_data=None, epochs=..., batch_tokens=..., lr=..., amp=..., ddp=..., **overrides)` wires up :class:`Trainer` under the hood and returns `self` for chaining.
-- `.generate(prompt, max_new_tokens=128, top_k=None, top_p=0.9, temperature=1.0, repetition_penalty=None)` runs single-prompt sampling.
-- `.generate_batch(prompts, ...)` buckets prompts by length and reuses KV-cache tensors automatically.
-- `.save(path)` / `.load(path)` persist configs plus learned weights; the saved positional-encoding + sine settings are restored on load.
+**`PSANNLM`**
+- `PSANNLM(config=LMConfig(...), device="cpu")` accepts an immutable typed config or strict tagged mapping.
+- `.fit(data, train=TrainConfig(...))` consumes a frozen training policy; `resume_checkpoint` restores a trainer artifact.
+- `.generate(prompt, ...)` and `.generate_batch(prompts, ...)` retain sampling and KV-cache behavior.
+- `.save(path)` / `.load(path, map_location="cpu")` preserve canonical policy, exact weights and fitted tokenizer state.
+- `.attach_tokenizer(tokenizer)` attaches an already fitted tokenizer to older model files.
 
 See `examples/lm/minimal_train.py` (CPU) and `examples/lm/generate.py` for full runnable snippets that exercise the same surface used in the tests.
 
@@ -136,7 +125,7 @@ Tokenizer Backend Policy
 
 `tokenizer="auto"` now resolves to **SentencePiece → Hugging Face tokenizers → simple char**.
 The detectors only fall back when the prerequisite package cannot be imported, and the
-selected backend is exposed via `psannLMDataPrep.tokenizer_backend`.
+selected backend is exposed via `PSANNLMDataPrep.tokenizer_backend`.
 
 Latest comparison (corpus: `examples/lm/sample_texts.txt`, repeat=256, vocab=4096) was captured
 with `python scripts/compare_tokenizers.py --repeat 256` and lives at
@@ -162,7 +151,7 @@ Positional Encoding Policy
 --------------------------
 
 RoPE remains the default positional encoding across both bases. Set `positional_encoding`
-to `"rope"`, `"alibi"`, or `"sinusoidal"` via `psannLM(..., positional_encoding="alibi")`,
+to `"rope"`, `"alibi"`, or `"sinusoidal"` via `LMConfig(..., positional_encoding="alibi")`,
 the CLI YAML (`model.positional_encoding: alibi`), or the low-level transformer configs.
 
 - `"rope"`: rotary embeddings applied inside attention heads (requires even `d_model / n_heads`).
@@ -176,7 +165,7 @@ ALiBi biases are exercised in `tests/lm/test_transformer_forward.py` to guard ag
 KV-cache Fast Path
 ------------------
 
-`psannLM.generate_batch()` drives generation through PyTorch's KV-cache tensors (`use_cache=True`
+`PSANNLM.generate_batch()` drives generation through PyTorch's KV-cache tensors (`use_cache=True`
 and `past_kvs` feeds). On CPU this path already yields a ~13.5x speed-up over the naive loop
 that replays the whole prompt per sample:
 
@@ -197,7 +186,7 @@ Quickstart (CLI, CPU)
 Run a minimal end-to-end training on CPU with a tiny sample corpus:
 
 ```
-python -m psannlm.lm.train.cli --config examples/lm/configs/waveresnet_cpu.yaml
+python -m psannlm train --config examples/lm/configs/waveresnet_cpu.yaml
 ```
 
 This uses `examples/lm/sample_texts.txt` and disables AMP/DDP for a fast local sanity check.
@@ -294,12 +283,26 @@ a venv, set `SKIP_VENV=1` (or use the system python) so you keep the container's
 Configuration
 -------------
 
-**Model (`psannlm.lm.config.ModelConfig`)**
-- `base`: `waveresnet` | `respsann` | `sgrpsann`
-- `d_model`, `n_layers`, `n_heads`, `d_mlp`
-- `vocab_size`: override (defaults to data prep vocab)
-- `positional_encoding`: `rope` (default) | `alibi` | `sinusoidal`
-- `sine_params`: amplitude/frequency/damping settings
+**Model (`psannlm.LMConfig`)**
+- `architecture`: immutable `LMArchitectureConfig` or a tagged nested mapping.
+- Presets: `transformer`, `residual`, `wave`, `geometric-sparse`.
+- Common fields: positive `d_model`, `n_layers`, `n_heads`, optional `d_mlp` (4 × width at build), and `vocab_size` (required at build).
+- `positional_encoding`: `rope`, `alibi`, `sinusoidal`; `attention_implementation`: `math`, `sdpa`, `auto`.
+- Dropout is in `[0, 1)`; head dimensions divide the width, and RoPE head dimensions are even.
+
+Shared `ActivationConfig`, `ResidualConfig`, `SpectralConfig`, and `GeometryConfig` come
+from `psann.architectures`. SGR uses `LMArchitectureConfig.residual(spectral=SpectralConfig(...))`.
+Transformer permits GELU/ReLU; residual and Wave permit PSANN/GELU; GeoSparse also permits
+ReLU, tanh and mixed activations. Unsupported policies and inactive non-default fields
+raise before building. Unknown keys, numeric strings and booleans used as dimensions
+are rejected rather than filtered.
+
+Wave owns `LMTemporalConfig` with `disabled`, `interleave`, `replace`, and the compatibility
+structure `attention-only`. The latter executes attention without MLP or temporal blocks.
+GeoSparse owns `LMGeometryExecutionConfig(depth=..., chunk_size=...)`; `None` disables
+chunking. Sampling spreads/ranges belong to the frozen `LMActivationInitializationConfig`,
+not the shared core activation policy. Positive spread and range for the same parameter
+conflict. Sampling runs in amplitude/frequency/decay order for every executing PSANN child.
 
 **Data (`psannlm.lm.config.DataConfig`)**
 - `tokenizer`: `auto` | `simple` | `sentencepiece` | `tokenizers`
@@ -388,17 +391,10 @@ Key takeaways:
 - Damping alone does not help, but pairing it with another learnable knob closes the remaining gap.
 - Full trainability gives the best validation perplexity (22.11) and is the new documented default.
 
-To reproduce any row, set `model.sine_params.trainable: false` and pass the desired subset via
-`model.sine_params.learnable`. When using the CLI you can override inline, e.g.:
-
-```
-python -m psannlm.lm.train.cli \
-  --config examples/lm/configs/waveresnet_small.yaml \
-  --train.epochs 2 \
-  --train.batch_tokens 131072 \
-  --model.sine_params.trainable=false \
-  --model.sine_params.learnable='[amplitude,frequency]'
-```
+For new runs, set `model.architecture.activation.learnable` to the desired list and
+use `python -m psannlm train --config <yaml>`. The table records historical runs using
+legacy configuration; the old high-level YAML adapter ignored its extra learnability
+field. Canonical configuration executes that policy explicitly.
 
 The bar chart `reports/ablations/20251107_1730_sine_params/sine_param_tradeoffs.png` provides a
 quick visual of the validation perplexity deltas for slide decks or release notes.
@@ -416,6 +412,64 @@ Caveats
 -------
 - The provided examples run on CPU by default; GPU performance requires CUDA-capable hardware.
 - SentencePiece → Hugging Face tokenizers → simple char is the exact auto-detection order;
-  inspect `psannLMDataPrep.tokenizer_backend` to confirm which backend is live, and expect quality
+  inspect `PSANNLMDataPrep.tokenizer_backend` to confirm which backend is live, and expect quality
   drops if the char-level fallback is in use.
 - DeepSpeed shims exist in the trainer but are optional; torch DDP/FSDP paths are the focus.
+
+Migration and persistence
+-------------------------
+
+Canonical mappings use `kind: lm` and `architecture.kind`. Preset strings are convenient
+in YAML. Matching duplicate flat options warn and normalize once; conflicts identify both
+paths. Caller-owned mappings and typed objects are never mutated.
+
+| 0.x base | Canonical policy |
+| --- | --- |
+| transformer | transformer, GELU |
+| respsann | residual |
+| sgrpsann | residual plus spectral |
+| waveresnet | wave |
+| geosparse | geometric-sparse |
+
+Lowercase constructors, `Trainer`, flat fitting and legacy base factories warn at the
+caller. Historically ignored high-level Wave/geometry/spectral options remain ignored
+only in those warning adapters. New canonical configs execute every applicable field.
+Both old training modules print one deprecation warning and delegate to `python -m psannlm`.
+Legacy YAML forwards its historical five training options; use canonical YAML to execute
+warmup, optimizer, accumulation and checkpoint policy fields explicitly.
+
+`get_base`, `list_bases`, and `register_base` retain external 0.x factory signatures in
+the canonical registry's compatibility namespace. Replacing a name requires `replace=True`.
+Such external factories remain noncanonical low-level extensions; new extensions use
+`register_lm_builder` and `LMBuildRequest`/`LMBuildResult`. Direct legacy transformer config
+classes remain documented low-level compatibility surfaces with numerical parity tests.
+
+New model files have schema `psannlm.model`, integer version 1, package version, canonical
+configuration, tensor state, device and fitted tokenizer state. New trainer files have
+schema `psannlm.trainer`, plus optimizer/scaler/scheduler, counters, RNG and data metadata.
+Unknown or missing payload keys, wrong discriminators and incompatible tensor keys/shapes
+fail with named paths. `PSANNLM.load` does not treat trainer files as model artifacts.
+`load_lm_checkpoint` is the explicit model/trainer/raw-weight reconstruction API. Legacy
+trainer and raw-weight files require `legacy_config=LMConfig(...)` for missing options;
+CLI compatibility flags supply those options when reading such files. New metadata is
+authoritative; eval, generation, SFT, resume and export use the same builder.
+
+Tokenizers are embedded in model artifacts, including fitted simple vocabularies,
+SentencePiece bytes, and HF tokenizer JSON/special IDs. Old files without tokenizers
+still support explicit attachment. Standalone tokenizer `save` retains its existing
+backend behavior. CPU/CUDA map-location changes device without changing policy or state.
+
+The existing Wave temporal and spectral sequence operators can yield different cached
+continuations from full-sequence reevaluation. The same cache path is preserved across
+save/load and devices; this release does not redesign those operators.
+
+Legacy raw weights and trainer files without architecture metadata require their
+original configuration. Pass a canonical JSON/YAML LM configuration with
+`python -m psannlm generate --model-config model.json ...` (also supported by
+`eval`). New versioned artifacts carry their own authoritative configuration;
+conflicting explicit configurations fail instead of overriding it.
+
+The shared `psann.architectures.components.activation_feature_counts` helper
+reports mixed-activation child widths using the same integer allocation as the
+core activation builder. LM initialization requires an executing PSANN child of
+positive width, including after rounding.

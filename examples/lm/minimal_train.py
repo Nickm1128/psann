@@ -2,7 +2,7 @@
 
 This script:
 1. Loads `examples/lm/sample_texts.txt`.
-2. Prepares the dataset/tokenizer via `psannLMDataPrep`.
+2. Prepares the dataset/tokenizer via `PSANNLMDataPrep`.
 3. Trains a tiny WaveResNet transformer on CPU.
 4. Generates a few completions and optionally stores them under `reports/examples/`.
 
@@ -17,7 +17,7 @@ from datetime import datetime
 import argparse
 import json
 
-from psannlm.lm import psannLM, psannLMDataPrep
+from psannlm import LMConfig, LMArchitectureConfig, PSANNLM, PSANNLMDataPrep, TrainConfig
 
 PROMPTS = [
     "hello world",
@@ -38,7 +38,7 @@ def _load_corpus() -> tuple[list[str], Path]:
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train + generate with psannLM on a toy corpus.")
+    parser = argparse.ArgumentParser(description="Train + generate with PSANNLM on a toy corpus.")
     parser.add_argument(
         "--out",
         type=Path,
@@ -65,7 +65,7 @@ def main() -> None:
     base_texts, corpus_path = _load_corpus()
     repeats = max(1, int(args.repeat))
     texts = base_texts * repeats
-    data = psannLMDataPrep(
+    data = PSANNLMDataPrep(
         texts,
         tokenizer="sentencepiece",
         tokenizer_model_path=str(TOKENIZER_MODEL),
@@ -73,22 +73,29 @@ def main() -> None:
         pack_sequences=True,
         val_split=0.2,
     )
-    model = psannLM(
-        base="waveresnet",
-        d_model=256,
-        n_layers=4,
-        n_heads=4,
-        d_mlp=1024,
-        vocab_size=data.vocab_size,
+    model = PSANNLM(
+        config=LMConfig(
+            architecture=LMArchitectureConfig.wave(),
+            d_model=256,
+            n_layers=4,
+            n_heads=4,
+            d_mlp=1024,
+            vocab_size=data.vocab_size,
+        ),
+        device="cpu",
     )
-    print(f"Loaded {len(base_texts)} unique documents from {corpus_path.name} (repeat x{repeats} -> {len(texts)} total)")
-    print(f"Dataset batches: {len(data)} (max_length={data.max_length}, pack_sequences={data.pack_sequences})")
+    print(
+        f"Loaded {len(base_texts)} unique documents from {corpus_path.name} (repeat x{repeats} -> {len(texts)} total)"
+    )
+    print(
+        f"Dataset batches: {len(data)} (max_length={data.max_length}, pack_sequences={data.pack_sequences})"
+    )
     print(f"Tokenizer model: {TOKENIZER_MODEL}")
     print(f"Vocab size: {data.vocab_size}")
 
     train_cfg = dict(epochs=args.epochs, batch_tokens=512, lr=2e-4, amp="fp32", ddp="off")
     print(f"Training config: {train_cfg}")
-    model.fit(data, **train_cfg)
+    model.fit(data, train=TrainConfig(**train_cfg))
 
     generations = {}
     print("\n=== Sample generations ===")

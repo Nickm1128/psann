@@ -5,23 +5,17 @@ Minimal usage
 -------------
 
 ```
-from psannlm import psannLM, psannLMDataPrep
+from psannlm import LMArchitectureConfig, LMConfig, PSANNLM, PSANNLMDataPrep, TrainConfig
 
-texts = ["hello world", "goodnight moon"]
-data = psannLMDataPrep(
-    texts,
-    tokenizer="auto",  # sentencepiece -> tokenizers -> simple char fallback
-    max_length=256,
+texts = ["hello world", "goodnight moon", "the quick brown fox jumps over the lazy dog"] * 8
+data = PSANNLMDataPrep(texts, tokenizer="simple", max_length=32)
+model = PSANNLM(
+    config=LMConfig(
+        architecture=LMArchitectureConfig.wave(),
+        d_model=128, n_layers=2, n_heads=4, vocab_size=data.vocab_size,
+    ),
+    device="cpu",
 )
-model = psannLM(
-    base="waveresnet",
-    d_model=256,
-    n_layers=4,
-    n_heads=4,
-    vocab_size=data.vocab_size,
-    positional_encoding="rope",  # switch to "alibi" or "sinusoidal" as needed
-)
-
-model.fit(data, epochs=1, batch_tokens=4096, lr=1e-3)
-print(model.generate("Once upon a time", max_new_tokens=32, top_p=0.9))
+model.fit(data, train=TrainConfig(epochs=1, batch_tokens=256, lr=1e-3, amp="fp32"))
+print(model.generate("hello", max_new_tokens=32, top_p=0.9))
 ```

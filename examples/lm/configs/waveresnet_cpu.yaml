@@ -1,36 +1,71 @@
 model:
-  base: waveresnet
+  kind: lm
+  architecture:
+    kind: wave
+    activation:
+      kind: psann
+      amplitude_init: 1.0
+      frequency_init: 1.0
+      decay_init: 0.01
+      learnable:
+      - amplitude
+      - frequency
+      - decay
+      decay_mode: abs
+      bounds: null
+      slope_init: 1.0
+      slope_trainable: true
+      clip_max: 1.0
+      activation_types: null
+      activation_ratios: null
+      phase_init: 0.0
+      phase_trainable: true
+      ratio_sum_tol: 0.001
+      mix_layout: random
+      mix_seed: null
+      feature_dim: -1
+    activation_initialization: null
+    residual:
+      norm: rms
+      alpha_init: 1.0
+      drop_path: 0.0
+      first_w0: 12.0
+      hidden_w0: 1.0
+    spectral: null
+    temporal:
+      mode: disabled
+      kernel_size: 3
+      dilation_growth: 1
+      dropout: 0.0
+    geometry: null
+    geometry_execution: null
   d_model: 256
   n_layers: 4
   n_heads: 4
   d_mlp: 1024
-  vocab_size: null   # auto from DataPrep
+  vocab_size: null
+  dropout: 0.0
   positional_encoding: rope
-  sine_params:
-    amp_init: 1.0
-    freq_init: 1.0
-    damp_init: 0.01
-    trainable: true
-
+  attention_implementation: math
 data:
   sources:
-    - path: examples/lm/sample_texts.txt
-  tokenizer: auto
+  - path: examples/lm/sample_texts.txt
+  tokenizer: sentencepiece
   max_length: 64
   pack_sequences: true
   val_split: 0.0
   seed: 1337
-
+  tokenizer_model_path: examples/lm/tokenizer/sample_texts.model
 train:
   epochs: 1
   batch_tokens: 8192
   lr: 0.001
   warmup_steps: 0
   weight_decay: 0.0
-  amp: null         # CPU-friendly
+  amp: fp32
   grad_clip: 1.0
   grad_accum_steps: 1
-  ddp: "off"
+  ddp: 'off'
   checkpoint_dir: runs/lm/wrn_cpu_local
   log_interval_steps: 10
-  save_interval_steps: 0
+  save_interval_steps: 500

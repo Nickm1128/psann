@@ -52,9 +52,9 @@ psannlm/                     -> separate distribution (LM training/CLI utilities
 
 ## LM flow (experimental)
 
-- `psannlm.psannLMDataPrep` handles tokenisation + dataset packing.
-- `psannlm.psannLM` exposes a compact fit/generate interface.
-- The CLI / long-run training utilities live in `psannlm.lm.train.cli`.
+- `psannlm.PSANNLMDataPrep` handles tokenisation + dataset packing.
+- `psannlm.PSANNLM` exposes a compact fit/generate interface.
+- The CLI / long-run training utilities use `python -m psannlm`.
 
 ## Design goals
 

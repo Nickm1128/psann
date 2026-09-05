@@ -1,15 +1,53 @@
 model:
-  base: waveresnet
+  kind: lm
+  architecture:
+    kind: wave
+    activation:
+      kind: psann
+      amplitude_init: 1.0
+      frequency_init: 1.0
+      decay_init: 0.01
+      learnable:
+      - amplitude
+      - frequency
+      - decay
+      decay_mode: abs
+      bounds: null
+      slope_init: 1.0
+      slope_trainable: true
+      clip_max: 1.0
+      activation_types: null
+      activation_ratios: null
+      phase_init: 0.0
+      phase_trainable: true
+      ratio_sum_tol: 0.001
+      mix_layout: random
+      mix_seed: null
+      feature_dim: -1
+    activation_initialization: null
+    residual:
+      norm: rms
+      alpha_init: 1.0
+      drop_path: 0.0
+      first_w0: 12.0
+      hidden_w0: 1.0
+    spectral: null
+    temporal:
+      mode: disabled
+      kernel_size: 3
+      dilation_growth: 1
+      dropout: 0.0
+    geometry: null
+    geometry_execution: null
   d_model: 3072
   n_layers: 30
   n_heads: 24
   d_mlp: 12288
+  vocab_size: null
+  dropout: 0.0
   positional_encoding: rope
-  # vocab_size: 50257  # Optional override (defaults to tokenizer vocab)
-
+  attention_implementation: math
 data:
-  # Note: The YAML trainer CLI loads full files into memory and is not intended
-  # for multi-billion token streaming. Prefer scripts/train_psann_lm.py for 3B.
   tokenizer: tokenizers
   tokenizer_model_path: /path/to/tokenizer_final/tokenizer.json
   tokenizer_special_map_path: /path/to/tokenizer_final/special_tokens_map.json
@@ -18,8 +56,7 @@ data:
   val_split: 0.0
   seed: 1337
   sources:
-    - datasets/lm/tiny_books.txt  # placeholder; replace with your local corpus
-
+  - datasets/lm/tiny_books.txt
 train:
   epochs: 1
   batch_tokens: 65536
@@ -27,4 +64,3 @@ train:
   amp: bf16
   ddp: auto
   checkpoint_dir: runs/lm/3b_yaml
-

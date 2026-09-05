@@ -1,27 +1,60 @@
 model:
-  base: waveresnet
+  kind: lm
+  architecture:
+    kind: wave
+    activation:
+      kind: psann
+      amplitude_init: 1.0
+      frequency_init: 1.0
+      decay_init: 0.01
+      learnable:
+      - amplitude
+      - frequency
+      - decay
+      decay_mode: abs
+      bounds: null
+      slope_init: 1.0
+      slope_trainable: true
+      clip_max: 1.0
+      activation_types: null
+      activation_ratios: null
+      phase_init: 0.0
+      phase_trainable: true
+      ratio_sum_tol: 0.001
+      mix_layout: random
+      mix_seed: null
+      feature_dim: -1
+    activation_initialization: null
+    residual:
+      norm: rms
+      alpha_init: 1.0
+      drop_path: 0.0
+      first_w0: 12.0
+      hidden_w0: 1.0
+    spectral: null
+    temporal:
+      mode: disabled
+      kernel_size: 3
+      dilation_growth: 1
+      dropout: 0.0
+    geometry: null
+    geometry_execution: null
   d_model: 512
   n_layers: 8
   n_heads: 8
   d_mlp: 2048
   vocab_size: 32000
+  dropout: 0.0
   positional_encoding: rope
-  sine_params:
-    amp_init: 1.0
-    freq_init: 1.0
-    damp_init: 0.01
-    trainable: true
-
+  attention_implementation: math
 data:
   sources:
-    - path: data/sample_texts.txt
-  tokenizer: auto  # change to "sentencepiece" if psannlm is installed
-  # tokenizer_model_path: path/to/prebuilt_tokenizer.model  # optional (SentencePiece .model or HF .json)
+  - path: examples/lm/sample_texts.txt
+  tokenizer: auto
   max_length: 1024
   pack_sequences: true
   val_split: 0.01
   seed: 1337
-
 train:
   epochs: 1
   batch_tokens: 131072
