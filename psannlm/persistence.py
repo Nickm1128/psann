@@ -14,7 +14,7 @@ from .architectures import LMConfig, build_lm_model, normalize_lm_config, to_map
 from .architectures.compat import legacy_lm_config
 from .lm.data.tokenizer import Tokenizer
 
-_PACKAGE_VERSION = "2.0.0"
+_PACKAGE_VERSION = "2.0.1"
 
 
 def package_version() -> str:

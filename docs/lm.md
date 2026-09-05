@@ -1,6 +1,6 @@
 # Language modeling
 
-`psannlm` is a separate distribution. Install core and then the LM package from this checkout with `python -m pip install -e .` and `python -m pip install ./psannlm`. Version 2.0.0 is shared by both distributions, and LM requires `psann>=2.0.0`. NumPy, PyTorch, SentencePiece, tokenizers, datasets, Hugging Face Hub, and PyYAML are direct LM runtime dependencies. Optional evaluation integrations have their own dependencies.
+`psannlm` is a separate distribution. Install core and then the LM package from this checkout with `python -m pip install -e .` and `python -m pip install ./psannlm`. Version 2.0.1 is shared by both distributions, and LM requires `psann>=2.0.1`. NumPy, PyTorch, SentencePiece, tokenizers, datasets, Hugging Face Hub, and PyYAML are direct LM runtime dependencies. Optional evaluation integrations have their own dependencies.
 
 ## Train, generate, and save
 

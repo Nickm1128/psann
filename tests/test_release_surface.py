@@ -58,11 +58,11 @@ def test_release_metadata_dependency_and_version_agreement():
 
     core = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     lm = tomllib.loads((ROOT / "psannlm/pyproject.toml").read_text())["project"]
-    assert core["version"] == lm["version"] == psann.__version__ == "2.0.0"
+    assert core["version"] == lm["version"] == psann.__version__ == "2.0.1"
     assert core["requires-python"] == lm["requires-python"] == ">=3.9"
     assert {"numpy>=1.23", "torch>=2.1", "PyYAML>=6.0"} <= set(core["dependencies"])
     assert {
-        "psann>=2.0.0",
+        "psann>=2.0.1",
         "numpy>=1.23",
         "torch>=2.1",
         "PyYAML>=6.0",

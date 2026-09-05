@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.1 — 2026-09-05
+
+This patch release replaces repository-relative links in the PyPI package description with absolute GitHub links. The 2.x typed configuration API remains authoritative, and there are no runtime behavior changes.
+
 ## 2.0.0 — 2026-09-05
 
 This major release establishes the authoritative public interface around `PSANNRegressor` with immutable architecture and preprocessing policies, `EpisodicTrainer` with `HISSOConfig`, and the separate `PSANNLM`/`PSANNLMDataPrep` task API with `LMConfig` and `LMArchitectureConfig`. `python -m psannlm` is the canonical LM command.

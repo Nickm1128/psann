@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "psannlm"
-version = "2.0.0"
+version = "2.0.1"
 description = "PSANN-LM: language modeling and training utilities for PSANN"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -24,7 +24,7 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-  "psann>=2.0.0",
+  "psann>=2.0.1",
   "numpy>=1.23",
   "torch>=2.1",
   "sentencepiece>=0.1.99",

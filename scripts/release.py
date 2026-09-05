@@ -11,7 +11,7 @@ Patch release with an explicit token:
 
 Provide a fully qualified version instead of bumping:
 
-    python scripts/release.py --version 2.0.1
+    python scripts/release.py --version 2.0.2
 
 If TWINE_USERNAME / TWINE_PASSWORD are already configured, omit --token.
 """
@@ -33,9 +33,9 @@ INIT_PATH = ROOT / "src" / "psann" / "__init__.py"
 PSANNLM_PYPROJECT_PATH = ROOT / "psannlm" / "pyproject.toml"
 PSANNLM_PERSISTENCE_PATH = ROOT / "psannlm" / "persistence.py"
 
-VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
-INIT_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
-LM_VERSION_RE = re.compile(r'^_PACKAGE_VERSION\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"[ \t]*$', re.MULTILINE)
+INIT_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"[ \t]*$', re.MULTILINE)
+LM_VERSION_RE = re.compile(r'^_PACKAGE_VERSION\s*=\s*"([^"]+)"[ \t]*$', re.MULTILINE)
 CORE_DEPENDENCY_RE = re.compile(r'"psann>=[^"]+"')
 
 

@@ -2,7 +2,7 @@
 
 PSANN is a PyTorch library for regression with trainable sinusoidal activations, composed preprocessing, and episodic optimization. The separate `psannlm` distribution provides language modeling.
 
-Version **2.0.0** is the authoritative API track for both packages. New code should use the typed configuration interfaces shown here. Older constructors and flat configuration inputs are migration-only compatibility routes and are not part of the canonical public surface.
+Version **2.0.1** is on the authoritative 2.x API track for both packages. New code should use the typed configuration interfaces shown here. Older constructors and flat configuration inputs are migration-only compatibility routes and are not part of the canonical public surface.
 
 ## Install from this checkout
 
@@ -14,7 +14,7 @@ python -m pip install -e ".[sklearn]"
 python -m pip install ./psannlm
 ```
 
-`psann` depends on NumPy, PyTorch, and PyYAML. Scikit-learn is optional for cloning and model selection. Installing core alone does not install or expose `psannlm`. See [installation and LM guide](docs/lm.md) for tokenizer and training dependencies.
+`psann` depends on NumPy, PyTorch, and PyYAML. Scikit-learn is optional for cloning and model selection. Installing core alone does not install or expose `psannlm`. See the [installation and LM guide](https://github.com/Nickm1128/psann/blob/main/docs/lm.md) for tokenizer and training dependencies.
 
 ## Regression
 
@@ -42,11 +42,11 @@ Use nested architecture policies to select residual, convolutional, wave, sequen
 
 ## Find a workflow
 
-- [Documentation index](docs/README.md): task guides and reference.
-- [Executable quickstarts](examples/quickstarts.py): regression, preprocessing, episodic optimization, and LM training; each saves and reloads twice.
-- [Architecture contract](docs/architecture_contract.md): supported combinations and validation.
-- [API reference](docs/API.md): construction, fit, inference, and persistence.
-- [Migration](docs/migration.md) and [deprecation policy](docs/deprecation_policy.md): compatibility routes for older applications and checkpoints.
-- [Changelog](CHANGELOG.md), [contributing](docs/CONTRIBUTING.md), and [license](LICENSE).
+- [Documentation index](https://github.com/Nickm1128/psann/blob/main/docs/README.md): task guides and reference.
+- [Executable quickstarts](https://github.com/Nickm1128/psann/blob/main/examples/quickstarts.py): regression, preprocessing, episodic optimization, and LM training; each saves and reloads twice.
+- [Architecture contract](https://github.com/Nickm1128/psann/blob/main/docs/architecture_contract.md): supported combinations and validation.
+- [API reference](https://github.com/Nickm1128/psann/blob/main/docs/API.md): construction, fit, inference, and persistence.
+- [Migration](https://github.com/Nickm1128/psann/blob/main/docs/migration.md) and [deprecation policy](https://github.com/Nickm1128/psann/blob/main/docs/deprecation_policy.md): compatibility routes for older applications and checkpoints.
+- [Changelog](https://github.com/Nickm1128/psann/blob/main/CHANGELOG.md), [contributing](https://github.com/Nickm1128/psann/blob/main/docs/CONTRIBUTING.md), and [license](https://github.com/Nickm1128/psann/blob/main/LICENSE).
 
 Research examples illustrate experiments; they do not establish general accuracy or performance advantages. Historical result reports are labeled and are not current executable configurations.

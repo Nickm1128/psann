@@ -1,6 +1,6 @@
 # PSANN-LM
 
-Language-model tasks for PSANN, packaged separately as `psannlm`. Version **2.0.0** requires `psann>=2.0.0` and uses the typed task and architecture configuration API as its authoritative public surface.
+Language-model tasks for PSANN, packaged separately as `psannlm`. Version **2.0.1** requires `psann>=2.0.1` and uses the typed task and architecture configuration API as its authoritative public surface.
 
 Install core first, then this directory with `python -m pip install ./psannlm` from the repository root. PyTorch, NumPy, SentencePiece, tokenizers, datasets, Hugging Face Hub, and PyYAML are declared runtime dependencies.
 
