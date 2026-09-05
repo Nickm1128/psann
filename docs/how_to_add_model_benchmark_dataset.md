@@ -12,4 +12,26 @@ Use identical splits, tokenizer identity, seeds, and evaluation token counts whe
 
 Reuse documented numerical components from `psann.architectures.components`. Do not import private estimator implementation modules into LM code or add a core dependency on `psannlm`. Test replacement through real training, generation, and two checkpoint generations. A replacement must preserve the advertised contract, including early rejection of invalid policies.
 
+This executable example obtains the existing residual implementation through the canonical factory and registers a typed builder for that implementation. An alternative implementation must honor the same forward, cache, configuration, and training contracts.
+
+```python
+from psannlm.architectures import (
+    LMConfig, LMBuildRequest, LMBuildResult, LMCapabilities,
+    build_lm_model, replace_lm_builder,
+)
+
+ResidualImplementation = type(build_lm_model(LMConfig(
+    architecture="residual", vocab_size=32, d_model=16,
+    n_layers=1, n_heads=2, d_mlp=32,
+)).model)
+
+def residual_builder(request: LMBuildRequest) -> LMBuildResult:
+    model = ResidualImplementation(request.config)
+    return LMBuildResult(model, LMCapabilities(kind="residual"))
+
+replace_lm_builder("residual", residual_builder)
+```
+
+Replacement is explicit and process-local. Register the same implementation before loading its checkpoints: the saved configuration stores policies, not Python code.
+
 Core integrations use `ArchitectureBuildRequest`, `build_architecture`, and documented registry/lifecycle interfaces from `psann.architectures`; keep task fit and persistence orchestration in the estimator. See [architecture](architecture.md) and [component reference](architecture_components.md).

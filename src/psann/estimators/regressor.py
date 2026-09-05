@@ -981,7 +981,7 @@ class PSANNRegressor(_Phase2Regressor):
         # ``super().__init__`` receives the resolved canonical value below, so
         # preserve the Phase 2 alias-only warning here rather than making the
         # inherited resolver believe both spellings were supplied.
-        if hidden_width is not None and hidden_units is None:
+        if hidden_width is not None and hidden_units is None and not facade_warned:
             warnings.warn(
                 "PSANNRegressor: `hidden_width` is deprecated; use `hidden_units` instead.",
                 DeprecationWarning,
