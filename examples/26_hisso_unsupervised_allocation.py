@@ -29,6 +29,7 @@ if __name__ == "__main__":
 
     print("Training HISSO policy on synthetic prices...")
     est = PSANNRegressor(
+        output_shape=(train.shape[1],),
         architecture=ArchitectureConfig.dense(activation=ActivationConfig(kind="psann")),
         hidden_layers=2,
         epochs=70,

@@ -1,31 +1,15 @@
-# PSANN Research Notebooks
+# Research notebooks
 
-This directory hosts exploratory and reproducibility notebooks that complement the library and docs. They are intended as example/analysis artifacts and are not imported as part of the public `psann` Python API.
+Run notebooks from the repository root with the candidate packages installed. Install the notebook-specific optional dependencies shown in the first cells (Jupyter, plotting/data tools, and any public data client). GPU use is optional unless explicitly selected; set the actual device and record its identity.
 
-## Available notebooks
+- Geometric-sparse versus dense ReLU comparisons preserve the connectivity, activation, and parameter-matching experiment.
+- Mixed-activation comparisons preserve mixture ratios and seeds.
+- The Bitcoin five-minute notebook uses public yfinance data, chronological splits, LSM preprocessing, and validation-selected thresholds. Data availability changes with provider retention; this is a research example, not a trading recommendation.
+- The wave context notebook demonstrates explicit and generated context.
+- The sine-parameter notebook compares trainable/frozen activation parameters with residual/wave policies and baseline models.
+- The parity/probes notebook builds canonical backbones inside explicit PyTorch training experiments. Later synthetic probes use distinct helper names so earlier experiments are not silently redefined.
+- HISSO logging notebooks use canonical estimator and episodic configuration mappings and local/generated inputs.
 
-- [**PSANN_Parity_and_Probes.ipynb**](PSANN_Parity_and_Probes.ipynb) &nbsp;[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/main/notebooks/PSANN_Parity_and_Probes.ipynb)\
-  Demonstrates the compute-parity experiment suite discussed in `data_descriptions.txt` and the accompanying reports. Designed for Google Colab.
-- [**HISSO_Logging_CLI_Walkthrough.ipynb**](HISSO_Logging_CLI_Walkthrough.ipynb) &nbsp;[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/main/notebooks/HISSO_Logging_CLI_Walkthrough.ipynb)\
-  CPU-first draft for the HISSO logging CLI workflow. Captures the command template, explains the emitted artifacts, and includes TODO markers for GPU-derived metrics/screenshots that will be filled in after the remote sweep.
-- [**HISSO_Logging_GPU_Run.ipynb**](HISSO_Logging_GPU_Run.ipynb) &nbsp;[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Nickm1128/psann/blob/main/notebooks/HISSO_Logging_GPU_Run.ipynb)\
-  Colab-ready automation that installs the published `psann` wheel, synthesises datasets, and executes the HISSO logging CLI on CUDA to collect metrics, event logs, and checkpoints for the final GPU sweep.
+The private-database crypto notebook was removed because its external repository, schema, and data were not provided. Remaining public-data notebooks do not claim to reproduce that experiment. Preserved notebook outputs are historical observations; rerun after changing data/configuration and record the new environment.
 
-## How to run
-
-1. Launch the notebook in Google Colab (GPU runtime recommended) or a local environment with a recent CUDA-ready PyTorch install.
-2. Execute the setup cell to install the published `psann` package (`pip install psann`)—cloning the repo is optional.
-3. Provide access to the datasets referenced by the experiment plan (mount Drive in Colab or point `DATA_ROOT` to a local directory).
-4. Review and adjust the configuration cell (`GLOBAL_CONFIG`, toggles) so the run fits your available time and GPU budget.
-5. Enable the heavier training sections only when you are ready for 30–45 minutes of runtime; the lightweight diagnostics finish in ~10 minutes on T4.
-
-## Logging directories
-
-- Recommended locations: `runs/hisso/` for local shells; `/content/hisso_logs/` on Colab/Runpod.
-- Pass `--output-dir` to the HISSO logging CLI (`python -m psann.scripts.hisso_log_run`) to control where metrics, checkpoints, and events are written.
-
-## Notebook hygiene
-
-- Outputs are cleared before commit to keep diffs small.
-- `.ipynb_checkpoints/` folders remain ignored repo-wide via `.gitignore`.
-- When adding new notebooks, please update this README with a short description, expected runtime, and execution guidance.
+[Consumer manifest](../docs/consumer_manifest.json) tracks parsing, prerequisites, and build coverage. [Quickstarts](../examples/quickstarts.py) provide bounded complete workflows suitable for a local smoke run.

@@ -45,6 +45,7 @@ if __name__ == "__main__":
 
     print("First HISSO run with frozen LSM preprocessing...")
     est = PSANNRegressor(
+        output_shape=(train.shape[1],),
         architecture=ArchitectureConfig.dense(activation=ActivationConfig(kind="psann")),
         hidden_layers=2,
         epochs=60,
