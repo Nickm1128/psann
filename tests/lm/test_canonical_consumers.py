@@ -626,3 +626,61 @@ def test_chat_pipeline_sizing_pretrain_sft_and_saved_model_execute_canonical_bui
     )
     summary = json.loads((artifact.parent / "summary.json").read_text())
     assert summary["pretrain"]["tokens_total"] == summary["sft"]["tokens_total"] == 42
+
+
+@pytest.mark.parametrize(
+    "field,value", [("warmup_steps", 0), ("grad_accum_steps", 2), ("steps_per_epoch", 3)]
+)
+def test_yaml_legacy_inactive_training_fields_preserve_updates_and_canonical_neighbors_execute(
+    field, value, tmp_path, monkeypatch
+):
+    from psannlm.configuration import run_yaml
+    from psannlm.architectures import to_mapping
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    monkeypatch.chdir(tmp_path)
+    text = tmp_path / "texts.txt"
+    text.write_text(TEXT, encoding="utf-8")
+    raw = {
+        "model": {"base": "respsann", "d_model": 24, "n_layers": 2, "n_heads": 3, "d_mlp": 36},
+        "data": {"sources": [str(text)], "tokenizer": "simple", "max_length": 7},
+        "train": {
+            "epochs": 1,
+            "batch_tokens": 14,
+            "lr": 0.003,
+            "amp": "fp32",
+            "ddp": "off",
+            "checkpoint_dir": str(tmp_path / "out"),
+        },
+    }
+    results = []
+    for extra in (False, True):
+        cfg = deepcopy(raw)
+        if extra:
+            cfg["train"][field] = value
+        path = tmp_path / "legacy.yaml"
+        path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+        torch.manual_seed(137)
+        with pytest.warns(DeprecationWarning) as warnings:
+            model = run_yaml(path)
+        assert len(warnings) == 1 and warnings[0].filename == __file__
+        if extra:
+            assert "train." + field in str(warnings[0].message)
+        results.append(model)
+    assert results[0]._trainer.cfg == results[1]._trainer.cfg
+    for key, state in results[0]._model.state_dict().items():
+        torch.testing.assert_close(state, results[1]._model.state_dict()[key], rtol=0, atol=0)
+    canonical = deepcopy(raw)
+    canonical["model"] = to_mapping(results[0].config)
+    canonical["train"][field] = value
+    path = tmp_path / "canonical.yaml"
+    path.write_text(yaml.safe_dump(canonical), encoding="utf-8")
+    torch.manual_seed(137)
+    executed = run_yaml(path)
+    assert getattr(executed._trainer.cfg, field) == value
+    assert not torch.equal(executed._model.lm_head.weight, results[0]._model.lm_head.weight)
+    final = torch.load(tmp_path / "out/final.pt", weights_only=True)
+    assert final["state"]["step"] == executed._trainer.state.step
+    assert all(
+        item["step"].item() == final["state"]["step"] for item in final["optim"]["state"].values()
+    )
