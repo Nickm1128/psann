@@ -36,10 +36,13 @@ def fitted_tokenizer(tmp_path):
 
 @pytest.mark.parametrize("kind", ["transformer", "residual", "wave", "geometric-sparse"])
 def test_sft_uses_saved_nondefault_config_and_updates_response_loss_parameters(
-    kind, tmp_path, monkeypatch
+    kind, tmp_path, monkeypatch, entry=None
 ):
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     from psannlm.sft import main as sft
+
+    if entry is not None:
+        sft = entry
 
     tok = fitted_tokenizer(tmp_path)
     config = LMConfig(
@@ -106,6 +109,15 @@ def test_sft_uses_saved_nondefault_config_and_updates_response_loss_parameters(
     assert payload["state"]["step"] == 3
     assert not torch.equal(payload["model"]["lm_head.weight"], before)
     assert all(v["step"].item() == 3 for v in payload["optim"]["state"].values())
+
+
+@pytest.mark.parametrize("kind", ["transformer", "residual", "wave", "geometric-sparse"])
+def test_unified_sft_executes_response_training_and_retains_saved_policy(
+    kind, tmp_path, monkeypatch
+):
+    test_sft_uses_saved_nondefault_config_and_updates_response_loss_parameters(
+        kind, tmp_path, monkeypatch, entry=lambda argv: main(["sft", *argv])
+    )
 
 
 def test_benchmark_main_all_five_factories_train_eval_and_save_canonical_metadata(

@@ -25,7 +25,7 @@ def test_legacy_cli_module_warns_once_and_delegates_help(module):
     assert "--sine-" not in result.stdout
 
 
-@pytest.mark.parametrize("command", [[], ["train"], ["resume"], ["eval"], ["generate"]])
+@pytest.mark.parametrize("command", [[], ["train"], ["resume"], ["eval"], ["generate"], ["sft"]])
 def test_canonical_cli_help_teaches_only_canonical_architecture_options(command):
     result = subprocess.run(
         [sys.executable, "-m", "psannlm", *command, "--help"],
