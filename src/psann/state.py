@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import warnings
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Callable, Mapping, Optional, Union, overload
 
 import torch
 import torch.nn as nn
@@ -95,6 +95,9 @@ class StateController(nn.Module):
     optimiser step to apply buffered updates, or `reset`/`reset_like_init` to reinitialise the state.
     """
 
+    state: torch.Tensor
+    _pending_state: Optional[torch.Tensor] = None
+
     def __init__(
         self,
         size: int,
@@ -131,7 +134,23 @@ class StateController(nn.Module):
         self._warn_high_emitted = False
         self._warn_low_emitted = False
 
-    def apply(self, y: torch.Tensor, feature_dim: int, update: bool = True) -> torch.Tensor:
+    @overload
+    def apply(self, y: Callable[[nn.Module], None], /) -> StateController: ...
+
+    @overload
+    def apply(self, *, fn: Callable[[nn.Module], None]) -> StateController: ...
+
+    @overload
+    def apply(self, y: torch.Tensor, feature_dim: int, update: bool = True) -> torch.Tensor: ...
+
+    def apply(
+        self,
+        y: torch.Tensor | Callable[[nn.Module], None] | None = None,
+        feature_dim: Optional[int] = None,
+        update: bool = True,
+        *,
+        fn: Optional[Callable[[nn.Module], None]] = None,
+    ) -> torch.Tensor | StateController:
         """Scale activations with the persisted state and optionally stage updates.
 
         Args:
@@ -142,6 +161,11 @@ class StateController(nn.Module):
         Returns:
             Tensor with the same shape as the input after scaling by the current state.
         """
+        callback = fn if fn is not None else y
+        if callable(callback):
+            return super().apply(callback)
+        if not isinstance(y, torch.Tensor) or feature_dim is None:
+            raise TypeError("Tensor state application requires y and feature_dim.")
         # Use a detached copy of state for forward to avoid versioning issues
         fd = feature_dim if feature_dim >= 0 else (y.ndim + feature_dim)
         shape = [1] * y.ndim

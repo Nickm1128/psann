@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ._host import EstimatorHost
+
 import math
 from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping, Optional, Tuple
 
@@ -31,23 +36,55 @@ from .shared import ValidationDataLike, _AttentionConvModel, _AttentionDenseMode
 
 if TYPE_CHECKING:
     from .base import PSANNRegressor
-    from .residual import ResConvPSANNRegressor
+
+
+if TYPE_CHECKING:
+    from typing import Callable, Dict, Tuple, Mapping
+    from torch import nn
+    from ..preproc import PreprocessorLike
 
 
 class _PSANNRegressorBuilderMixin:
-    def _device(self) -> torch.device:
+    _attention_shape_: Optional[Tuple[int, int]]
+    _context_dim_: Optional[int]
+    _hisso_cfg_: Optional[Any]
+    _hisso_context_extractor_: Optional[Any]
+    _hisso_options_: Optional[Any]
+    _hisso_reward_fn_: Optional[Any]
+    _hisso_trained_: bool
+    _hisso_trainer_: Optional[Any]
+    _keep_column_output_: bool
+    _lsm_module_: Optional[nn.Module]
+    _model_device_: Optional[torch.device]
+    _output_dim_: Optional[int]
+    _primary_dim_: Optional[int]
+    _scaler_fitted_: bool
+    _scaler_kind_: Optional[str]
+    _scaler_spec_: Optional[Dict[str, Any]]
+    _scaler_state_: Optional[Dict[str, Any]]
+    _target_cf_shape_: Optional[Tuple[int, ...]]
+    _target_scaler_fitted_: bool
+    _target_scaler_kind_: Optional[str]
+    _target_scaler_spec_: Optional[Dict[str, Any]]
+    _target_scaler_state_: Optional[Dict[str, Any]]
+    _target_vector_dim_: Optional[int]
+    _train_inputs_layout_: str
+    lsm: Optional[PreprocessorLike]
+    model_: nn.Module
+
+    def _device(self: EstimatorHost) -> torch.device:
         return choose_device(self.device)
 
-    def _infer_input_shape(self, X: np.ndarray) -> tuple:
+    def _infer_input_shape(self: EstimatorHost, X: np.ndarray) -> tuple:
         if X.ndim < 2:
             raise ValueError("X must be at least 2D (batch, features...)")
         return tuple(X.shape[1:])
 
-    def _flatten(self, X: np.ndarray) -> np.ndarray:
+    def _flatten(self: EstimatorHost, X: np.ndarray) -> np.ndarray:
         return X.reshape(X.shape[0], -1).astype(np.float32, copy=False)
 
     def _resolve_lsm_module(
-        self,
+        self: EstimatorHost,
         data: Any,
         *,
         preserve_shape: bool,
@@ -86,7 +123,7 @@ class _PSANNRegressorBuilderMixin:
         return lsm_module, int(dim) if dim is not None else None
 
     def _build_dense_core(
-        self,
+        self: EstimatorHost,
         input_dim: int,
         output_dim: int,
         *,
@@ -107,7 +144,7 @@ class _PSANNRegressorBuilderMixin:
         )
 
     def _build_dense_backbone(
-        self,
+        self: EstimatorHost,
         input_dim: int,
         output_dim: int,
         *,
@@ -126,7 +163,7 @@ class _PSANNRegressorBuilderMixin:
         )
 
     def _build_token_backbone(
-        self,
+        self: EstimatorHost,
         token_dim: int,
         embed_dim: int,
         *,
@@ -139,7 +176,7 @@ class _PSANNRegressorBuilderMixin:
         )
 
     def _build_attention_dense_core(
-        self,
+        self: EstimatorHost,
         input_dim: int,
         output_dim: int,
         *,
@@ -184,14 +221,14 @@ class _PSANNRegressorBuilderMixin:
             pool="mean",
         )
 
-    def _infer_conv_embed_dim(self, core: nn.Module) -> int:
+    def _infer_conv_embed_dim(self: EstimatorHost, core: nn.Module) -> int:
         for attr in ("conv_channels", "hidden_channels"):
             if hasattr(core, attr):
                 return int(getattr(core, attr))
         raise ValueError("Unable to infer convolutional token dimension for attention.")
 
     def _wrap_with_attention_conv(
-        self,
+        self: EstimatorHost,
         core: nn.Module,
         spatial_shape: Optional[Tuple[int, ...]],
         *,
@@ -216,7 +253,7 @@ class _PSANNRegressorBuilderMixin:
         )
 
     def _build_conv_core(
-        self,
+        self: EstimatorHost,
         spatial_ndim: int,
         in_channels: int,
         output_dim: int,
@@ -252,7 +289,7 @@ class _PSANNRegressorBuilderMixin:
             )
         return core
 
-    def _make_optimizer(self, model: torch.nn.Module, lr: Optional[float] = None):
+    def _make_optimizer(self: EstimatorHost, model: torch.nn.Module, lr: Optional[float] = None):
         lr = float(self.lr if lr is None else lr)
         if self.optimizer.lower() == "adamw":
             return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=self.weight_decay)
@@ -260,12 +297,12 @@ class _PSANNRegressorBuilderMixin:
             return torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
         return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=self.weight_decay)
 
-    def _build_optimizer(self, model: torch.nn.Module) -> torch.optim.Optimizer:
+    def _build_optimizer(self: EstimatorHost, model: torch.nn.Module) -> torch.optim.Optimizer:
         """Compatibility helper for warm-start flows expecting estimator-owned builders."""
 
         return _build_optimizer_helper(self, model)
 
-    def _make_loss(self):
+    def _make_loss(self: EstimatorHost):
         # Built-in strings
         if isinstance(self.loss, str):
             name = self.loss.lower()
@@ -309,7 +346,7 @@ class _PSANNRegressorBuilderMixin:
 
         raise TypeError("loss must be a string or a callable returning a scalar tensor")
 
-    def _make_per_element_fit_hooks(self) -> FitVariantHooks:
+    def _make_per_element_fit_hooks(self: EstimatorHost) -> FitVariantHooks:
         def build_model(request: ModelBuildRequest) -> nn.Module:
             prepared = request.prepared
             X_cf = prepared.train_inputs
@@ -357,7 +394,7 @@ class _PSANNRegressorBuilderMixin:
         return FitVariantHooks(build_model=build_model)
 
     def _make_conv_fit_hooks(
-        self,
+        self: EstimatorHost,
         *,
         prepared: PreparedInputState,
         verbose: int,
@@ -401,7 +438,7 @@ class _PSANNRegressorBuilderMixin:
             return WithPreprocessor(preproc, core)
 
         def build_hisso_plan(
-            estimator_ref: "ResConvPSANNRegressor",
+            estimator_ref: "PSANNRegressor",
             request: ModelBuildRequest,
             *,
             fit_args: NormalisedFitArgs,
@@ -436,7 +473,7 @@ class _PSANNRegressorBuilderMixin:
         )
 
     def _make_flatten_fit_hooks(
-        self,
+        self: EstimatorHost,
         *,
         prepared: PreparedInputState,
         verbose: int,
@@ -470,7 +507,9 @@ class _PSANNRegressorBuilderMixin:
             core = self._build_dense_core(
                 input_dim,
                 int(prepared_local.output_dim),
-                state_cfg=(self.state if self.stateful else None),
+                state_cfg=(
+                    self.state.to_kwargs() if self.stateful and self.state is not None else None
+                ),
                 input_shape=prepared_local.input_shape,
             )
             preproc = request.lsm_module
@@ -518,7 +557,7 @@ class _PSANNRegressorBuilderMixin:
         )
 
     def _make_fit_hooks(
-        self,
+        self: EstimatorHost,
         *,
         prepared: PreparedInputState,
         verbose: int,
@@ -532,7 +571,7 @@ class _PSANNRegressorBuilderMixin:
     # Estimator API
 
     def fit(
-        self,
+        self: EstimatorHost,
         X: np.ndarray,
         y: np.ndarray | None,
         *,

@@ -105,8 +105,10 @@ def _rbf_kernel(x: torch.Tensor, sigma: Optional[float] = None) -> torch.Tensor:
     dist_sq = torch.cdist(x, x, p=2).pow(2)
     if sigma is None:
         median = torch.median(dist_sq[dist_sq > 0])
-        sigma = torch.sqrt(median / 2) if median > 0 else 1.0
-    gamma = 1.0 / (2 * sigma * sigma)
+        bandwidth: torch.Tensor | float = torch.sqrt(median / 2) if median > 0 else 1.0
+    else:
+        bandwidth = sigma
+    gamma = 1.0 / (2 * bandwidth * bandwidth)
     return torch.exp(-gamma * dist_sq)
 
 

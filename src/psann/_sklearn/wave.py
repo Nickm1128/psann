@@ -407,7 +407,7 @@ class WaveResNetRegressor(PSANNRegressor):
         output_dim: int,
         *,
         state_cfg: Optional[Dict[str, Any]] = None,
-    ) -> nn.Module:
+    ) -> WaveResNet:
         if state_cfg is not None:
             warnings.warn(
                 "WaveResNetRegressor ignores state_cfg; WaveResNet does not expose external state.",
@@ -417,8 +417,17 @@ class WaveResNetRegressor(PSANNRegressor):
         init_first, init_hidden = self._initial_w0_values()
         depth = int(self.hidden_layers)
         if self._progressive_enabled():
+            assert self.progressive_depth_initial is not None
             depth = int(self.progressive_depth_initial)
         activation_cfg = copy.deepcopy(self.activation)
+        norm = self.norm
+        if norm != "none" and norm != "weight" and norm != "rms":
+            raise ValueError(f"Unsupported norm: {norm!r}")
+        norm_policy: Literal["none", "weight", "rms"] = "none"
+        if norm == "weight":
+            norm_policy = "weight"
+        elif norm == "rms":
+            norm_policy = "rms"
         return WaveResNet(
             input_dim=int(input_dim),
             hidden_dim=int(self._wave_hidden_dim),
@@ -427,7 +436,7 @@ class WaveResNetRegressor(PSANNRegressor):
             first_layer_w0=init_first,
             hidden_w0=init_hidden,
             context_dim=self.context_dim,
-            norm=self.norm,
+            norm=norm_policy,
             use_film=self.use_film,
             use_phase_shift=self.use_phase_shift,
             dropout=self.dropout,
@@ -570,7 +579,7 @@ class WaveResNetRegressor(PSANNRegressor):
         core.stem_w0 = value_first
         for block in core.blocks:
             if hasattr(block, "w0"):
-                block.w0 = value_hidden
+                setattr(block, "w0", value_hidden)
 
     def _reset_w0_schedule(self) -> None:
         self._w0_schedule_step = 0

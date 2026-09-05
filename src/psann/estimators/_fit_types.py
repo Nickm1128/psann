@@ -92,6 +92,7 @@ class HISSOPlanFactory(Protocol):
         self,
         estimator: "PSANNRegressor",
         request: ModelBuildRequest,
+        /,
         *,
         fit_args: NormalisedFitArgs,
     ) -> Optional[HISSOTrainingPlan]: ...

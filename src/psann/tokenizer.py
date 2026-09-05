@@ -50,7 +50,7 @@ class SimpleWordTokenizer(BaseTokenizer):
     def fit(self, corpus: Iterable[str]) -> None:
         from collections import Counter
 
-        cnt = Counter()
+        cnt: Counter[str] = Counter()
         for line in corpus:
             s = line.lower() if self.lowercase else line
             cnt.update(s.split())

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 import torch
@@ -13,6 +13,8 @@ from .common import TensorLike, _tensor_to_output, _to_float_tensor
 
 
 class MaskedConv2d(nn.Conv2d):
+    mask: torch.Tensor
+
     def __init__(
         self,
         in_channels: int,
@@ -82,7 +84,12 @@ class LSMConv2d(nn.Module):
         self.conv_channels = channels
         self.hidden_channels = channels
         self.kernel_size = int(kernel_size)
-        act = {"sine": torch.sin, "tanh": torch.tanh, "relu": F.relu}.get(nonlinearity)
+        activations: dict[str, Callable[[torch.Tensor], torch.Tensor]] = {
+            "sine": torch.sin,
+            "tanh": torch.tanh,
+            "relu": F.relu,
+        }
+        act = activations.get(nonlinearity)
         if act is None:
             raise ValueError("nonlinearity must be one of: sine, tanh, relu")
         self._act = act
@@ -230,7 +237,11 @@ class LSMConv2dExpander(nn.Module):
         noise_std_t = None
         if self.noisy is not None and float(self.noise_decay) >= 0.0:
             if np.isscalar(self.noisy):
-                std = np.full((1, Cin, 1, 1), float(self.noisy), dtype=np.float32)
+                std = np.full(
+                    (1, Cin, 1, 1),
+                    float(np.asarray(self.noisy, dtype=np.float32)),
+                    dtype=np.float32,
+                )
             else:
                 arr = np.asarray(self.noisy, dtype=np.float32)
                 if arr.ndim == 1 and arr.shape[0] == Cin:

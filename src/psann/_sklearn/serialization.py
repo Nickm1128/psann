@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ._host import EstimatorHost
+
 import copy
 import inspect
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Union
@@ -15,7 +20,11 @@ from .shared import (
 )
 
 if TYPE_CHECKING:
-    from .base import PSANNRegressor
+    pass
+
+from typing import TypeVar
+
+_LoadedEstimator = TypeVar("_LoadedEstimator", bound="EstimatorHost")
 
 
 _LEGACY_GEOSPARSE_KEYS = {
@@ -115,8 +124,17 @@ def _normalise_legacy_params(cls: type, raw_params: Any) -> Dict[str, Any]:
     return params
 
 
+if TYPE_CHECKING:
+    from typing import Dict, Mapping, Union
+
+
 class _PSANNRegressorSerializationMixin:
-    def _build_serialized_payload(self, model_cpu: torch.nn.Module) -> Dict[str, Any]:
+
+    def _build_serialized_payload(
+        self: EstimatorHost, model_cpu: torch.nn.Module
+    ) -> Dict[str, Any]:
+        input_shape = getattr(self, "input_shape_", None)
+        internal_shape = getattr(self, "_internal_input_shape_cf_", None)
         return {
             "class": self.__class__.__name__,
             "params": self.get_params(deep=True),
@@ -133,16 +151,8 @@ class _PSANNRegressorSerializationMixin:
                 if getattr(self, "_target_scaler_kind_", None) == "custom"
                 else None
             ),
-            "input_shape": (
-                tuple(self.input_shape_)
-                if getattr(self, "input_shape_", None) is not None
-                else None
-            ),
-            "internal_shape_cf": (
-                tuple(self._internal_input_shape_cf_)
-                if getattr(self, "_internal_input_shape_cf_", None) is not None
-                else None
-            ),
+            "input_shape": (tuple(input_shape) if input_shape is not None else None),
+            "internal_shape_cf": (tuple(internal_shape) if internal_shape is not None else None),
             "primary_dim": self._primary_dim_,
             "output_dim": self._output_dim_,
             "keep_column_output": bool(getattr(self, "_keep_column_output_", False)),
@@ -158,7 +168,7 @@ class _PSANNRegressorSerializationMixin:
             "hisso_trained": bool(getattr(self, "_hisso_trained_", False)),
         }
 
-    def save(self, path: str) -> None:
+    def save(self: EstimatorHost, path: str) -> None:
         self._ensure_fitted()
         model = self.model_
         orig_device = torch.device("cpu")
@@ -172,11 +182,11 @@ class _PSANNRegressorSerializationMixin:
 
     @classmethod
     def load(
-        cls,
+        cls: type[_LoadedEstimator],
         path: str,
         *,
         map_location: Optional[Union[str, torch.device]] = "cpu",
-    ) -> "PSANNRegressor":
+    ) -> _LoadedEstimator:
         try:
             payload = torch.load(path, map_location=map_location, weights_only=False)
         except TypeError:

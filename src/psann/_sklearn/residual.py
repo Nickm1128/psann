@@ -320,6 +320,7 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
         X: np.ndarray,
         y: np.ndarray | None,
         *,
+        context: Optional[np.ndarray] = None,
         validation_data: Optional[ValidationDataLike] = None,
         verbose: int = 0,
         noisy: Optional[NoiseSpec] = None,
@@ -340,6 +341,7 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
             return super().fit(
                 X,
                 y,
+                context=context,
                 validation_data=validation_data,
                 verbose=verbose,
                 noisy=noisy,
@@ -366,6 +368,7 @@ class ResConvPSANNRegressor(ResPSANNRegressor):
             self,
             X,
             y,
+            context=context,
             validation_data=validation_data,
             noisy=noisy,
             verbose=verbose,

@@ -249,6 +249,7 @@ class SGRPSANNRegressor(PSANNRegressor):
         output_dim: int,
         *,
         segmentation_head: bool,
+        spatial_shape: Optional[Tuple[int, ...]] = None,
     ) -> nn.Module:
         raise ValueError("SGRPSANNRegressor does not support preserve_shape inputs.")
 

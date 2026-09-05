@@ -112,6 +112,7 @@ class SineParam(nn.Module):
         f = self._apply_bounds(f, "frequency")
         d = self._apply_bounds(d, "decay")
 
+        g: torch.Tensor | float
         if self.decay_mode == "abs":
             g = z.abs()
         elif self.decay_mode == "relu":
@@ -170,6 +171,7 @@ class PhaseSineParam(SineParam):
         f = self._apply_bounds(f, "frequency")
         d = self._apply_bounds(d, "decay")
 
+        g: torch.Tensor | float
         if self.decay_mode == "abs":
             g = z.abs()
         elif self.decay_mode == "relu":

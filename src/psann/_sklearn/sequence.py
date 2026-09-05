@@ -1,22 +1,36 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ._host import EstimatorHost
+
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 import torch
 
 if TYPE_CHECKING:
-    from .inference import _PSANNRegressorInferenceMixin
+    pass
+
+
+if TYPE_CHECKING:
+    from typing import Callable
 
 
 class _PSANNRegressorSequenceMixin:
-    def reset_state(self) -> None:
+    _stream_last_lr_: Optional[float]
+    _stream_loss_: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]]
+    _stream_model_token_: Optional[int]
+    _stream_opt_: Optional[torch.optim.Optimizer]
+
+    def reset_state(self: EstimatorHost) -> None:
         self._ensure_fitted()
         if hasattr(self.model_, "reset_state"):
-            self.model_.reset_state()
+            getattr(self.model_, "reset_state")()
 
     def step(
-        self,
+        self: EstimatorHost,
         x: np.ndarray,
         *,
         context: Optional[np.ndarray] = None,
@@ -24,6 +38,7 @@ class _PSANNRegressorSequenceMixin:
         update_params: bool = False,
         update_state: bool = True,
     ) -> Any:
+        assert self.input_shape_ is not None
         batch = np.asarray(x, dtype=np.float32)
         if batch.ndim == len(self.input_shape_):
             batch = batch.reshape((1,) + tuple(self.input_shape_))
@@ -50,7 +65,7 @@ class _PSANNRegressorSequenceMixin:
         return reshaped
 
     def predict_sequence(
-        self,
+        self: EstimatorHost,
         X: np.ndarray,
         *,
         context: Optional[np.ndarray] = None,
@@ -59,13 +74,9 @@ class _PSANNRegressorSequenceMixin:
         update_state: bool = True,
     ) -> Any:
         if not update_state:
-            result = (
-                cast("_PSANNRegressorInferenceMixin", self)
-                ._predict_with_prepared_inputs(
-                    X, context=context, sequence=True, reset_state=reset_state
-                )
-                .predictions
-            )
+            result = self._predict_with_prepared_inputs(
+                X, context=context, sequence=True, reset_state=reset_state
+            ).predictions
             return result if return_sequence else result[-1]
         return self._sequence_rollout(
             X,
@@ -78,7 +89,7 @@ class _PSANNRegressorSequenceMixin:
         )
 
     def predict_sequence_online(
-        self,
+        self: EstimatorHost,
         X: np.ndarray,
         y: np.ndarray,
         *,
@@ -104,7 +115,7 @@ class _PSANNRegressorSequenceMixin:
     # ------------------------------------------------------------------
 
     def _sequence_rollout(
-        self,
+        self: EstimatorHost,
         X_seq: np.ndarray,
         *,
         context_seq: Optional[np.ndarray],
@@ -136,7 +147,7 @@ class _PSANNRegressorSequenceMixin:
             raise ValueError("Streaming rollouts require targets when update_params=True.")
 
         if reset_state:
-            self.reset_state()
+            getattr(self, "reset_state")()
 
         outputs: list[Any] = []
         for idx in range(steps):
@@ -163,8 +174,9 @@ class _PSANNRegressorSequenceMixin:
                 "Sequence outputs have inconsistent shapes; cannot stack results."
             ) from exc
 
-    def _coerce_sequence_inputs(self, sequence: np.ndarray) -> np.ndarray:
+    def _coerce_sequence_inputs(self: EstimatorHost, sequence: np.ndarray) -> np.ndarray:
         seq = np.asarray(sequence, dtype=np.float32)
+        assert self.input_shape_ is not None
         expected_shape = tuple(self.input_shape_)
 
         if seq.ndim == len(expected_shape):
@@ -184,7 +196,9 @@ class _PSANNRegressorSequenceMixin:
 
         return seq
 
-    def _coerce_sequence_context(self, context: np.ndarray, steps: int) -> np.ndarray:
+    def _coerce_sequence_context(
+        self: EstimatorHost, context: np.ndarray, steps: int
+    ) -> np.ndarray:
         arr = np.asarray(context, dtype=np.float32)
         if arr.ndim == 1:
             arr = arr.reshape(-1, 1)
@@ -201,7 +215,9 @@ class _PSANNRegressorSequenceMixin:
             )
         return arr.astype(np.float32, copy=False)
 
-    def _coerce_sequence_targets(self, targets: np.ndarray, steps: int) -> np.ndarray:
+    def _coerce_sequence_targets(
+        self: EstimatorHost, targets: np.ndarray, steps: int
+    ) -> np.ndarray:
         arr = np.asarray(targets, dtype=np.float32)
         if arr.ndim == 0:
             if steps != 1:
@@ -215,7 +231,7 @@ class _PSANNRegressorSequenceMixin:
             )
         return arr
 
-    def _ensure_streaming_ready(self) -> None:
+    def _ensure_streaming_ready(self: EstimatorHost) -> None:
         if self.stream_lr is None or float(self.stream_lr) <= 0.0:
             raise RuntimeError(
                 "Streaming updates require 'stream_lr' > 0. Configure the estimator accordingly."
@@ -243,7 +259,7 @@ class _PSANNRegressorSequenceMixin:
             self._stream_loss_ = self._make_loss()
 
     def _coerce_stream_target(
-        self,
+        self: EstimatorHost,
         target: np.ndarray,
         reference: torch.Tensor,
         device: torch.device,
@@ -272,7 +288,7 @@ class _PSANNRegressorSequenceMixin:
         return torch.from_numpy(arr.astype(np.float32, copy=False)).to(device)
 
     def _apply_stream_update(
-        self,
+        self: EstimatorHost,
         inputs_np: np.ndarray,
         *,
         context_np: Optional[np.ndarray],
@@ -296,7 +312,7 @@ class _PSANNRegressorSequenceMixin:
         prev_state_updates = None
         if hasattr(model, "set_state_updates"):
             prev_state_updates = getattr(model, "enable_state_updates", None)
-            model.set_state_updates(False)
+            getattr(model, "set_state_updates")(False)
 
         try:
             model.train(True)
@@ -313,13 +329,13 @@ class _PSANNRegressorSequenceMixin:
             optimizer.step()
 
             if hasattr(model, "commit_state_updates"):
-                model.commit_state_updates()
+                getattr(model, "commit_state_updates")()
         finally:
             if hasattr(model, "set_state_updates"):
                 if prev_state_updates is None:
-                    model.set_state_updates(True)
+                    getattr(model, "set_state_updates")(True)
                 else:
-                    model.set_state_updates(bool(prev_state_updates))
+                    getattr(model, "set_state_updates")(bool(prev_state_updates))
             model.train(prev_mode)
 
 

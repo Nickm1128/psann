@@ -7,56 +7,63 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+
+class _FallbackBaseEstimator:  # minimal stub
+    def get_params(self, deep: bool = True):
+        """Return constructor parameters when scikit-learn is unavailable.
+
+        The fallback has to obey the same public constructor contract as
+        ``sklearn.base.BaseEstimator`` because checkpoint payloads use this
+        method.  Instance-attribute enumeration leaks inherited implementation
+        fields from legacy subclasses and creates unloadable checkpoints.
+        """
+        params = {}
+        signature = inspect.signature(self.__class__.__init__)
+        for name, parameter in signature.parameters.items():
+            if name == "self" or parameter.kind in {
+                inspect.Parameter.VAR_KEYWORD,
+                inspect.Parameter.VAR_POSITIONAL,
+            }:
+                continue
+            try:
+                params[name] = getattr(self, name)
+            except AttributeError as error:
+                raise AttributeError(
+                    f"{self.__class__.__name__} must expose constructor parameter "
+                    f"{name!r} as a public attribute."
+                ) from error
+        return params
+
+    def set_params(self, **params):
+        valid_params = self.get_params(deep=True)
+        for k, v in params.items():
+            if k not in valid_params:
+                raise ValueError(
+                    f"Invalid parameter {k!r} for estimator {self.__class__.__name__}."
+                )
+            setattr(self, k, v)
+        return self
+
+
+class _FallbackRegressorMixin:
+    pass
+
+
+def _fallback_r2_score(y_true, y_pred):
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+    u = ((y_true - y_pred) ** 2).sum()
+    v = ((y_true - y_true.mean()) ** 2).sum()
+    return 1.0 - (u / v if v != 0 else np.nan)
+
+
 try:  # Optional scikit-learn import for API compatibility
-    from sklearn.base import BaseEstimator, RegressorMixin  # type: ignore
-    from sklearn.metrics import r2_score as _sk_r2_score  # type: ignore
+    from sklearn.base import BaseEstimator, RegressorMixin
+    from sklearn.metrics import r2_score as _sk_r2_score
 except Exception:  # Fallbacks if sklearn isn't installed at runtime
-
-    class BaseEstimator:  # minimal stub
-        def get_params(self, deep: bool = True):
-            """Return constructor parameters when scikit-learn is unavailable.
-
-            The fallback has to obey the same public constructor contract as
-            ``sklearn.base.BaseEstimator`` because checkpoint payloads use this
-            method.  Instance-attribute enumeration leaks inherited implementation
-            fields from legacy subclasses and creates unloadable checkpoints.
-            """
-            params = {}
-            signature = inspect.signature(self.__class__.__init__)
-            for name, parameter in signature.parameters.items():
-                if name == "self" or parameter.kind in {
-                    inspect.Parameter.VAR_KEYWORD,
-                    inspect.Parameter.VAR_POSITIONAL,
-                }:
-                    continue
-                try:
-                    params[name] = getattr(self, name)
-                except AttributeError as error:
-                    raise AttributeError(
-                        f"{self.__class__.__name__} must expose constructor parameter "
-                        f"{name!r} as a public attribute."
-                    ) from error
-            return params
-
-        def set_params(self, **params):
-            valid_params = self.get_params(deep=True)
-            for k, v in params.items():
-                if k not in valid_params:
-                    raise ValueError(
-                        f"Invalid parameter {k!r} for estimator {self.__class__.__name__}."
-                    )
-                setattr(self, k, v)
-            return self
-
-    class RegressorMixin:
-        pass
-
-    def _sk_r2_score(y_true, y_pred):
-        y_true = np.asarray(y_true)
-        y_pred = np.asarray(y_pred)
-        u = ((y_true - y_pred) ** 2).sum()
-        v = ((y_true - y_true.mean()) ** 2).sum()
-        return 1.0 - (u / v if v != 0 else np.nan)
+    BaseEstimator = _FallbackBaseEstimator
+    RegressorMixin = _FallbackRegressorMixin
+    _sk_r2_score = _fallback_r2_score
 
 
 from ..hisso import HISSOOptions, HISSOTrainerConfig, ensure_hisso_trainer_config
@@ -209,7 +216,7 @@ class _AttentionConvModel(nn.Module):
         self.spatial_shape = tuple(int(d) for d in spatial_shape)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        tokens = self.conv_core.forward_tokens(x)
+        tokens = getattr(self.conv_core, "forward_tokens")(x)
         if tokens.ndim < 3:
             raise ValueError("attention expects convolutional tokens with spatial dimensions.")
         batch = tokens.shape[0]
@@ -294,14 +301,14 @@ class _WaveResNetConvModel(nn.Module):
         self.spatial_shape = tuple(int(d) for d in spatial_shape)
 
     def forward_tokens(self, x: torch.Tensor) -> torch.Tensor:
-        return self.conv_core.forward_tokens(x)
+        return getattr(self.conv_core, "forward_tokens")(x)
 
     def forward(
         self,
         x: torch.Tensor,
         context: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        tokens = self.forward_tokens(x)
+        tokens = getattr(self, "forward_tokens")(x)
         if tokens.ndim < 3:
             raise ValueError("WaveResNetConvModel expects tensors with spatial dimensions.")
         batch = tokens.shape[0]

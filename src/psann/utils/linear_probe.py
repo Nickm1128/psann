@@ -4,10 +4,22 @@ Utilities for fitting linear probes on frozen encoders.
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, Literal, Tuple
+from typing import Dict, Iterable, Literal, Tuple, TypedDict
 
 import torch
 from torch import nn
+
+
+class ProbeMetrics(TypedDict):
+    loss: float
+    accuracy: float
+    num_samples: int
+    num_classes: int
+    feature_mean: torch.Tensor
+    feature_std: torch.Tensor
+    effective_rank: float
+    solver: str
+    state_dict: Dict[str, torch.Tensor]
 
 
 def fit_linear_probe(
@@ -16,7 +28,7 @@ def fit_linear_probe(
     *,
     l2: float = 1e-3,
     solver: Literal["lbfgs", "sgd"] = "lbfgs",
-) -> Dict[str, object]:
+) -> ProbeMetrics:
     """Fit a linear classifier on pre-computed features.
 
     Args:
@@ -42,7 +54,7 @@ def fit_linear_probe(
     criterion = nn.CrossEntropyLoss()
 
     def weight_decay() -> torch.Tensor:
-        return sum(param.pow(2).sum() for param in linear.parameters())
+        return sum((param.pow(2).sum() for param in linear.parameters()), features.new_zeros(()))
 
     if solver == "lbfgs":
         optimizer = torch.optim.LBFGS(linear.parameters(), lr=1.0, max_iter=50)
@@ -59,14 +71,14 @@ def fit_linear_probe(
             logits = linear(features)
             loss = criterion(logits, targets) + 0.5 * l2 * weight_decay()
     elif solver == "sgd":
-        optimizer = torch.optim.SGD(linear.parameters(), lr=0.1, momentum=0.9)
+        sgd_optimizer = torch.optim.SGD(linear.parameters(), lr=0.1, momentum=0.9)
         loss = torch.tensor(0.0, device=device)
         for _ in range(200):
-            optimizer.zero_grad()
+            sgd_optimizer.zero_grad()
             logits = linear(features)
             loss = criterion(logits, targets) + 0.5 * l2 * weight_decay()
             loss.backward()
-            optimizer.step()
+            sgd_optimizer.step()
             loss = loss.detach()
     else:
         raise ValueError(f"Unsupported solver '{solver}'.")
@@ -191,9 +203,9 @@ def _effective_rank(features: torch.Tensor, eps: float = 1e-6) -> float:
 
 def _unpack_batch(batch) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
     if isinstance(batch, dict):
-        x = batch.get("x") or batch.get("inputs")
-        y = batch.get("y") or batch.get("targets")
-        c = batch.get("c") or batch.get("context")
+        x = batch["x"] if batch.get("x") is not None else batch.get("inputs")
+        y = batch["y"] if batch.get("y") is not None else batch.get("targets")
+        c = batch["c"] if batch.get("c") is not None else batch.get("context")
         if x is None or y is None:
             raise ValueError("Batch dictionary must contain 'x'/'inputs' and 'y'/'targets'.")
         return x, y, c

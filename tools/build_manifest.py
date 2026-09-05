@@ -19,10 +19,9 @@ Examples:
 from __future__ import annotations
 
 import argparse
-import os
 import random
 from pathlib import Path
-from typing import Iterable, List
+from typing import List
 
 
 def _collect(root: Path, patterns: List[str], recurse: bool) -> List[Path]:

@@ -58,10 +58,12 @@ class WaveRNNCell(nn.Module):
 
         self.phase_shift: Optional[nn.Linear] = None
         if self.use_phase_shift:
+            assert context_dim is not None
             self.phase_shift = nn.Linear(context_dim, hidden_dim, bias=True)
 
         self.film: Optional[FiLM] = None
         if self.use_film:
+            assert context_dim is not None
             self.film = FiLM(context_dim, hidden_dim)
 
         self.norm_layer: Optional[nn.Module]

@@ -52,13 +52,15 @@ def apply_siren_init(
         weight = _resolve_weight_parameter(linear)
         fan_in = weight.shape[1]
         siren_uniform_(weight, fan_in, w0=w0)
-        if hasattr(linear, "weight_g"):
-            nn.init.ones_(linear.weight_g)
+        weight_g = getattr(linear, "weight_g", None)
+        if isinstance(weight_g, torch.Tensor):
+            nn.init.ones_(weight_g)
         if linear.bias is not None:
             nn.init.zeros_(linear.bias)
 
 
 def _resolve_weight_parameter(linear: nn.Linear) -> torch.Tensor:
-    if hasattr(linear, "weight_v"):
-        return linear.weight_v  # type: ignore[attr-defined]
+    weight_v = getattr(linear, "weight_v", None)
+    if isinstance(weight_v, torch.Tensor):
+        return weight_v
     return linear.weight

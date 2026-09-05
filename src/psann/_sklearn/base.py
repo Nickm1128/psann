@@ -54,7 +54,7 @@ class PSANNRegressor(
         lr: float = 1e-3,
         optimizer: str = "adam",
         weight_decay: float = 0.0,
-        activation: Optional[ActivationConfig] = None,
+        activation: Optional[ActivationConfig | Mapping[str, Any]] = None,
         device: str | torch.device = "auto",
         random_state: Optional[int] = None,
         early_stopping: bool = False,

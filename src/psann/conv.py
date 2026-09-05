@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 import torch
 import torch.nn as nn
@@ -26,11 +26,12 @@ class _PSANNConvBlockNd(nn.Module):
         conv: nn.Module,
         out_channels: int,
         *,
-        act_kw: Optional[dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
     ) -> None:
         super().__init__()
         self.conv = conv
+        self.act: nn.Module
         act_kw = dict(act_kw or {})
         activation_type = _normalize_conv_activation_type(activation_type)
         if activation_type == "psann":
@@ -61,9 +62,11 @@ def _init_siren_conv_(conv: nn.Module, *, is_first: bool, w0: float = 30.0) -> N
     if not hasattr(conv, "weight"):
         return
     weight = conv.weight
+    if not isinstance(weight, torch.Tensor):
+        return
     # kernel_size may be tuple
     if hasattr(conv, "kernel_size"):
-        ks = conv.kernel_size
+        ks = getattr(conv, "kernel_size")
         if isinstance(ks, int):
             kprod = ks
         else:
@@ -76,7 +79,9 @@ def _init_siren_conv_(conv: nn.Module, *, is_first: bool, w0: float = 30.0) -> N
     bound = (1.0 / in_features) if is_first else (math.sqrt(6.0 / in_features) / max(w0, 1e-6))
     torch.nn.init.uniform_(weight, -bound, bound)
     if getattr(conv, "bias", None) is not None:
-        torch.nn.init.uniform_(conv.bias, -bound, bound)
+        bias = getattr(conv, "bias")
+        if isinstance(bias, torch.Tensor):
+            torch.nn.init.uniform_(bias, -bound, bound)
 
 
 class PSANNConv1dNet(nn.Module):
@@ -89,7 +94,7 @@ class PSANNConv1dNet(nn.Module):
         conv_channels: Optional[int] = None,
         hidden_channels: Optional[int] = None,
         kernel_size: int | Sequence[int] = 1,
-        act_kw: Optional[dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0: float = 30.0,
         segmentation_head: bool = False,
@@ -132,9 +137,9 @@ class PSANNConv1dNet(nn.Module):
         # Initialization
         if hidden_layers > 0:
             # First conv as first, others as deeper
-            _init_siren_conv_(self.body[0].conv, is_first=True, w0=w0)
+            _init_siren_conv_(getattr(self.body[0], "conv"), is_first=True, w0=w0)
             for blk in list(self.body)[1:]:
-                _init_siren_conv_(blk.conv, is_first=False, w0=w0)
+                _init_siren_conv_(getattr(blk, "conv"), is_first=False, w0=w0)
         if segmentation_head:
             _init_siren_conv_(self.head, is_first=False, w0=w0)
         else:
@@ -164,7 +169,7 @@ class PSANNConv2dNet(nn.Module):
         conv_channels: Optional[int] = None,
         hidden_channels: Optional[int] = None,
         kernel_size: int | Sequence[int] = 1,
-        act_kw: Optional[dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0: float = 30.0,
         segmentation_head: bool = False,
@@ -206,9 +211,9 @@ class PSANNConv2dNet(nn.Module):
             self.fc = nn.Linear(c, out_dim)
         # Initialization
         if hidden_layers > 0:
-            _init_siren_conv_(self.body[0].conv, is_first=True, w0=w0)
+            _init_siren_conv_(getattr(self.body[0], "conv"), is_first=True, w0=w0)
             for blk in list(self.body)[1:]:
-                _init_siren_conv_(blk.conv, is_first=False, w0=w0)
+                _init_siren_conv_(getattr(blk, "conv"), is_first=False, w0=w0)
         if segmentation_head:
             _init_siren_conv_(self.head, is_first=False, w0=w0)
         else:
@@ -238,7 +243,7 @@ class PSANNConv3dNet(nn.Module):
         conv_channels: Optional[int] = None,
         hidden_channels: Optional[int] = None,
         kernel_size: int | Sequence[int] = 1,
-        act_kw: Optional[dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0: float = 30.0,
         segmentation_head: bool = False,
@@ -280,9 +285,9 @@ class PSANNConv3dNet(nn.Module):
             self.fc = nn.Linear(c, out_dim)
         # Initialization
         if hidden_layers > 0:
-            _init_siren_conv_(self.body[0].conv, is_first=True, w0=w0)
+            _init_siren_conv_(getattr(self.body[0], "conv"), is_first=True, w0=w0)
             for blk in list(self.body)[1:]:
-                _init_siren_conv_(blk.conv, is_first=False, w0=w0)
+                _init_siren_conv_(getattr(blk, "conv"), is_first=False, w0=w0)
         if segmentation_head:
             _init_siren_conv_(self.head, is_first=False, w0=w0)
         else:
@@ -336,7 +341,7 @@ class ResidualPSANNConvBlock2d(nn.Module):
         channels: int,
         *,
         kernel_size: int,
-        act_kw: Optional[dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0_hidden: float = 1.0,
         norm: str = "rms",
@@ -346,6 +351,7 @@ class ResidualPSANNConvBlock2d(nn.Module):
         super().__init__()
         self.channels = int(channels)
         activation_type = _normalize_conv_activation_type(activation_type)
+        self.act: nn.Module
         act_kw = dict(act_kw or {})
         if activation_type in {"psann", "relu_sigmoid_psann"}:
             act_kw.setdefault("feature_dim", 1)
@@ -362,8 +368,8 @@ class ResidualPSANNConvBlock2d(nn.Module):
             self.channels, self.channels, kernel_size=kernel_size, padding=padding
         )
         if activation_type == "psann":
-            self.act1 = SineParam(self.channels, **act_kw)
-            self.act2 = SineParam(self.channels, **act_kw)
+            self.act1: nn.Module = SineParam(self.channels, **act_kw)
+            self.act2: nn.Module = SineParam(self.channels, **act_kw)
         elif activation_type == "relu_sigmoid_psann":
             self.act1 = ReLUSigmoidPSANN(self.channels, **act_kw)
             self.act2 = ReLUSigmoidPSANN(self.channels, **act_kw)
@@ -401,7 +407,7 @@ class ResidualPSANNConv2dNet(nn.Module):
         conv_channels: Optional[int] = None,
         hidden_channels: Optional[int] = None,
         kernel_size: int | Sequence[int] = 3,
-        act_kw: Optional[dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0_first: float = 12.0,
         w0_hidden: float = 1.0,
@@ -435,6 +441,7 @@ class ResidualPSANNConv2dNet(nn.Module):
         self.hidden_channels = channels
         self.out_dim = int(out_dim)
         self.segmentation_head = bool(segmentation_head)
+        self.act: nn.Module
         act_kw = dict(act_kw or {})
         normalized_activation_type = _normalize_conv_activation_type(activation_type)
         if normalized_activation_type in {"psann", "relu_sigmoid_psann"}:

@@ -7,7 +7,6 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
-    Self,
     Tuple,
     TypedDict,
     Union,
@@ -43,7 +42,7 @@ ContextExtractor = Callable[[torch.Tensor], torch.Tensor]
 class TransformerProtocol(Protocol):
     """Minimal protocol for scaler/transformer style objects."""
 
-    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> Self: ...
+    def fit(self, X: np.ndarray, y: Optional[np.ndarray] = None) -> TransformerProtocol: ...
 
     def transform(self, X: np.ndarray) -> np.ndarray: ...
 

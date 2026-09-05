@@ -36,7 +36,7 @@ class HISSOOptions:
     updates_per_epoch: Optional[int]
     transition_penalty: float
     primary_transform: str
-    reward_fn: RewardFn
+    reward_fn: Optional[RewardFn]
     context_extractor: Optional[ContextExtractor]
     input_noise_std: Optional[float]
     supervised: Optional[Mapping[str, Any] | bool]

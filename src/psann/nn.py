@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -53,11 +53,15 @@ class DropPath(nn.Module):
 class ResidualPSANNBlock(nn.Module):
     """PreNorm residual block with optional RMS/Layer norm, DropPath, and zero-init scale."""
 
+    norm: nn.Module
+    act1: nn.Module
+    act2: nn.Module
+
     def __init__(
         self,
         dim: int,
         *,
-        act_kw: Optional[Dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0_hidden: float = 1.0,
         norm: str = "rms",  # 'rms'|'layer'|'none'
@@ -117,7 +121,7 @@ class ResidualPSANNNet(nn.Module):
         hidden_layers: int = 8,
         hidden_units: Optional[int] = None,
         hidden_width: Optional[int] = 128,
-        act_kw: Optional[Dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0_first: float = 12.0,
         w0_hidden: float = 1.0,
@@ -186,12 +190,14 @@ class PSANNBlock(nn.Module):
     Optional per-feature persistent state acts as an amplitude modulator.
     """
 
+    act: nn.Module
+
     def __init__(
         self,
         in_features: int,
         out_features: int,
         *,
-        act_kw: Optional[Dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         state_cfg: Optional[Union[StateConfig, Mapping[str, Any]]] = None,
         activation_type: str = "psann",
     ) -> None:
@@ -233,8 +239,8 @@ class PSANNNet(nn.Module):
         hidden_layers: int = 2,
         hidden_units: Optional[int] = None,
         hidden_width: Optional[int] = None,
-        act_kw: Optional[Dict] = None,
-        state_cfg: Optional[Dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
+        state_cfg: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0: float = 30.0,
     ) -> None:
@@ -274,10 +280,9 @@ class PSANNNet(nn.Module):
 
         # SIREN-inspired initialization
         if hidden_layers > 0:
-            if isinstance(self.body[0], PSANNBlock):
-                init_siren_linear_(self.body[0].linear, is_first=True, w0=w0)
-            for block in list(self.body)[1:]:
-                init_siren_linear_(block.linear, is_first=False, w0=w0)
+            init_siren_linear_(layers[0].linear, is_first=True, w0=w0)
+            for layer in layers[1:]:
+                init_siren_linear_(layer.linear, is_first=False, w0=w0)
         init_siren_linear_(self.head, is_first=False, w0=w0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -287,13 +292,13 @@ class PSANNNet(nn.Module):
 
     def reset_state(self) -> None:
         for m in self.modules():
-            if isinstance(m, PSANNBlock) and getattr(m, "state_ctrl", None) is not None:
+            if isinstance(m, PSANNBlock) and m.state_ctrl is not None:
                 # reset to 1.0 by default
                 m.state_ctrl.reset_like_init(1.0)
 
     def commit_state_updates(self) -> None:
         for m in self.modules():
-            if isinstance(m, PSANNBlock) and getattr(m, "state_ctrl", None) is not None:
+            if isinstance(m, PSANNBlock) and m.state_ctrl is not None:
                 m.state_ctrl.commit()
 
     def set_state_updates(self, enabled: bool) -> None:
@@ -310,7 +315,7 @@ class SGRPSANNBlock(nn.Module):
         in_features: int,
         out_features: int,
         *,
-        act_kw: Optional[Dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         phase_init: float = 0.0,
         phase_trainable: bool = True,
@@ -368,7 +373,7 @@ class SGRPSANNSequenceNet(nn.Module):
         hidden_layers: int = 2,
         hidden_units: Optional[int] = None,
         hidden_width: Optional[int] = None,
-        act_kw: Optional[Dict] = None,
+        act_kw: Optional[Mapping[str, Any]] = None,
         activation_type: str = "psann",
         w0: float = 30.0,
         phase_init: float = 0.0,
@@ -436,9 +441,9 @@ class SGRPSANNSequenceNet(nn.Module):
         self.head = nn.Linear(prev, output_dim)
 
         if hidden_layers > 0:
-            init_siren_linear_(self.body[0].linear, is_first=True, w0=w0)
-            for block in list(self.body)[1:]:
-                init_siren_linear_(block.linear, is_first=False, w0=w0)
+            init_siren_linear_(layers[0].linear, is_first=True, w0=w0)
+            for layer in layers[1:]:
+                init_siren_linear_(layer.linear, is_first=False, w0=w0)
         init_siren_linear_(self.head, is_first=False, w0=w0)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -483,12 +488,12 @@ class WithPreprocessor(nn.Module):
     # Stateful helpers are delegated to core if available
     def reset_state(self) -> None:
         if hasattr(self.core, "reset_state"):
-            self.core.reset_state()
+            getattr(self.core, "reset_state")()
 
     def commit_state_updates(self) -> None:
         if hasattr(self.core, "commit_state_updates"):
-            self.core.commit_state_updates()
+            getattr(self.core, "commit_state_updates")()
 
     def set_state_updates(self, enabled: bool) -> None:
         if hasattr(self.core, "set_state_updates"):
-            self.core.set_state_updates(enabled)
+            getattr(self.core, "set_state_updates")(enabled)

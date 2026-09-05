@@ -5,7 +5,7 @@ WaveResNet backbone with sine residual blocks.
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Iterable, Literal, Optional
+from typing import Any, Iterable, Literal, Mapping, Optional
 
 import torch
 from torch import nn
@@ -36,7 +36,7 @@ class WaveResNet(nn.Module):
         use_phase_shift: bool = True,
         dropout: float = 0.0,
         residual_alpha_init: float = 0.0,
-        activation_config: Optional[ActivationConfig] = None,
+        activation_config: Optional[ActivationConfig | Mapping[str, Any]] = None,
         trainable_params: Optional[Iterable[str] | str] = _DEFAULT_LEARNABLE,
     ) -> None:
         super().__init__()
@@ -55,7 +55,9 @@ class WaveResNet(nn.Module):
         self.hidden_w0 = float(hidden_w0)
         self.first_layer_w0 = float(first_layer_w0)
 
-        activation_cfg = deepcopy(activation_config) if activation_config is not None else {}
+        activation_cfg: dict[str, Any] = (
+            dict(deepcopy(activation_config)) if activation_config is not None else {}
+        )
         learnable_source = activation_cfg.get("learnable", trainable_params)
         activation_cfg["learnable"] = self._normalize_trainable(learnable_source)
         self._activation_config = activation_cfg
@@ -113,7 +115,7 @@ class WaveResNet(nn.Module):
         return tuple(normalized)
 
     def _build_activation_module(self, out_features: int) -> SineParam:
-        cfg = deepcopy(self._activation_config)
+        cfg: dict[str, Any] = dict(deepcopy(self._activation_config))
         return SineParam(out_features, **cfg)
 
     def _make_block(self) -> SineResidualBlock:
@@ -168,9 +170,9 @@ class WaveResNet(nn.Module):
             new_blocks.append(block)
 
         device = next(self.parameters()).device
-        for block in new_blocks:
-            block.to(device)
-            self.blocks.append(block)
+        for new_block in new_blocks:
+            new_block.to(device)
+            self.blocks.append(new_block)
         self.depth = len(self.blocks)
         return new_blocks
 

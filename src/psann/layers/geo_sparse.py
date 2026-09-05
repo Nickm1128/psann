@@ -90,6 +90,10 @@ def expand_in_indices_to_edges(
 class GeoSparseLinear(nn.Module):
     """Sparse linear layer with fixed fan-in connectivity."""
 
+    in_index_per_out: torch.Tensor
+    src_index: torch.Tensor
+    dst_index: torch.Tensor
+
     def __init__(
         self,
         in_features: int,

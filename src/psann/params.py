@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple
 
-import torch
 from torch import nn
 
 

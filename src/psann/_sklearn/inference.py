@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ._host import EstimatorHost
+
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -11,7 +16,7 @@ from .scaling import context_features_from_channel_first
 from ..nn import WithPreprocessor
 
 if TYPE_CHECKING:
-    from .sequence import _PSANNRegressorSequenceMixin
+    pass
 
 
 @dataclass(frozen=True)
@@ -22,13 +27,20 @@ class _PreparedPrediction:
     predictions: np.ndarray
 
 
+if TYPE_CHECKING:
+    from typing import Dict, Tuple
+
+
 class _PSANNRegressorInferenceMixin:
+    _context_dim_: Optional[int]
+
     def _prepare_inference_inputs(
-        self,
+        self: EstimatorHost,
         X: np.ndarray,
         context: Optional[np.ndarray] = None,
     ) -> Tuple[np.ndarray, Dict[str, Any], Optional[np.ndarray]]:
         self._ensure_fitted()
+        assert self.input_shape_ is not None
         X_arr = np.asarray(X, dtype=np.float32)
         if X_arr.ndim == len(self.input_shape_):
             X_arr = X_arr.reshape((1,) + tuple(self.input_shape_))
@@ -129,15 +141,18 @@ class _PSANNRegressorInferenceMixin:
 
         return inputs_np, meta, context_np
 
-    def _reshape_predictions(self, preds: np.ndarray, meta: Dict[str, Any]) -> np.ndarray:
+    def _reshape_predictions(
+        self: EstimatorHost, preds: np.ndarray, meta: Dict[str, Any]
+    ) -> np.ndarray:
         n_samples = int(meta["n_samples"])
         preds = preds.astype(np.float32, copy=False)
 
+        internal_shape = getattr(self, "_internal_input_shape_cf_", None)
         if self.preserve_shape and self.per_element:
             if self._target_cf_shape_ is not None:
                 cf_shape = (n_samples,) + tuple(self._target_cf_shape_)
-            elif getattr(self, "_internal_input_shape_cf_", None) is not None:
-                spatial = tuple(self._internal_input_shape_cf_[1:])
+            elif internal_shape is not None:
+                spatial = tuple(internal_shape[1:])
                 channels = preds.shape[1]
                 cf_shape = (n_samples, channels) + spatial
             else:
@@ -156,7 +171,7 @@ class _PSANNRegressorInferenceMixin:
         return preds
 
     def _run_model(
-        self,
+        self: EstimatorHost,
         inputs_np: np.ndarray,
         *,
         context_np: Optional[np.ndarray] = None,
@@ -177,11 +192,11 @@ class _PSANNRegressorInferenceMixin:
             if state_updates:
                 model.train(True)
                 if hasattr(model, "set_state_updates"):
-                    model.set_state_updates(True)
+                    getattr(model, "set_state_updates")(True)
             else:
                 model.eval()
                 if hasattr(model, "set_state_updates"):
-                    model.set_state_updates(False)
+                    getattr(model, "set_state_updates")(False)
 
             with torch.no_grad():
                 inputs_arr = (
@@ -231,13 +246,15 @@ class _PSANNRegressorInferenceMixin:
         finally:
             model.train(prev_training)
             if hasattr(model, "set_state_updates"):
-                model.set_state_updates(bool(prev_training))
+                getattr(model, "set_state_updates")(bool(prev_training))
 
-    def predict(self, X: np.ndarray, *, context: Optional[np.ndarray] = None) -> np.ndarray:
+    def predict(
+        self: EstimatorHost, X: np.ndarray, *, context: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         return self._predict_with_prepared_inputs(X, context=context).predictions
 
     def _predict_with_prepared_inputs(
-        self,
+        self: EstimatorHost,
         X: np.ndarray,
         *,
         context: Optional[np.ndarray] = None,
@@ -246,19 +263,21 @@ class _PSANNRegressorInferenceMixin:
         update_state: bool = False,
     ) -> _PreparedPrediction:
         if sequence:
-            X = cast("_PSANNRegressorSequenceMixin", self)._coerce_sequence_inputs(X)
+            X = self._coerce_sequence_inputs(X)
             if len(X) == 0:
                 raise ValueError("predict_sequence requires at least one timestep.")
         inputs_np, meta, context_np = self._prepare_inference_inputs(X, context)
         if reset_state:
-            cast("_PSANNRegressorSequenceMixin", self).reset_state()
+            getattr(self, "reset_state")()
         preds = self._run_model(
             inputs_np, context_np=context_np, state_updates=update_state, sequence=sequence
         )
         preds = self._inverse_fitted_target_scaler_like(preds)
         return _PreparedPrediction(inputs_np, self._reshape_predictions(preds, meta))
 
-    def score(self, X: np.ndarray, y: np.ndarray, *, context: Optional[np.ndarray] = None) -> float:
+    def score(
+        self: EstimatorHost, X: np.ndarray, y: np.ndarray, *, context: Optional[np.ndarray] = None
+    ) -> float:
         y_true = np.asarray(y, dtype=np.float32)
         y_pred = self.predict(X, context=context)
         if y_true.ndim == 1 and y_pred.ndim == 2 and y_pred.shape[1] == 1:

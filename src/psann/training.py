@@ -115,7 +115,7 @@ def run_training_loop(
     else:
         amp_ctx = _NullContext()
 
-    scaler: Optional[object] = None
+    scaler: Optional[torch.amp.GradScaler] = None
     if use_amp and amp_dtype == torch.float16:
         if hasattr(torch, "amp") and hasattr(torch.amp, "GradScaler"):
             scaler = torch.amp.GradScaler("cuda", enabled=True)
@@ -156,7 +156,7 @@ def run_training_loop(
 
         if cfg.stateful and cfg.state_reset == "epoch" and hasattr(state_model, "reset_state"):
             try:
-                state_model.reset_state()
+                getattr(state_model, "reset_state")()
             except Exception:
                 pass
 
@@ -184,7 +184,7 @@ def run_training_loop(
                 raise ValueError("Training batches must be tuple/list tensors.")
             if cfg.stateful and cfg.state_reset == "batch" and hasattr(state_model, "reset_state"):
                 try:
-                    state_model.reset_state()
+                    getattr(state_model, "reset_state")()
                 except Exception:
                     pass
             xb = xb.to(device)
@@ -235,7 +235,7 @@ def run_training_loop(
                         pass
                 optimizer.step()
             if hasattr(state_model, "commit_state_updates"):
-                state_model.commit_state_updates()
+                getattr(state_model, "commit_state_updates")()
             bs = xb.shape[0]
             total += loss_value * bs
             count += bs
