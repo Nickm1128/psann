@@ -257,14 +257,34 @@ class _LegacyFacade(PSANNRegressor):
     _legacy_signature: Signature
 
     def _warn(self) -> None:
-        warnings.warn(
-            f"{self._legacy_name} is deprecated; use PSANNRegressor(architecture=...).",
-            DeprecationWarning,
-            stacklevel=3,
-        )
+        if not self.__dict__.get("_compat_internal_reconstruction", False):
+            warnings.warn(
+                f"{self._legacy_name} is deprecated; use PSANNRegressor(architecture=...).",
+                DeprecationWarning,
+                stacklevel=3,
+            )
         # The parent normalizes flat preprocessing in this same constructor.
         # This facade has already issued the single caller-facing warning.
         self.__dict__["_compat_constructor_warning_issued"] = True
+
+    @classmethod
+    def _from_constructor_params(cls, **params: Any) -> "_LegacyFacade":
+        # The marker belongs only to this new instance: no global warning filter
+        # can hide a concurrent or subsequent caller's deprecation warning.
+        instance = cls.__new__(cls)
+        instance.__dict__["_compat_internal_reconstruction"] = True
+        try:
+            cls.__init__(instance, **params)
+        finally:
+            instance.__dict__.pop("_compat_internal_reconstruction", None)
+        return instance
+
+    def __sklearn_clone__(self) -> "_LegacyFacade":
+        from sklearn.base import clone
+
+        return self._from_constructor_params(
+            **{name: clone(value, safe=False) for name, value in self.get_params(deep=False).items()}
+        )
 
     def _capture_legacy_params(self, supplied: Mapping[str, Any]) -> None:
         values: dict[str, Any] = {}
@@ -294,7 +314,7 @@ class _LegacyFacade(PSANNRegressor):
                 f"Invalid parameter {sorted(unknown)[0]!r} for {self.__class__.__name__}."
             )
         candidate.update(params)
-        rebuilt = cast(Any, self.__class__)(**candidate)
+        rebuilt = self._from_constructor_params(**candidate)
         self.__dict__.clear()
         self.__dict__.update(rebuilt.__dict__)
         return self

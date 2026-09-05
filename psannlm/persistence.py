@@ -14,12 +14,14 @@ from .architectures import LMConfig, build_lm_model, normalize_lm_config, to_map
 from .architectures.compat import legacy_lm_config
 from .lm.data.tokenizer import Tokenizer
 
+_PACKAGE_VERSION = "0.13.0"
+
 
 def package_version() -> str:
     try:
         return version("psannlm")
     except PackageNotFoundError:
-        return "0.12.4"
+        return _PACKAGE_VERSION
 
 
 def model_config(model: nn.Module) -> LMConfig:

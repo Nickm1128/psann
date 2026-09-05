@@ -11,7 +11,7 @@ Patch release with an explicit token:
 
 Provide a fully qualified version instead of bumping:
 
-    python scripts/release.py --version 0.11.3
+    python scripts/release.py --version 0.13.1
 
 If TWINE_USERNAME / TWINE_PASSWORD are already configured, omit --token.
 """
@@ -31,9 +31,12 @@ ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 INIT_PATH = ROOT / "src" / "psann" / "__init__.py"
 PSANNLM_PYPROJECT_PATH = ROOT / "psannlm" / "pyproject.toml"
+PSANNLM_PERSISTENCE_PATH = ROOT / "psannlm" / "persistence.py"
 
 VERSION_RE = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 INIT_VERSION_RE = re.compile(r'^__version__\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+LM_VERSION_RE = re.compile(r'^_PACKAGE_VERSION\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
+CORE_DEPENDENCY_RE = re.compile(r'"psann>=[^"]+"')
 
 
 def read_current_version() -> str:
@@ -85,8 +88,16 @@ def write_psannlm_version(new_version: str) -> None:
     text = PSANNLM_PYPROJECT_PATH.read_text(encoding="utf-8")
     if not VERSION_RE.search(text):
         raise RuntimeError(f"Could not update version in {PSANNLM_PYPROJECT_PATH}")
+    if len(CORE_DEPENDENCY_RE.findall(text)) != 1:
+        raise RuntimeError(f"Expected one psann dependency floor in {PSANNLM_PYPROJECT_PATH}")
+    persistence = PSANNLM_PERSISTENCE_PATH.read_text(encoding="utf-8")
+    if len(LM_VERSION_RE.findall(persistence)) != 1:
+        raise RuntimeError(f"Expected one package version in {PSANNLM_PERSISTENCE_PATH}")
     updated = VERSION_RE.sub(f'version = "{new_version}"', text, count=1)
+    updated = CORE_DEPENDENCY_RE.sub(f'"psann>={new_version}"', updated, count=1)
+    persistence = LM_VERSION_RE.sub(f'_PACKAGE_VERSION = "{new_version}"', persistence, count=1)
     PSANNLM_PYPROJECT_PATH.write_text(updated, encoding="utf-8")
+    PSANNLM_PERSISTENCE_PATH.write_text(persistence, encoding="utf-8")
 
 
 def clean_artifacts(paths: Iterable[Path]) -> None:

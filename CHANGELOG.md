@@ -14,6 +14,8 @@ Bash helpers install the two distributions separately and use canonical LM comma
 
 Both distributions use version 0.13.0. The LM distribution directly requires `psann>=0.13.0` and declares its numerical, data, tokenizer, and YAML dependencies. Core-only installations do not contain LM code; distribution contents remain disjoint. Static checks cover the configured repository/source scope without a retained debt baseline.
 
+New core and LM checkpoints record the current package version, including LM source use without installed distribution metadata. The release helper advances both package versions, runtime version sources, and the LM core dependency floor together. LM budget and stream-exhaustion output uses portable ASCII approximation markers.
+
 Wave estimator cloning and parameter updates preserve an absent context policy. Compatibility constructors issue one caller warning when flat preprocessing is also supplied. Parameter counting routes residual and wave options correctly. Allocation examples declare one output per asset so their softmax represents a portfolio rather than a single constant weight.
 
 The existing `v1.0.0` tag is a historical repository marker. Package metadata resumes at 0.13.0; that tag has not been rewritten or moved. These notes describe source preparation, not a published upload or newly created tag.

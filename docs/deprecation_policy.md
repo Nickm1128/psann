@@ -4,6 +4,8 @@ The canonical 0.13.0 task/configuration API is authoritative for documentation, 
 
 Compatibility facades normalize once into the canonical runtime and emit one caller-located `DeprecationWarning` at the specified entry boundary. Python hides many deprecation warnings by default; use `-W default` while migrating. Do not issue a warning per batch, parameter, or checkpoint reconstruction stage. Direct import availability is preserved; construction/use is the warning boundary where specified.
 
+Regression facade `set_params`, `sklearn.clone`, and supported checkpoint loading reconstruct internally without repeating the constructor warning. A new direct constructor call still emits its own warning at the caller.
+
 Legacy names are excluded from canonical wildcard surfaces and CLI help. They may be documented in [migration](migration.md), which provides old-to-new mappings and checkpoint limitations. Conflicting old/new representations and unsupported policies reject early instead of silently changing runtime behavior.
 
 Any future removal needs a separately documented breaking-release decision. The historical `v1.0.0` Git tag does not end this 0.x compatibility commitment and is unchanged. Current package metadata is 0.13.0; release preparation does not imply publication.

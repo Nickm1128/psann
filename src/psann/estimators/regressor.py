@@ -1780,10 +1780,12 @@ class PSANNRegressor(_Phase2Regressor):
                 "history": history,
                 "profile": profile,
             }
+        from .. import __version__
+
         payload = {
             "schema": "psann.regressor",
             "schema_version": 3,
-            "package_version": "0.12.4",
+            "package_version": __version__,
             "estimator_params": params,
             "fitted": fitted,
             "structure": structure,
@@ -1804,6 +1806,11 @@ class PSANNRegressor(_Phase2Regressor):
                     "use a registered reward name or an importable callable."
                 ) from exc
             raise
+
+    @classmethod
+    def _from_constructor_params(cls, **params: Any) -> "PSANNRegressor":
+        """Reconstruct through the estimator's validated constructor."""
+        return cls(**params)
 
     @classmethod
     def load(
@@ -2017,7 +2024,7 @@ class PSANNRegressor(_Phase2Regressor):
                 )
             else:
                 architecture = ArchitectureConfig.dense(activation=activation)
-            migrated = cls(
+            migrated = cls._from_constructor_params(
                 architecture=architecture,
                 hidden_layers=getattr(legacy, "hidden_layers", 2),
                 hidden_units=getattr(legacy, "hidden_units", 64),
@@ -2177,7 +2184,7 @@ class PSANNRegressor(_Phase2Regressor):
             )
         if "architecture" not in raw_params:
             raise ValueError("Schema-v1 checkpoint is missing estimator_params.architecture.")
-        estimator = cls(**raw_params)
+        estimator = cls._from_constructor_params(**raw_params)
         fitted: dict[str, Any] = dict(payload.get("fitted", {}))
         if version in {1, 2}:
             episodic_strategy = _migrate_legacy_hisso_strategy(fitted, artifacts)
