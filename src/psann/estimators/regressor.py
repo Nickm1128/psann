@@ -729,7 +729,8 @@ class PSANNRegressor(_Phase2Regressor):
                 "preprocessor conflicts with legacy preprocessing keyword(s): "
                 + ", ".join(legacy_preprocessor)
             )
-        if legacy_preprocessor:
+        facade_warned = self.__dict__.pop("_compat_constructor_warning_issued", False)
+        if legacy_preprocessor and not facade_warned:
             warnings.warn(
                 "lsm, lsm_train, lsm_pretrain_epochs, and lsm_lr are deprecated; "
                 "use preprocessor=PreprocessorConfig(...).",
@@ -1275,7 +1276,7 @@ class PSANNRegressor(_Phase2Regressor):
             )
         if self.architecture.kind == "wave" and (
             self.architecture.context is not None
-            or getattr(self, "_legacy_context_requested_", False)
+            or (getattr(self, "_legacy_context_requested_", False) and kwargs.get("context") is not None)
         ):
             context = kwargs.get("context")
             policy = self.architecture.context

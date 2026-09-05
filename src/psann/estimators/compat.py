@@ -262,6 +262,9 @@ class _LegacyFacade(PSANNRegressor):
             DeprecationWarning,
             stacklevel=3,
         )
+        # The parent normalizes flat preprocessing in this same constructor.
+        # This facade has already issued the single caller-facing warning.
+        self.__dict__["_compat_constructor_warning_issued"] = True
 
     def _capture_legacy_params(self, supplied: Mapping[str, Any]) -> None:
         values: dict[str, Any] = {}
