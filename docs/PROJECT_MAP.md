@@ -1,105 +1,17 @@
-# PSANN Project Map (Start Here)
+# Repository map
 
-PSANN is a research-driven PyTorch project that exposes sine-activated neural network variants behind a sklearn-style estimator API (plus a growing set of experimental architectures and benchmarking tools).
+| Path | Purpose |
+| --- | --- |
+| `src/psann/estimators/` | Canonical regression task facade |
+| `src/psann/architectures/` | Immutable core policies, validation, registry, shared components |
+| `src/psann/preprocessing/` | LSM/custom preprocessing policies, construction, persistence |
+| `src/psann/episodic/` | HISSO strategy and task orchestration |
+| `src/psann/_sklearn/` | Internal estimator fit/inference/persistence implementation |
+| `src/psann/scripts/` | Packaged core command-line utilities |
+| `psannlm/` | Separate LM distribution and canonical CLI |
+| `examples/`, `notebooks/`, `configs/` | Maintained consumers; see the consumer manifest |
+| `scripts/`, `benchmarks/` | Source-checkout research and benchmarking tools |
+| `tests/` | Runtime, compatibility, consumer, and distribution contracts |
+| `docs/` | Task guides, references, and labeled historical reports |
 
-This document explains what PSANN *is*, what is considered *stable*, what is *experimental*, and how the repository is organized so new contributors can navigate it quickly.
-
----
-
-## Who This Repo Is For
-
-- **Practitioners** who want a drop-in sklearn-style regressor backed by PyTorch (CPU or GPU).
-- **Researchers** exploring sine activations, sparse topologies (GeoSparse), and training dynamics.
-- **Contributors** who want to extend model backbones and benchmark them reproducibly.
-
----
-
-## What’s Supported vs Experimental
-
-### Supported (Core)
-
-These are intended to be stable and documented, and they are covered by the main test suite.
-
-- **Sklearn-style estimators**
-  - `PSANNRegressor(architecture=ArchitectureConfig(...))`
-  - The historical `Res*`, `WaveResNetRegressor`, and `SGRPSANNRegressor`
-    names are deprecated compatibility wrappers.
-- **Training utilities** shared by those estimators
-  - Data preparation (shape handling, scaling) in `psann.estimators._fit_utils`
-  - Supervised training loop utilities and stateful streaming utilities
-- **HISSO / episodic training**
-  - HISSO training utilities and reward strategies used for episodic optimisation
-
-### Experimental (Research)
-
-These are under active iteration; APIs may change and performance characteristics are still being studied.
-
-- **GeoSparse**
-  - Torch backbone: `psann.nn_geo_sparse`
-  - Canonical estimator: `PSANNRegressor(architecture=ArchitectureConfig.geometric_sparse(...))`
-  - Benchmark scripts and sweep harnesses under `scripts/` and `reports/`
-- **Language modeling**
-  - Core LM library code lives in the separate `psannlm` distribution
-  - `python -m psannlm` owns train/resume/eval/generate through the typed LM builder
-
-If you depend on any experimental pieces, pin a version and expect breaking changes across minor releases.
-
----
-
-## Installation Model (Current + Intended Direction)
-
-### Current (today)
-
-- `pip install psann` installs the core package and its runtime dependencies as defined in `pyproject.toml`.
-- LM dependencies are **optional**:
-  - `pip install psannlm` installs the LM tooling (and pulls in `datasets/tokenizers/sentencepiece`)
-
-### Intended direction (cleanup goal)
-
-We want the default install to be lighter and more newcomer-friendly.
-
-- Keep `pip install psann` focused on the estimator/regression core.
-- Keep large stacks (LM data tooling, transformers ecosystem, heavyweight benchmarks) out of the default install.
-- **Decision:** keep LM library code in `psannlm` so installing `psann` stays lean.
-
----
-
-## Repository Layout (Where Things Live)
-
-- `src/psann/` — the `psann` Python package (library code)
-  - `sklearn.py` — thin sklearn-style estimator facade (core entry point for most users)
-  - `_sklearn/` — internal estimator implementation modules split by concern
-  - `estimators/_fit_utils.py` — shared fit/input-scaling/validation plumbing used by the estimator package
-  - `nn_geo_sparse.py` — GeoSparse backbone (experimental)
-  - `lm/` — stub module that forwards users to `psannlm`
-- `psannlm/` – separate Python package and distribution providing LM APIs + training/CLI utilities
-  - `train.py` - thin compatibility facade for the LM training entrypoint
-  - `_train/` - internal LM CLI helpers split into data, tokenizer, export, and CLI wiring modules
-  - `eval_adapter.py` - active lm-eval adapter; the root `psann_adapter.py` file is now only a compatibility shim
-- `tests/` – unit and integration tests for supported functionality
-- `docs/` – documentation (see `docs/README.md` for the index)
-- `scripts/` — operational scripts (training, evaluation, sweeps); not shipped in the wheel
-  - large benchmark CLIs keep their historical filenames and delegate to nearby internal `scripts/_<tool>/` packages
-- `examples/` — runnable examples and configuration snippets
-- `reports/`, `runs/`, `eval_data/` — generated outputs (should not be committed; ignored by git)
-
----
-
-## Support Policy and Versioning
-
-- **Versioning:** semver-style (`MAJOR.MINOR.PATCH`)
-  - Patch: bug fixes, doc fixes, internal refactors with no intentional API change
-  - Minor: new features and/or new experimental components; may include small deprecations
-  - Major: breaking API changes (rename/removal/semantic change of supported surfaces)
-- **Deprecations:** supported APIs should be deprecated before removal when feasible.
-- **Compatibility:** CPU-first correctness is required; GPU support is best-effort and depends on the user’s PyTorch/CUDA install.
-
----
-
-## Where to Start
-
-- “How do I use PSANN?” → `README.md` and `docs/API.md`
-- “What docs are current?” → `docs/README.md`
-- “Where do things live?” → `docs/REPO_STRUCTURE.md`
-- “How do I contribute?” → `docs/CONTRIBUTING.md`
-- “What should change next?” → the project issue tracker
+[consumer_manifest.json](consumer_manifest.json) declares maintained public consumers, prerequisites, build boundaries, and workflow coverage. Generated data, checkpoints, caches, logs, and benchmark outputs are not package source. [Contributing](CONTRIBUTING.md) describes validation.

@@ -50,10 +50,6 @@
       "classification": "canonical"
     },
     {
-      "path": "docs/analysis_claims.md",
-      "classification": "historical result"
-    },
-    {
       "path": "docs/architecture.md",
       "classification": "canonical"
     },
@@ -773,6 +769,26 @@
       "provider": "yfinance",
       "consumer": "notebooks/bitcoin_5m_lsm_mixed_geosparse_direction.ipynb",
       "description": "Public provider data with changing five-minute retention; network/full experiment is opt-in."
+    },
+    {
+      "kind": "external",
+      "path": "/path/to/tokenizer_final/tokenizer.json",
+      "provider": "User-trained tokenizer bundle",
+      "consumer": "examples/lm/configs/waveresnet_3b_fsdp.yaml",
+      "description": "Replace this explicit placeholder with the tokenizer and special-token mapping produced for your corpus; vocabulary must match the model."
+    },
+    {
+      "kind": "external",
+      "path": "/path/to/tokenizer_final/special_tokens_map.json",
+      "provider": "User-trained tokenizer bundle",
+      "consumer": "examples/lm/configs/waveresnet_3b_fsdp.yaml",
+      "description": "Replace this explicit placeholder with the tokenizer and special-token mapping produced for your corpus; vocabulary must match the model."
+    },
+    {
+      "kind": "external",
+      "provider": "Public research datasets",
+      "consumer": "notebooks/PSANN_Parity_and_Probes.ipynb",
+      "description": "Jena Climate, Beijing Air Quality, EAF, UCI HAR and Rossmann data are downloaded or staged by notebook loaders. Full experiments require those datasets; bounded consumer tests use declared synthetic inputs."
     }
   ],
   "workflows": [

@@ -1,3 +1,5 @@
+> Historical result record. Measurements, environment assumptions, and commands below describe the original experiment. They are not current release benchmarks or recommended API instructions. See the documentation index for maintained workflows.
+
 # Archived Note
 
 This long-form report is retained as an appendix. See

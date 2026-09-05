@@ -1,3 +1,5 @@
+> Historical result record. Measurements, environment assumptions, and commands below describe the original experiment. They are not current release benchmarks or recommended API instructions. See the documentation index for maintained workflows.
+
 **Reviewed Materials**
 - `plan.txt:1` — hypotheses H1–H5 and compute-parity constraints
 - `README.md:1` — PSANN overview, estimator interface, and backbones
@@ -32,13 +34,6 @@
 - Robustness to missingness/shift is solid in proxies: PSANN tracks TCN and clearly exceeds WaveResNet under heavy masks — `synthetic_experiment_metrics.csv:26–41` (e.g., `:26,29,38,41`).
 - Information‑usage ablations align with domain knowledge (history≫meteorology≫calendar) — `synthetic_ablation_results.csv:2–4`.
 - The experiments demonstrate practical compute‑parity discipline (similar training durations/param scales) and cover both sequence and tabular regimes, increasing external validity.
-
-**Targeted Next Probes (Minimal Additions)**
-- Add 3–5 seeds per real‑data config (Beijing/Jena/HAR) and report mean±CI with paired tests; keep time budgets identical and stop early on plateaus.
-- Beijing cross‑station: 2–3 folds with one held‑out station each under the same parity budget; report per‑station spread.
-- HAR: replace attention spine with a 1–2 block dilated Conv1d (TCN‑lite) and compare to current conv spine; add light dropout/augmentations; keep params/time matched.
-- EAF: run a small real‑data slice with per‑heat aggregation and top features (TEMP/O₂), respecting locale normalization; cap to a 30–60 min budget and one seed for a directional check.
-- Geometry: compute Jacobian PR over training epochs (start/mid/end) for PSANN vs MLP on Jena to test whether lower PR correlates with generalization gains.
 
 **Bottom Line**
 - The collected results partially support the plan’s hypotheses: PSANNs with minimal temporal inductive bias generalize well and are robust to missingness, often competitive under compute parity. They are not universally superior to TCNs on tasks requiring longer memory, and attention‑only spines are risky. The ablations and spectral probe provide mechanistic hints (history reliance, lower participation ratio), but a few targeted replications and a small EAF real run will meaningfully tighten confidence without expanding scope.

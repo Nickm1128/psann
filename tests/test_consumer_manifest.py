@@ -132,6 +132,16 @@ def test_declared_input_is_present_or_has_an_executable_generator(item, tmp_path
 @pytest.mark.parametrize("row", MANIFEST["configurations"], ids=lambda r: r["path"])
 def test_every_configuration_normalizes_and_executes_its_model_build_boundary(row, monkeypatch):
     config = yaml.safe_load((ROOT / row["path"]).read_text())
+    declared = {item["path"] for item in MANIFEST["inputs"] if "path" in item}
+    data = config.get("data", {})
+    for source in data.get("sources", []):
+        assert (source["path"] if isinstance(source, dict) else source) in declared
+    for key in ("tokenizer_model_path", "tokenizer_special_map_path"):
+        if data.get(key):
+            assert data[key] in declared
+    if data.get("npz"):
+        input_path = ((ROOT / row["path"]).parent / data["npz"]).resolve()
+        assert input_path.is_file() and input_path.relative_to(ROOT).as_posix() in declared
     if row["runner"] == "hisso":
         from psann.episodic import EpisodicTrainer
 

@@ -1,31 +1,18 @@
-# Documentation Index
+# Documentation
 
-This directory contains maintained product and engineering documentation. Planning,
-private workflow material, and historical task lists are intentionally not published.
+Start with the [regression quickstart](../README.md). Choose a task, then consult the API and architecture references for exact supported combinations.
 
-| Document | Purpose |
-| --- | --- |
-| `PROJECT_MAP.md` | Supported surfaces, installation model, and repository map. |
-| `REPO_STRUCTURE.md` | Repository and output conventions. |
-| `API.md` and `public_api.md` | Supported estimator and package APIs. |
-| `architecture.md` and `architecture_contract.md` | Current implementation map and approved Phase 3 architecture contract. |
-| `migration.md` | Compatibility and upgrade guidance for the current 0.12.4 source line. |
-| `CONTRIBUTING.md` | Contribution workflow and local quality checks. |
-| `deprecation_policy.md` | Canonical parameter names and alias policy. |
-| `lm.md` | PSANN-LM usage, training, and benchmark guidance. |
-| `PSANN_Results_Compendium.md` | Curated experiment results and interpretation notes. |
-| `benchmarks/` | Reproducible benchmark inputs, promotion guidance, and checked-in summaries. |
-| `examples/README.md` | Runnable example notes. |
+| Task | Guide | Executable consumer |
+| --- | --- | --- |
+| Regression and model selection | [API](API.md) | [Core quickstart](../examples/quickstarts.py) |
+| Preprocessing and LSM composition | [Preprocessing](preprocessing.md) | [Supervised comparison](../examples/14_psann_with_vs_without_lsm.py) |
+| Episodic training and rewards | [Episodic training](episodic.md) | [Allocation example](../examples/26_hisso_unsupervised_allocation.py) |
+| Language modeling | [LM guide](lm.md) | [LM examples](../examples/lm/README.md) |
+| Architecture selection | [Capability contract](architecture_contract.md) | [Example index](examples/README.md) |
+| Wave context | [Wave guide](wave_resnet.md) | [Context notebook](../notebooks/PSANN_WaveResNet_Context_Demo.ipynb) |
+| Sparse connectivity | [Geometry guide](geo_sparse.md) | [Geometry example](../examples/28_geosparse_regression.py) |
+| Upgrade an existing application | [Migration](migration.md) | Old-to-new executable snippets |
 
-## Logging directories
+[Public imports](public_api.md), [architecture implementation](architecture.md), [shared components](architecture_components.md), [repository map](PROJECT_MAP.md), [contribution checks](CONTRIBUTING.md), [deprecation policy](deprecation_policy.md), and [changelog](../CHANGELOG.md) provide the reference path.
 
-- Use `runs/hisso/` for local HISSO logs and `/content/hisso_logs/` on hosted notebooks.
-- The HISSO logging CLI accepts `--output-dir`; run
-  `python -m psann.scripts.hisso_log_run -h` for its current options.
-
-## Documentation maintenance
-
-- Keep public documents focused on supported behavior and reproducible guidance.
-- Link new maintained documentation from this index.
-- Use the issue tracker for proposed work and follow-up tasks rather than committing
-  project plans or session notes to the repository.
+Historical empirical results live in the explicitly labeled benchmark reports. Their hardware, datasets, and package versions describe those runs only.

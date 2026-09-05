@@ -1,66 +1,18 @@
-# Public API Surface
+# Public imports
 
-This page lists the **supported** public API surface for PSANN. Anything not listed here should be treated as internal or experimental.
+Use explicit imports in applications. The canonical wildcard surfaces exclude deprecated estimator and LM base aliases. Direct compatibility imports are described only in [migration](migration.md).
 
-## Top-level imports (stable)
+| Import location | Canonical names |
+| --- | --- |
+| `psann` | `PSANNRegressor`, `PreprocessorConfig`, `EpisodicTrainer`, `HISSOConfig` |
+| `psann.architectures` | `ArchitectureConfig`, `ActivationConfig`, `ResidualConfig`, `ConvolutionConfig`, `AttentionConfig`, `StateConfig`, `ContextConfig`, `WaveConfig`, `SpectralConfig`, `SequenceConfig`, `GeometryConfig`, `W0WarmupConfig`, `ProgressiveDepthConfig` |
+| `psann.preprocessing` | `PreprocessorConfig`, `LSMConfig`, `LSMPretrainingConfig`, `PreprocessorTrainingConfig`, `ModulePreprocessorConfig` |
+| `psann.episodic` | `EpisodicTrainer`, `HISSOConfig`, `EpisodeScheduleConfig`, `SupervisedWarmStartConfig` |
+| `psannlm` | `PSANNLM`, `PSANNLMDataPrep`, `LMConfig`, `LMArchitectureConfig`, `TrainConfig`, `DataConfig`, `LMTrainer` |
+| `psannlm.architectures` | `LMActivationInitializationConfig`, `LMTemporalConfig`, `LMGeometryExecutionConfig`, `build_lm_model`, `replace_lm_builder`, `available_lm_architectures` |
 
-These are the identifiers exported from `psann.__init__` and are safe to import directly:
+The regression estimator is also exported by `psann.estimators` and `psann.sklearn`. Import all nested architecture policies from `psann.architectures` so their immutable policy semantics are explicit.
 
-### Estimators
-- `PSANNRegressor`, configured with immutable policies from `psann.architectures`.
-- The historical variant estimator names remain direct deprecated imports through
-  the 0.x line; use `ArchitectureConfig.dense`, `.convolutional`, `.for_wave`,
-  `.for_sequence`, or `.geometric_sparse` for new code.
+Advanced PyTorch integrations may use `ArchitectureBuildRequest` and `build_architecture` from `psann.architectures`, or shared primitives from [architecture components](architecture_components.md). An architecture build returns a model, capabilities, and lifecycle; the estimator owns fit/inference and checkpoint orchestration. Modules beginning with an underscore are implementation details.
 
-### Episodic training (HISSO)
-- `EpisodicTrainer`, `HISSOConfig`, `EpisodeScheduleConfig`, and
-  `SupervisedWarmStartConfig` from `psann.episodic`.
-- `RewardStrategy`, `RewardStrategyBundle`, `get_reward_strategy`, and
-  `register_reward_strategy` from `psann.episodic`.
-- The 0.x `HISSOOptions`, `EpisodeTrainer`, `hisso_infer_series`, and related
-  episode/HISSO helpers remain explicit deprecated compatibility imports.
-
-### Expanders and activation config
-- `PreprocessorConfig`, `LSMConfig`, `LSMPretrainingConfig`,
-  `PreprocessorTrainingConfig`, `ModulePreprocessorConfig` from
-  `psann.preprocessing` (also convenient top-level imports)
-- `LSM`, `LSMExpander`
-- `LSMConv2d`, `LSMConv2dExpander`
-- `SineParam`, `ActivationConfig`
-- `StateConfig`, `StateController`, `ensure_state_config`
-
-### Token utilities
-- `SimpleWordTokenizer`
-- `SineTokenEmbedder`
-
-### Core wave backbones
-- `WaveResNet`, `WaveEncoder`, `WaveRNNCell`
-- `build_wave_resnet`
-- `scan_regimes`
-
-### Diagnostics and synthetic data
-- `jacobian_spectrum`, `ntk_eigens`, `participation_ratio`, `mutual_info_proxy`
-- `encode_and_probe`, `fit_linear_probe`
-- `make_context_rotating_moons`, `make_drift_series`, `make_shock_series`, `make_regime_switch_ts`
-
-### Parameter counting helpers
-- `count_params`, `dense_mlp_params`, `geo_sparse_net_params`, `match_dense_width`
-
-## Experimental APIs
-
-These are available but may change without notice:
-
-- `GeoSparseRegressor` (deprecated compatibility wrapper; use
-  `PSANNRegressor(architecture=ArchitectureConfig.geometric_sparse(...))`).
-- `psannlm` (LM utilities; packaged separately from the core `psann` distribution).
-
-## Internal-only modules (not stable)
-
-The following modules are **internal** implementation details:
-
-- `psann.estimators._fit_utils`
-- `psann.layers.*`
-- `psann.nn`, `psann.nn_geo_sparse`
-- `psann.utils.hf_cache`
-
-If you must rely on internal modules, pin a version and expect breaking changes.
+The core package never imports `psannlm`. LM imports shared core primitives through documented component boundaries. Both distributions carry their own package metadata and license; `psann.__version__` agrees with core distribution metadata.

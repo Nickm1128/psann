@@ -1,36 +1,15 @@
-# psannlm — PSANN Language Modeling
+# PSANN-LM
 
-`psannlm` is a separate distribution using the shared policies and numerical components
-in `psann`. Install both with `pip install psann psannlm`; core `psann` does not require LM tooling.
+Language-model tasks for PSANN, packaged separately as `psannlm`. This checkout prepares version **0.13.0**, requiring `psann>=0.13.0`; publication is a separate operation. The existing `v1.0.0` repository tag is historical and is unchanged.
 
-```python
-from psannlm import LMArchitectureConfig, LMConfig, PSANNLM, PSANNLMDataPrep, TrainConfig
+Install core first, then this directory with `python -m pip install ./psannlm` from the repository root. PyTorch, NumPy, SentencePiece, tokenizers, datasets, Hugging Face Hub, and PyYAML are declared runtime dependencies.
 
-texts = ["hello world", "goodnight moon", "the quick brown fox jumps over the lazy dog"] * 8
-data = PSANNLMDataPrep(texts, tokenizer="simple", max_length=32)
-model = PSANNLM(
-    config=LMConfig(
-        architecture=LMArchitectureConfig.wave(),
-        d_model=128, n_layers=2, n_heads=4, vocab_size=data.vocab_size,
-    ),
-    device="cpu",
-)
-model.fit(data, train=TrainConfig(epochs=1, batch_tokens=256, lr=1e-3, amp="fp32"))
-print(model.generate("hello", max_new_tokens=32, top_p=0.9))
+Use `PSANNLM`, `PSANNLMDataPrep`, `LMConfig`, and `LMArchitectureConfig` from `psannlm`. Select one of four architecture kinds: transformer, residual, wave, or geometric-sparse. Spectral residual is a nested residual policy. Train with `model.fit(data, train=TrainConfig(...))`, generate with `model.generate(...)`, and persist with `save`/`load`.
+
+```sh
+python -m psannlm --help
+python -m psannlm train --help
+python -m psannlm generate --help
 ```
 
-`python -m psannlm` is the canonical CLI for `train`, `resume`, `eval`, and `generate`.
-For a local YAML run: `python -m psannlm train --config examples/lm/configs/waveresnet_cpu.yaml`.
-Streaming training accepts `--architecture` or a canonical JSON/YAML `--model-config`.
-
-Model artifacts use `psannlm.model` schema version 1 and embed canonical configuration,
-weights, device and fitted tokenizer state. Trainer artifacts use `psannlm.trainer` and
-retain optimizer, scaler, scheduler, counters and RNG state. `PSANNLM.load` accepts model
-artifacts; `psannlm.persistence.load_lm_checkpoint` reconstructs either artifact kind.
-Old unversioned model and trainer files remain readable; old trainer/raw-weight files
-require the model options that were not stored in those files.
-
-Lowercase `psannLM`/`psannLMDataPrep`, `Trainer`, legacy base names, flat fitting, and the
-`psannlm.train` and `psannlm.lm.train.cli` commands remain warning compatibility adapters
-through 0.x. New code uses immutable `LMConfig` and `TrainConfig`.
-See [the LM guide](../docs/lm.md) for policies, migration, and runtime details.
+The [LM guide](https://github.com/psann-project/psann/blob/main/docs/lm.md) covers a complete small training example, YAML, tokenizer identity, and schema-v1 model/trainer checkpoints. The repository [migration guide](https://github.com/psann-project/psann/blob/main/docs/migration.md) documents 0.x compatibility. Core-only installations do not contain this package; LM artifacts contain no core package files.

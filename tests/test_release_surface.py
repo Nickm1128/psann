@@ -4,11 +4,42 @@ import importlib
 from pathlib import Path
 import re
 import tomllib
+import warnings
 
+import numpy as np
 import pytest
 import torch
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_migration_document_constructor_pairs_fit_identically_and_resave_twice(tmp_path):
+    namespace = {}
+    document = (ROOT / "docs/migration.md").read_text()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        for code in re.findall(r"```python\n(.*?)```", document, re.S):
+            exec(compile(code, "docs/migration.md", "exec"), namespace)
+    for old, new in [*namespace["pairs"], (namespace["old"], namespace["new"])]:
+        assert old.architecture == new.architecture
+        assert old.preprocessor == new.preprocessor
+        spatial = new.architecture.convolution is not None
+        width = int(np.prod(new.architecture.geometry.shape)) if new.architecture.geometry else 4
+        x = np.random.default_rng(7).normal(size=(16, 1, 6, 6) if spatial else (16, width)).astype(np.float32)
+        y = np.arange(16, dtype=np.float32).reshape(-1, 1) / 16
+        for model in (old, new):
+            model.set_params(epochs=2, hidden_layers=2, hidden_units=8, batch_size=8,
+                             device="cpu", random_state=317, early_stopping=False)
+            model.fit(x, y)
+        np.testing.assert_allclose(old.predict(x), new.predict(x), rtol=0, atol=0)
+        source = tmp_path / "source.pt"
+        new.save(source)
+        migrated = namespace["migrate_core_checkpoint"](
+            source, [tmp_path / "generation-1.pt", tmp_path / "generation-2.pt"], x
+        )
+        assert migrated.architecture == new.architecture
+        assert migrated.preprocessor == new.preprocessor
+        np.testing.assert_allclose(migrated.predict(x), new.predict(x), rtol=0, atol=0)
 
 
 def test_release_metadata_dependency_and_version_agreement():

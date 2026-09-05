@@ -1,63 +1,9 @@
-# Architecture Overview
+# Architecture and package boundaries
 
-This document sketches the PSANN module layout and how data flows through the core estimator stack. It is intentionally high level; see `docs/API.md` for the public surface and `docs/REPO_STRUCTURE.md` for repo layout.
+`PSANNRegressor` is the task facade. It normalizes `ArchitectureConfig` and `PreprocessorConfig`, validates capabilities, delegates numerical construction to the architecture registry, and orchestrates supervised fit, prediction, and persistence. `EpisodicTrainer` composes the estimator with `HISSOConfig` and owns episode scheduling, reward dispatch, warm start, and evaluation.
 
-For the approved Phase 3 target and the boundary between current compatibility behavior
-and that target, see [Architecture Contract](architecture_contract.md).
+`psann.architectures.components` provides the documented activation, normalization, spectral, and connectivity primitives used across packages. Architecture builders return a model plus lifecycle/capabilities. Wave lifecycle hooks handle initialization warmup and progressive depth without moving estimator concerns into a numerical backbone.
 
-## High-level stack
+`psannlm` is a separate package. Its immutable `LMConfig` and four-kind `LMArchitectureConfig` feed one builder path used by `PSANNLM`, training, evaluation, persistence, and CLI consumers. Core code has no dependency on LM code. The LM distribution declares its own direct runtime dependencies.
 
-```
-psann/
-  sklearn.py                -> sklearn-style estimator facade (public surface)
-  _sklearn/                 -> base/scaling/builders/variant implementation modules
-  estimators/_fit_utils.py  -> shared fit prep: scaling, shaping, hooks
-  activations.py            -> PSANN/ResPSANN/SGR activations + configs
-  layers/                   -> building blocks (sine residual, geo_sparse, etc.)
-  nn_geo_sparse.py          -> GeoSparseNet backbone (experimental)
-  episodic/                 -> canonical episodic runtime, configuration, and rewards
-  hisso/, episodes/, rewards/ -> deprecated 0.x compatibility façades
-  utils/                    -> diagnostics + small helpers
-  lm/                       -> LM library code (experimental; may move to psannlm)
-```
-
-```
-psannlm/                     -> separate distribution (LM training/CLI utilities)
-```
-
-## Core estimator flow (supervised)
-
-1. **Input normalisation** via `normalise_fit_args` (dtype, validation splits, shape hints).
-2. **Scaling + shape prep** via `prepare_inputs_and_scaler`:
-   - decides flatten vs preserve-shape paths
-   - applies optional scalers
-   - prepares metadata for prediction and streaming paths
-3. **Model build** via `build_model_from_hooks`:
-   - selects base (PSANN, ResPSANN, WaveResNet, SGR, GeoSparse)
-   - attaches optional LSM expanders or attention
-4. **Training** via `run_supervised_training`:
-   - shared optimizer/scheduler logic
-   - early stopping + validation hooks
-5. **Prediction** reuses prepared metadata for consistent output shapes.
-
-`psann.sklearn` stays as the stable import and checkpoint path, while the implementation lives in `psann._sklearn.*`.
-
-## HISSO flow (episodic)
-
-- `HISSOConfig` and `EpisodeScheduleConfig` are frozen canonical episodic configuration.
-- `EpisodicTrainer` runs canonical episodes on the estimator’s device and logs rewards.
-- Deprecated `hisso_infer_series` and `hisso_evaluate_reward` delegate to the
-  fitted canonical strategy; new code calls `EpisodicTrainer.predict` and
-  `EpisodicTrainer.evaluate`.
-
-## LM flow (experimental)
-
-- `psannlm.PSANNLMDataPrep` handles tokenisation + dataset packing.
-- `psannlm.PSANNLM` exposes a compact fit/generate interface.
-- The CLI / long-run training utilities use `python -m psannlm`.
-
-## Design goals
-
-- **Stable core surface**: sklearn-style estimators are the primary supported API.
-- **Shared fit helpers**: keep preprocessing and training logic in `_fit_utils`.
-- **Experimental isolation**: GeoSparse and LM code are clearly labeled experimental.
+See the [capability contract](architecture_contract.md), [public import table](public_api.md), [shared components](architecture_components.md), and [repository map](PROJECT_MAP.md). Checkpoint migration behavior is specified in [migration](migration.md).

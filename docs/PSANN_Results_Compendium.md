@@ -1,7 +1,9 @@
+> Historical result record. Measurements, environment assumptions, and commands below describe the original experiment. They are not current release benchmarks or recommended API instructions. See the documentation index for maintained workflows.
+
 **PSANN Results Compendium**
 
 - Purpose: One-stop reference of datasets, methods, configurations, and non-visual results collected so far to accelerate paper writing and reproducibility.
-- Scope: Compiles light-probe runs, prior outputs under `outputs/`, the experiment plan, and environment details.
+- Scope: Compiles light-probe runs, prior outputs under `outputs/`, and environment details.
 
 **Environment**
 - Python: 3.11.9 (Windows x64)
@@ -111,9 +113,6 @@ Short caption: Runpod L4 WaveResNet-small CUDA runs; see notebooks/HISSO_Logging
 | 212855 | Runpod L4 | 18.37 | 113.07 | 56 | 0.722 / 0.864 / 0.835 | −0.114 (±0.0103) | 3.18 | float16 |
 | 153117 | Runpod L4 | 19.41 | 107.3 | 17 | 0.621 / 0.755 / 0.670 | −0.114 (±0.0100) | 2.69 | float16 |
   - Notes: results reflect a longer episode budget than the Colab smoke; AMP remained stable. Instrument memory via `torch.cuda.max_memory_allocated()` if running concurrent jobs on the pod.
-- Next CUDA steps:
-  - Run HISSO regression suite under CUDA once the runpod slot is available (pytest tests/test_hisso_options.py::test_hisso_fit_sets_trainer_state -k cuda plus nightly selection).
-  - Tune WaveResNet episodes/penalty if the negative reward mean persists on richer datasets; capture findings in this compendium and the README GPU appendix.
 **Prior Outputs (Local)**
 - Predictions (NPZ arrays) and metrics bundle: `outputs/colab_results (1)/`
   - Prediction files by task + model, e.g.,
@@ -125,129 +124,11 @@ Short caption: Runpod L4 WaveResNet-small CUDA runs; see notebooks/HISSO_Logging
   - `synthetic_experiment_metrics.csv` (multi-dataset synthetic parity results)
   - `synthetic_spectral_results.json` (Jacobian/PR snapshots per model on synthetic seasonal proxy)
 
-**Experiment Plan**
-- Source: `plan.txt`
-- Verbatim content
-```
-# ResPSANN Under Compute Parity — Adapted Experiment Plan (Datasets: EAF, Beijing Air, Jena Climate, HAR, Rossmann)
-
-## Scope & Changes
-
-This revision aligns the original plan to the datasets described in the companion data brief. We anchor flagship robustness work on the Industrial Electric Arc Furnace (EAF) tables, use Beijing + Jena for mid‑scale multivariate forecasting and seasonality probes, deploy HAR for classification/representation tests, and include Rossmann for structured business forecasting. Synthetic families remain for stress testing but are de‑emphasized in this pass.
-
-## Datasets & Targets
-
-### 1) Industrial Data from the Electric Arc Furnace (EAF)
-
-**Targets**
-
-* Temperature forecasting: next‑step and short horizon TEMP.
-* Oxidation forecasting: VALO2_PPM regression; optionally detection when measured (VALO2_PPM>0).
-* Final chemical composition after tapping: multi‑output regression on available chemistry columns (through VALNI).
-
-**Notes**
-
-* Eleven linked CSVs spanning ~2015‑01‑01 – 2018‑07‑30; join on `HEATID`.
-* Very large high‑frequency logs for gas/oxygen/carbon; temperature table ~85k rows.
-* Decimal commas in numeric fields and timestamps; some duplicate TEMP rows; transformer durations string‑encoded.
-* Carbon/gas usage counters accumulate and reset around heat boundaries; final composition file stops at VALNI, so downstream features expecting e.g., VALV/VALTI must be revised.
-
-### 2) Beijing Multi‑Site Air‑Quality
-
-**Targets**
-
-* PM2.5 (primary), optionally PM10/NO2; 1h–6h ahead.
-
-**Notes**
-
-* Hourly data across 12 stations (2013‑03‑01 – 2017‑02‑28); station‑segregated files.
-* Hundreds of NA gaps per station; require imputation or masking. Ideal for train/held‑out station generalization.
-
-### 3) Jena Climate 2009–2016
-
-**Targets**
-
-* 6h–24h ahead temperature; optionally multivariate (humidity, pressure).
-
-**Notes**
-
-* 420k ten‑minute records (2009‑01‑01 – 2017‑01‑01) with standard decimals; day‑first timestamps.
-* Clean seasonal structure suitable for spectral diagnostics and distribution‑shift splits.
-
-### 4) Human Activity Recognition (HAR) — Smartphones
-
-**Targets**
-
-* 6‑class activity classification (Walking, Upstairs, Downstairs, Sitting, Standing, Laying).
-
-**Notes**
-
-* Two input options: engineered 561‑feature windows (official split), or raw 50‑Hz sequences (128x9) from Inertial Signals.
-* Respect provided train/test splits by subject to avoid leakage.
-
-### 5) Rossmann Store Sales
-
-**Targets**
-
-* Next‑day sales per store; optional multi‑horizon.
-
-**Notes**
-
-* ~1.0M training rows (2013‑01‑01 – 2015‑07‑31) + test period (2015‑08‑01 – 2015‑09‑17). Join with store metadata; encode holidays; reconcile missing `Open`.
-
-## Preprocessing & Feature Engineering
-
-### EAF
-
-* Locale normalization; integrity de‑dupe; heat segmentation; per‑heat features; lag/EMA features; target variants.
-
-### Beijing
-
-* Station‑wise normalization; missingness handling; calendar features.
-
-### Jena
-
-* Windowing; temporal splits; seasonal encodings.
-
-### HAR
-
-* Engineered vs raw pipelines.
-
-### Rossmann
-
-* Joins/encodings; temporal CV.
-
-## Splits & Validation
-
-* EAF heat‑aware; Beijing cross‑station; Jena year‑based; HAR official; Rossmann calendar‑based; ≥5 seeds; paired tests.
-
-## Models, Baselines & Compute Parity
-
-* ResPSANN (primary) + tiny temporal spine; baselines (MLP/TCN/LSTM/Transformer‑lite); matched wall‑time/params.
-
-## Experiments by Hypothesis
-
-* H1 Generalization; H2 Information Usage (PSD/SHAP); H3 Spectral; H4 Robustness; H5 Limits & Tiny Spines.
-
-## Metrics & Reporting
-
-* Forecasting: RMSE/MAE/R² (+sMAPE/MASE). Classification: Acc/F1/ECE. Resources: wall‑time/params.
-
-## Execution Order
-
-1) EAF loaders → 2) EAF sweep → 3) Beijing station‑gen → 4) Jena geometry → 5) HAR → 6) Rossmann → 7) Aggregate.
-
-## Artifacts & Reproducibility
-
-* Versioned scripts, saved splits/seeds/configs, figure scripts, environment snapshot & wall‑clock calibration.
-```
-
 **Key Files**
 - Light-probe script: `scripts/run_light_probes.py`
 - Light-probe metrics: `colab_results_light/metrics.csv`
 - Prior predictions/metrics: `outputs/colab_results (1)/`
 - Synthetic results: `outputs/psann_synth_results (1)/`
-- Plan: `plan.txt`
 
 **Repro Steps**
 - Prepare datasets
@@ -258,12 +139,7 @@ This revision aligns the original plan to the datasets described in the companio
 - Optional: record PR snapshots
   - Add `--pr-snapshots` to the command to write `colab_results_light/jacobian_pr.csv` (for Jena/psann_conv).
 
-**Notes & Next Work**
-- EAF lite setting is intentionally small; full EAF tasks (TEMP/O2 multi-horizon, final composition) remain for the compute-parity sweep with richer spines and feature engineering per the plan.
-- Beijing results strongly favor PSANN+Conv under the current config; cross-station generalization and missingness stress tests should be surfaced next.
-- Jena spectral diagnostics (Jacobian/NTK, PR over epochs) can be recorded via `--pr-snapshots` or the diagnostics cells in the research notebook.
-
-**Instrumented Run Commands (recommended)**
+**Historical Instrumented Run Commands**
 - One-command full suite (light probes + synthetic ablations + GeoSparse benchmarks/sweep/micro):
   - `python scripts/run_full_suite.py --device cuda --git-commit`
 - Light probes (real data lite):
@@ -281,6 +157,8 @@ This revision aligns the original plan to the datasets described in the companio
   - `python scripts/benchmark_geo_sparse_micro.py --out reports/geo_sparse_micro/<stamp>`
 
 **Local Artifact Inventory (2026-02-05)**
+
+These are historical locations from the original experiment, not files guaranteed in a fresh checkout. The external-data crypto notebook has since been removed because its repository and database were not provided.
 - Light probes: results are embedded above; `colab_results_light/metrics.csv` is not present locally (rerun `scripts/run_light_probes.py` to regenerate).
 - Full-suite GPU run: `reports/full_suite/20260205_194552/` (CUDA on GB10). Includes light probes, ablations, GeoSparse bench/sweep/micro, and postprocessed tables/plots in `analysis/`.
 - Synthetic ablations: `reports/ablations/20260205_110015/` (5 seeds; `results.jsonl`, `summary.csv`, `seed_summary.csv`, `env.json`, `manifest.json`).
@@ -293,23 +171,3 @@ This revision aligns the original plan to the datasets described in the companio
 - GPU environment reports: `outputs/gpu_tests/*/env.json` and `SUMMARY.txt` are present.
 - Notebooks: `notebooks/PSANN_Parity_and_Probes.ipynb` contains prior real/synthetic pipelines (HAR/Rossmann loaders), and `notebooks/geosparse_crypto_direction.ipynb` uses the external `psann_crypto_trading` repo + DB; no exported metrics live in this repo.
 - Historical references: `benchmarks/psann_results_assessment.md` references `tmp_outputs/colab_results (1)` and `tmp_outputs/psann_synth_results (1)` which are not present in this checkout.
-
-**Comparison Matrix (Target)**
-| Dataset | Task | Models (required) | Seeds | Metrics | Status | Post |
-| --- | --- | --- | --- | --- | --- | --- |
-| Jena Climate (72 ctx / 36 h) | Forecasting | PSANN, ResPSANN, WaveResNet, MLP/TCN/LSTM | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | Light-probe (2 seeds) | Post: Real-data forecasting |
-| Beijing Air (24 ctx / 6 h) | Forecasting | PSANN, ResPSANN, WaveResNet, MLP/TCN/LSTM | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | Light-probe (2 seeds) | Post: Real-data forecasting |
-| EAF TEMP (lite) | Forecasting | PSANN, ResPSANN, WaveResNet, MLP | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | Light-probe (2 seeds) | Post: Real-data forecasting |
-| HAR engineered / raw | Classification | PSANN/ResPSANN + baselines | >=5 | Acc/F1 (+regression metrics for parity) | Loader in notebook | Post: Real-data forecasting |
-| Rossmann sales | Forecasting | PSANN/ResPSANN + baselines | >=5 | MSE/RMSE/MAE/SMAPE/R2 | Loader in notebook | Post: Real-data forecasting |
-| Synthetic drift / shock / regime | Forecasting | PSANN, ResPSANN, WaveResNet | >=5 | MSE/RMSE/MAE/SMAPE/R2 + stability | CPU sweep complete (`reports/ablations/20260205_110015/`) | Post: Synthetic robustness |
-| Tabular mixed / shifted | Regression | PSANN, ResPSANN, WaveResNet | >=5 | MSE/RMSE/MAE/SMAPE/R2 + stability | CPU sweep complete (`reports/ablations/20260205_110015/`) | Post: Synthetic robustness |
-| Context rotating moons | Classification | PSANN, ResPSANN, WaveResNet | >=5 | Acc/F1 (+regression metrics for parity) | CPU sweep complete (`reports/ablations/20260205_110015/`) | Post: Synthetic robustness |
-| GeoSparse mixed activation | Regression | GeoSparse + dense baselines | >=5 | MSE/RMSE/MAE/SMAPE/R2 + time/params | CPU mixed bench + sweep + micro (`reports/geo_sparse*`) | Post: GeoSparse mixed activation |
-| Crypto direction (external) | Classification | GeoSparse mixed + dense | >=3 | Accuracy / ROC + time/params | Notebook (external repo) | Post: GeoSparse mixed activation |
-
-**Post Mapping (Draft)**
-- Real-data forecasting post: Jena/Beijing/EAF + HAR/Rossmann runs (compute parity, multi-seed).
-- Synthetic robustness post: drift/shock/regime + tabular mixed/shifted + rotating-moons context tests, plus stability stats.
-- GeoSparse mixed-activation post: `benchmark_geo_sparse_vs_dense.py` (task=mixed, sparse_activation=mixed), `geo_sparse_sweep.py`, and microbench results.
-- Architecture/diagnostics post: SineParam/WaveResNet rationale + Jacobian/NTK/PR probes.

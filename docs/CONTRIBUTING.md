@@ -1,79 +1,30 @@
-# Contributing Guide
+# Contributing
 
-Thanks for helping with the PSANN cleanup. This document captures the house rules while Task 7 (documentation refresh) and the estimator refactors are underway.
+Install a suitable PyTorch build first, then core development dependencies and the separate LM distribution:
 
-## Environment
-
-1. Preferred bootstrap from repo root:
-   ```bash
-   make dev
-   ```
-   `make dev` now uses the virtualenv's Python on both Windows and Unix-like systems, installs `psann` with `[dev]`, installs the local `psannlm` package, and enables pre-commit hooks.
-2. Manual bootstrap if `make` is unavailable:
-   Windows PowerShell:
-   ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
-   python -m pip install --upgrade pip
-   python -m pip install -e .[dev]
-   python -m pip install -e ./psannlm
-   python -m pre_commit install
-   ```
-   macOS/Linux:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   python -m pip install --upgrade pip
-   python -m pip install -e .[dev]
-   python -m pip install -e ./psannlm
-   python -m pre_commit install
-   ```
-3. The `[dev]` extra installs `pytest`, `ruff`, and `black`. Match the versions in `pyproject.toml`.
-4. Optional: enable pre-commit hooks for formatting and linting if you skipped `make dev`:
-   ```bash
-   python -m pre_commit install
-   ```
-
-## Coding standards
-
-- **Type hints & style** – follow the existing typing patterns. Run `ruff check src tests` and fix any lint failures before sending patches. Black is configured to the default line length.
-- **Shared helpers first** – when adding estimator behaviour, reach for `psann.estimators._fit_utils` (e.g., `normalise_fit_args`, `prepare_inputs_and_scaler`, `build_model_from_hooks`) instead of duplicating logic in `sklearn.py`.
-- **ASCII-only** edits unless a file already uses Unicode symbols.
-
-## Common commands
-
-From repo root:
-
-```bash
-make dev        # bootstrap venv + install deps + pre-commit
-make lint       # ruff + black + mypy
-make test-fast  # pytest (exclude slow + GPU)
-make build      # build both wheels
-python tools/repo_hygiene_audit.py --json  # flag tracked outputs + oversized Python files
+```sh
+python -m pip install -e ".[dev,sklearn,viz]"
+python -m pip install ./psannlm
 ```
 
-## Testing
+Use typed canonical task/configuration APIs in new examples and documentation. Keep compatibility teaching in migration/deprecation material. Add new maintained consumers and prerequisites to [consumer_manifest.json](consumer_manifest.json). Preserve experimental intent explicitly when changing a benchmark configuration. Label historical results with their original scope and retain reproducible provenance such as dataset, seed, configuration, and hardware.
 
-- Run `pytest` (or the targeted module tests) before and after changes touching training loops or helpers. Extras-focused suites remain skipped while that feature is reworked.
-- For documentation-only changes, sanity-check code snippets with `python -m compileall path/to/file.py` when feasible to avoid syntax drift.
-- Mark long-running or GPU/HISSO tests with `@pytest.mark.slow`, and keep quick iterations to CPU by running `python -m pytest -m "not slow"`.
+Run required checks sequentially:
 
-## Documentation & task tracking
+```sh
+python -m pytest -m "not slow and not gpu" -q
+python -m pytest -m slow -q
+python -m pytest -m gpu -q
+python -m ruff check --select F,E9 .
+python -m black --check .
+python -m mypy src psannlm
+git diff --check
+python -m build
+python -m build ./psannlm
+```
 
-- Keep `README.md`, `docs/examples/README.md`, and `docs/migration.md` aligned with the code. Mention the reward registry and `transition_penalty` terminology when documenting HISSO flows.
-- New docs live under `docs/`. Cross-link notable additions from the README and `pyproject` metadata where practical.
-- Use the issue tracker for roadmap proposals and follow-up work; do not commit task lists or private process material.
-- `tools/repo_hygiene_audit.py` rejects private path families and internal-process
-  filename tokens (`todo`, `plan`, `audit`, `inventory`, `follow-up`, `instructions`,
-  `backlog`, `roadmap`, and `next-steps`) under `docs/` or `benchmarks/`. It also scans
-  tracked notebooks for prohibited authorship provenance.
-- Use `docs/benchmarks/promotion_guide.md` when turning local run outputs into checked-in benchmark summaries, and keep alias terminology aligned with `docs/deprecation_policy.md`.
-- For new model bases, benchmarks, or datasets, follow `docs/how_to_add_model_benchmark_dataset.md`.
+GPU tests require CUDA; report the actual device count and runtime. On Windows, import torch before scikit-learn in combined numerical processes. A loader failure before tests start is not a passing test run.
 
-## Pull request checklist
+Core and LM wheels must be disjoint. Test fresh core-only and combined installations, package versions, dependencies (`pip check`), import origins, CLI help, and real fit/train/inference/persistence paths. New runtime defects need regression coverage before repair. Keep mechanical formatting separate from semantic edits where practical; do not hide static errors by changing scope or adding broad ignores.
 
-- [ ] Lint (`ruff`) and tests (`pytest`) pass locally.
-- [ ] Documentation reflects new behaviour (and points to `docs/migration.md` for edge cases).
-- [ ] Commits include concise summaries and link to the corresponding issue when applicable.
-
-Questions? Open a draft PR or issue so maintainers can discuss the next step in public.
+Generated checkpoints, logs, datasets, caches, build output, and private implementation process material do not belong in tracked package source. [Repository map](PROJECT_MAP.md) and [extension guide](how_to_add_model_benchmark_dataset.md) explain ownership boundaries.

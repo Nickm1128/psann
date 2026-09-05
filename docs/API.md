@@ -1,201 +1,35 @@
-# PSANN API Reference
+# Task API reference
 
-Install the core library with `pip install psann`. When you need scikit-learn conveniences, use `pip install psann[sklearn]`; the base wheel only depends on NumPy and PyTorch. Language-modeling utilities now live in the separate `psannlm` package (`pip install psannlm`). For pinned environments use the compatibility extra (`pip install -e .[compat]`) as documented in the README. This document summarises the public, user-facing API of `psann` with parameter names, expected shapes, and behavioural notes.
+## Regression
 
-## psann.PSANNRegressor
+Import `PSANNRegressor` from `psann` and policies from `psann.architectures`. Construct with `architecture=ArchitectureConfig(...)` and optional `preprocessor=PreprocessorConfig(...)`. Tagged mappings and documented preset strings normalize to the same immutable configuration.
 
-Sklearn-style estimator that wraps PSANN networks (MLP and convolutional variants). Constructor parameters are grouped by concern. Unless otherwise stated, arguments accept plain Python scalars.
+Training options remain estimator parameters: `hidden_layers`, `hidden_units`, `epochs`, `batch_size`, `lr`, `optimizer`, `loss`, `early_stopping`, `patience`, `random_state`, `device`, `amp`, and `compile`. `hidden_units` is the dense width; a convolution policy can specify channel width. Feature arrays should normally be float32. The architecture determines whether inputs are flattened, spatial, or sequential; see the [capability matrix](architecture_contract.md).
 
-### Constructor parameters
-
-> **Alias policy.** `hidden_width` and `hidden_channels` remain as deprecated aliases so existing pipelines keep working. They always normalise to the canonical `hidden_units` / `conv_channels` values via `PSANNRegressor.set_params`; when both names are supplied the canonical keyword wins and a `UserWarning` is emitted.
-
-**Architecture**
-- `hidden_layers: int = 2` - number of PSANN blocks.
-- `hidden_units: int = 64` - width/features per hidden block (preferred name).
-- `hidden_width: int | None` - deprecated alias for `hidden_units`; conflicts emit a warning and the canonical `hidden_units` value wins (automatically normalised by `set_params`).
-- `w0: float = 30.0` - SIREN-style initialisation scale.
-- `activation: ActivationConfig | None` - forwarded to `SineParam`.
-- `activation_type: str = "psann" | "relu" | "tanh" | "relu_sigmoid_psann"` - nonlinearity per block.
-- `attention: dict | AttentionConfig | None` - optional token attention module (e.g. `{"kind": "mha", "num_heads": 4}`). Canonical preprocessing for attention must be a typed custom `tokens→tokens` module; dense LSM preprocessing is rejected rather than ignored.
-
-**Training**
-- `epochs: int = 200`, `batch_size: int = 128`, `lr: float = 1e-3`.
-- `optimizer: str = "adam" | "adamw" | "sgd"`.
-- `weight_decay: float = 0.0`.
-- `loss: str | callable = "mse" | "l1" | "smooth_l1" | "huber" | callable`.
-- `loss_params: dict | None` - extra kwargs for built-in losses.
-- `loss_reduction: str = "mean" | "sum" | "none"`.
-- `early_stopping: bool = False`, `patience: int = 20`.
-
-**Runtime**
-- `device: "auto" | "cpu" | "cuda" | torch.device`.
-- `random_state: int | None` - seeds NumPy, Torch, and Python.
-- `num_workers: int = 0` - DataLoader workers for supervised fits.
-
-**Input handling**
-- `preserve_shape: bool = False` - use convolutional body instead of flattening.
-- `data_format: "channels_first" | "channels_last"` - layout when preserving shape.
-- `conv_kernel_size: int = 1` - kernel size for convolutional blocks.
-- `conv_channels: int | None` - channel count inside conv blocks (defaults to `hidden_units`; the legacy `hidden_channels` alias is still accepted but must match and is normalised via `set_params`).
-- `per_element: bool = False` - return outputs at every spatial position (1x1 convolutional head) instead of pooled targets.
-- `output_shape: tuple[int, ...] | None` - target shape for pooled heads; defaults to `(target_dim,)` inferred from `y`.
-
-**Stateful and streaming options**
-- `stateful: bool = False` - enable persistent amplitude-like state.
-- `state: StateConfig | Mapping[str, Any] | None` - prefer `StateConfig(...)` to configure `rho`, `beta`, `max_abs`, `init`, and `detach`; mappings are still accepted for compatibility.
-- `state_reset: str = "batch" | "epoch" | "none"` - reset cadence during training.
-- `stream_lr: float | None` - learning rate for `step(..., update=True)` or teacher-forced streaming updates.
-
-**Preprocessors**
-- `preprocessor: PreprocessorConfig | Mapping | None` - the canonical preprocessing boundary. Use `PreprocessorConfig(LSMConfig.dense(...))` for flat LSM input or `LSMConfig.convolutional(...)` for 2D spatial input. The training policy is explicit in `PreprocessorTrainingConfig(trainable=..., lr=...)`.
-- `lsm`, `lsm_train`, `lsm_pretrain_epochs`, and `lsm_lr` remain deprecated 0.x compatibility arguments. They emit one `DeprecationWarning`; do not combine them with `preprocessor`.
-- `scaler: str | object | None` - string alias (`"standard"`/`"minmax"`) or any transformer exposing `fit`/`transform`.
-- `scaler_params: dict | None` - keyword arguments forwarded to the built-in scalers.
-
-**Deprecated HISSO compatibility configuration**
-- Prefer `psann.episodic.EpisodicTrainer(estimator=..., strategy=HISSOConfig(...))`.
-- `hisso_window: int | None` - deprecated episode length alias when training with `hisso=True`.
-- `hisso_batch_episodes: int | None` - number of episodes sampled per HISSO optimizer update (defaults to 32 when omitted).
-- `hisso_updates_per_epoch: int | None` - number of HISSO optimizer updates per epoch (defaults to compatibility behavior when omitted).
-- `hisso_reward_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | None` - reward callback that consumes transformed primary outputs and context.
-- **Device tip:** HISSO runs entirely on the estimator’s current device. Set `device="cuda"` (or the desired `torch.device`) before calling `fit` to keep episodes on GPU, and supply float32 inputs/contexts to avoid host copies. On CPU-only machines that still install CUDA wheels the training loop is wrapped in a guard that suppresses `torch.cuda.is_current_stream_capturing()` failures when the runtime is missing, so HISSO can run without a GPU driver.
-- `hisso_context_extractor: Callable[[torch.Tensor], torch.Tensor] | None` - deprecated
-  compatibility callback. New code supplies `HISSOConfig(context_extractor=...)` to
-  `EpisodicTrainer`; canonical callbacks are tensor-native and require matching
-  batch/time axes and an exact or singleton action width.
-- `hisso_primary_transform: str | None` - transform applied to primary outputs before reward evaluation (`"identity"` | `"softmax"` | `"tanh"`).
-- `hisso_transition_penalty: float | None` - smoothness penalty applied between HISSO steps (alias `hisso_trans_cost` is tolerated for compatibility). When the reward callback accepts `transition_penalty` (or legacy `trans_cost`), HISSO forwards this value automatically during training and `hisso_evaluate_reward`.
-- `stateful` / `state_reset` interaction: when `stateful=True`, HISSO mirrors supervised loop semantics (`state_reset="batch"` resets before each sampled episode, `"epoch"` resets once per epoch, `"none"` leaves state untouched). Staged state updates are committed after each HISSO optimizer step.
-- `hisso_supervised: Mapping[str, Any] | bool | None` - opt into a supervised warm start before HISSO (provide `{"y": targets}` to reuse labels).
-
-Predictive extras and their growth schedules have been removed; any legacy `extras_*` arguments are ignored with warnings.
-
-### `fit`
-
-```python
-def fit(
-    self,
-    X: np.ndarray,
-    y: np.ndarray | None,
-    *,
-    validation_data: Optional[tuple[np.ndarray, np.ndarray]] = None,
-    verbose: int = 0,
-    noisy: Optional[NoiseSpec] = None,
-    hisso: bool = False,
-    hisso_window: Optional[int] = None,
-    hisso_batch_episodes: Optional[int] = None,
-    hisso_updates_per_epoch: Optional[int] = None,
-    hisso_reward_fn: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
-    hisso_context_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
-    hisso_primary_transform: Optional[str] = None,
-    hisso_transition_penalty: Optional[float] = None,
-    hisso_trans_cost: Optional[float] = None,
-    hisso_supervised: Optional[Mapping[str, Any] | bool] = None,
-    lr_max: Optional[float] = None,
-    lr_min: Optional[float] = None,
-) -> "PSANNRegressor":
-    ...
-```
-
-- `X`: `(N, F1, ..., Fk)` for flattened inputs, `(N, C, ...)` or `(N, ..., C)` when `preserve_shape=True`.
-- `y`: required when `hisso=False`; accepts `(N,)` or `(N, target_dim)` for pooled heads, or spatial layouts matching `X` when `per_element=True`.
-- `validation_data`: `(X_val, y_val)` tuple used by early stopping; both arrays are coerced to `float32` internally.
-- `noisy`: optional Gaussian noise standard deviation applied to inputs during training (scalar or array-like).
-- `hisso`: deprecated 0.x compatibility switch. New code constructs
-  `EpisodicTrainer(estimator=..., strategy=HISSOConfig(...))`; the compatibility
-  route translates flat options into the same episodic runtime.
-- `hisso_batch_episodes` / `hisso_updates_per_epoch`: tune HISSO schedule (`episodes_per_batch` and update count) without changing model code.
-- Recommended starting presets: CPU `hisso_batch_episodes=8`, `hisso_updates_per_epoch=4`; CUDA `hisso_batch_episodes=16`, `hisso_updates_per_epoch=4` (increase batch size until memory limits).
-- `lr_max` / `lr_min`: optional bounds for one-cycle style schedulers.
-
-When HISSO is enabled and no targets are provided the primary dimension defaults to 1.
-For canonical code, pass labels to `EpisodicTrainer.fit(X, y)` and declare a
-`SupervisedWarmStartConfig` in the frozen strategy. `hisso_supervised={"y": targets}`
-is retained only for the deprecated compatibility route.
-
-### Other methods
-
-- `predict(X) -> np.ndarray` - returns pooled targets `(N, T)` or per-element outputs matching the configured spatial layout.
-- `score(X, y) -> float` - coefficient of determination (R^2) using scikit-learn when available, with a lightweight fallback otherwise.
-- `score_reconstruction(X) -> float` - score a fitted canonical LSM preprocessor's reconstruction. It is available only after fitting an LSM-backed `preprocessor=` configuration; it uses the fitted scaler and input layout (including channels-last conversion) and remains available after schema-v2 checkpoint reloads. It raises a clear error for custom/no-preprocessor estimators.
-- `EpisodicTrainer.predict(X) -> np.ndarray` - run the fitted canonical policy using
-  its stored primary transform.
-- `EpisodicTrainer.evaluate(X) -> float` - evaluate the configured canonical reward.
-  `hisso_infer_series` and `hisso_evaluate_reward` remain deprecated aliases.
-- `predict_sequence(X_seq, *, reset_state=True, return_sequence=False, update_state=True)` - deterministic rollout for stateful models; set `return_sequence=True` to capture the full trace.
-- `predict_sequence_online(X_seq, y_seq, *, reset_state=True, return_sequence=True, update_state=True)` - teacher-forced rollout that applies per-step streaming updates when `stream_lr` is configured.
-- `step(x_t, *, target=None, update_params=False, update_state=True)` - single-step inference; pass a target with `update_params=True` to apply an immediate streaming update.
-- `reset_state()` / `commit_state_updates()` - manage the internal state controller when `stateful=True`.
-
-### Stateful and streaming workflow
-
-1. Configure the estimator with `stateful=True`, provide a `StateConfig(...)`, and set `stream_lr` if online updates are required.
-2. Fit on supervised data as usual; optionally stage a HISSO warm start via `hisso_supervised` before reinforcement fine-tuning.
-3. Use `predict_sequence(...)` for open-loop rollouts, or `predict_sequence_online(...)` when teacher forcing and online adaptation are required.
-4. Utilities such as `psann.make_drift_series`, `psann.make_shock_series`, and `psann.make_regime_switch_ts` provide quick regression regimes for exercising the streaming APIs.
-
-## Sequence architecture (canonical)
-
-Use `PSANNRegressor(architecture=ArchitectureConfig.for_sequence(...))` for the
-spectral-gated sequence architecture. `SGRPSANNRegressor` is retained only as a
-deprecated compatibility wrapper.
-
-**Key parameters**
-- `phase_init: float = 0.0` - initial phase offset for each hidden channel.
-- `phase_trainable: bool = True` - toggles phase learning.
-- `use_spectral_gate: bool = True` - enable the FFT/Fourier feature gate.
-- `k_fft: int = 64` - window length for spectral gating.
-- `gate_type: "rfft" | "fourier_features"` - FFT-based or fixed Fourier features.
-- `gate_groups: "depthwise" | "full"` - depthwise (per-channel) or full 1x1 mixing.
-- `gate_init: float = 0.0` - initial gate logits (sigmoid ~0.5).
-- `gate_strength: float = 1.0` - residual scale for the gated branch.
-- `pool: "last" | "mean"` - reduce token outputs to a fixed vector for the head.
-
-**Notes**
-- Expects `(N, T, F)` inputs (sequence length `T`, feature width `F`).
-- Does not support `preserve_shape=True` or `per_element=True`.
-- Canonical sequence preprocessing accepts only typed custom `tokens→tokens` modules. Legacy SGR LSM compatibility remains warned/ignored through 0.x.
-- Attention configs are ignored; the spectral gate operates on the inferred sequence axis.
-
-## psann.SineParam
-
-Learnable sine activation with per-feature amplitude, frequency, and decay.
-
-Constructor:
-- `out_features: int`
-- `amplitude_init=1.0`, `frequency_init=1.0`, `decay_init=0.1`
-- `learnable=('amplitude', 'frequency', 'decay') | str`
-- `decay_mode='abs' | 'relu' | 'none'`
-- `bounds={'amplitude': (low, high), ...}`
-- `feature_dim=-1` - axis that holds feature channels
-
-Forward applies `A * exp(-d * g(z)) * sin(f * z)` with broadcast parameters.
-
-## LSM expanders and preprocessors
-
-Use the canonical boundary for estimators:
+- `fit(X, y, validation_data=(X_val, y_val), context=..., verbose=...)` performs supervised training and returns the estimator. Supply context only for supported wave architectures.
+- `predict(X, context=...)` returns primary predictions. `score(X, y)` computes regression R².
+- `get_params(deep=True)` and `set_params(...)` support scikit-learn clone and model selection. Nested names include `architecture__activation__frequency_init` and `preprocessor__component__output_dim`. Updates validate transactionally; an invalid update leaves the previous configuration intact.
+- `save(path)` writes schema-v3 core metadata and state. `PSANNRegressor.load(path, map_location="cpu")` reconstructs architecture, preprocessing, fitted shapes, and supported training/state metadata. CUDA device strings are supported when CUDA is available.
 
 ```python
 from psann import PSANNRegressor
-from psann.preprocessing import LSMConfig, LSMPretrainingConfig, PreprocessorConfig
-
-estimator = PSANNRegressor(
-    preprocessor=PreprocessorConfig(
-        LSMConfig.dense(output_dim=64, pretraining=LSMPretrainingConfig(epochs=5))
-    )
+from psann.architectures import ArchitectureConfig, ActivationConfig, ResidualConfig
+model = PSANNRegressor(
+    architecture=ArchitectureConfig.dense(
+        activation=ActivationConfig(kind="psann", frequency_init=0.5),
+        residual=ResidualConfig(alpha_init=0.2),
+    ),
+    hidden_layers=3, hidden_units=32,
 )
+model.set_params(architecture__activation__frequency_init=0.75)
 ```
 
-`ModulePreprocessorConfig(module, input_topology, output_topology, output_dim)` is the
-typed route for custom modules. `LSM`, `LSMExpander`, `LSMConv2d`, and
-`LSMConv2dExpander` remain low-level research tools; import them from
-`psann.preprocessing` or top-level `psann`. `psann.lsm`, `psann.preproc`,
-`PreprocessorSpec`, and `build_preprocessor` are 0.x compatibility paths.
+## Composed training
 
-## Token and embedding helpers
+`PreprocessorConfig` owns the preprocessing component and its training policy; see [preprocessing](preprocessing.md). `EpisodicTrainer` owns episodic scheduling and reward configuration; see [episodic training](episodic.md). These compose with the same estimator and its persistence path.
 
-- `SimpleWordTokenizer` - whitespace tokenizer with `<PAD>`, `<UNK>`, `<BOS>`, `<EOS>` tokens plus `fit/encode/decode` helpers for prototyping text pipelines.
-- `SineTokenEmbedder(embedding_dim, trainable=False, base=10000.0, scale=1.0, ...)` - sine-based token embeddings with optional learnable amplitude/phase/offset parameters and lazy table materialisation via `set_vocab_size`.
+## Language modeling
 
-These utilities are exposed for experiments that need sine embeddings or lightweight tokenisation; they do not ship a full language-model trainer in this release.
+`PSANNLM(config=LMConfig(architecture=LMArchitectureConfig.wave(), ...))` owns an LM task. `PSANNLMDataPrep` prepares text and a tokenizer. Call `fit(data, train=TrainConfig(...))`, `generate(...)`, `save(path)`, and `PSANNLM.load(path, map_location=...)`. `LMTrainer` supports lower-level training and resume. [LM guide](lm.md) documents the four kinds, data preparation, CLI, and schema-v1 model/trainer checkpoints.
+
+Configuration is strict: unknown fields and unsupported combinations fail early. See [migration](migration.md) for older input formats and checkpoint families.
