@@ -211,3 +211,61 @@ def test_maintained_public_text_contains_no_common_mojibake():
             failures.extend((name, sequence) for sequence in MOJIBAKE if sequence in text)
     assert failures == []
     assert not any(sequence in "café ≈ 2 — 中文" for sequence in MOJIBAKE)
+
+
+@pytest.mark.parametrize("name", LEGACY)
+def test_unversioned_checkpoint_facade_reconstruction_is_silent_and_closes_twice(name, tmp_path):
+    import importlib
+
+    module = {
+        "ResPSANNRegressor": "residual", "ResConvPSANNRegressor": "residual",
+        "SGRPSANNRegressor": "sgr", "WaveResNetRegressor": "wave", "GeoSparseRegressor": "geosparse",
+    }[name]
+    old_class = getattr(importlib.import_module(f"psann._sklearn.{module}"), name)
+    options = dict(hidden_layers=2, hidden_units=8, epochs=2, random_state=71, device="cpu")
+    if name == "GeoSparseRegressor":
+        options.update(shape=(2, 2), k=3)
+    shape = (16, 1, 4, 4) if name == "ResConvPSANNRegressor" else (16, 4)
+    x = np.random.default_rng(17).normal(size=shape).astype(np.float32)
+    y = x.reshape(16, -1).sum(axis=1, keepdims=True) * 0.1
+    old = old_class(**options).fit(x, y)
+    path = tmp_path / "unversioned.pt"
+    old.save(path)
+    expected = old.predict(x)
+    facade = getattr(psann, name)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", DeprecationWarning)
+        model = facade.load(path)
+        for generation in (1, 2):
+            assert type(model) is facade
+            np.testing.assert_allclose(model.predict(x), expected, rtol=0, atol=0)
+            path = tmp_path / f"migrated-{generation}.pt"
+            model.save(path)
+            model = facade.load(path)
+            np.testing.assert_allclose(model.predict(x), expected, rtol=0, atol=0)
+    assert not [w for w in caught if w.category is DeprecationWarning]
+
+
+@pytest.mark.parametrize("defect", ["missing-floor", "duplicate-floor", "missing-fallback"])
+def test_lm_release_writer_rejects_missing_or_ambiguous_version_fields_without_writing(
+    defect, tmp_path, monkeypatch,
+):
+    from scripts import release
+
+    project = (ROOT / "psannlm/pyproject.toml").read_text()
+    fallback = (ROOT / "psannlm/persistence.py").read_text()
+    if defect == "missing-floor":
+        project = project.replace('"psann>=0.13.0",', '')
+    elif defect == "duplicate-floor":
+        project = project.replace('"psann>=0.13.0",', '"psann>=0.13.0", "psann>=0.12.4",')
+    else:
+        fallback = fallback.replace('_PACKAGE_VERSION = "0.13.0"', '')
+    project_path, fallback_path = tmp_path / "pyproject.toml", tmp_path / "persistence.py"
+    project_path.write_text(project)
+    fallback_path.write_text(fallback)
+    monkeypatch.setattr(release, "PSANNLM_PYPROJECT_PATH", project_path)
+    monkeypatch.setattr(release, "PSANNLM_PERSISTENCE_PATH", fallback_path)
+    with pytest.raises(RuntimeError, match="Expected one"):
+        release.write_psannlm_version("0.13.1")
+    assert project_path.read_text() == project
+    assert fallback_path.read_text() == fallback
