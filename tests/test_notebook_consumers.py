@@ -89,7 +89,12 @@ def test_notebook_estimator_policies_fit_predict_and_preserve_configuration(path
     for index, call in enumerate(calls):
         estimator = evaluate_expression(call, dict(namespace), tree, call.lineno)
         estimator.set_params(
-            epochs=1, batch_size=8, device="cpu", early_stopping=False, amp=False, compile=False,
+            epochs=1,
+            batch_size=8,
+            device="cpu",
+            early_stopping=False,
+            amp=False,
+            compile=False,
             random_state=19,
         )
         if estimator.preprocessor is not None:
@@ -114,12 +119,19 @@ def test_notebook_estimator_policies_fit_predict_and_preserve_configuration(path
             from psann import WaveResNetRegressor
 
             legacy = WaveResNetRegressor(
-                hidden_layers=estimator.hidden_layers, hidden_units=estimator.hidden_units,
-                epochs=1, batch_size=8, lr=estimator.lr, random_state=19, device="cpu",
+                hidden_layers=estimator.hidden_layers,
+                hidden_units=estimator.hidden_units,
+                epochs=1,
+                batch_size=8,
+                lr=estimator.lr,
+                random_state=19,
+                device="cpu",
                 activation=estimator.architecture.activation,
                 context_dim=context.dim if context else None,
                 context_builder=context.builder if context else None,
-                context_builder_params=dict(context.builder_params) if context and context.builder_params else None,
+                context_builder_params=(
+                    dict(context.builder_params) if context and context.builder_params else None
+                ),
             )
             assert estimator.architecture == legacy.architecture
             legacy.fit(x, y, **fit)

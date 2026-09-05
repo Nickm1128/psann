@@ -1276,7 +1276,10 @@ class PSANNRegressor(_Phase2Regressor):
             )
         if self.architecture.kind == "wave" and (
             self.architecture.context is not None
-            or (getattr(self, "_legacy_context_requested_", False) and kwargs.get("context") is not None)
+            or (
+                getattr(self, "_legacy_context_requested_", False)
+                and kwargs.get("context") is not None
+            )
         ):
             context = kwargs.get("context")
             policy = self.architecture.context

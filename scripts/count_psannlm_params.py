@@ -59,7 +59,8 @@ def main(argv: list[str] | None = None) -> int:
                             wave_dilation_growth=int(args.wave_dilation_growth),
                             wave_dropout=float(args.wave_dropout),
                         )
-                        if args.base == "waveresnet" else {}
+                        if args.base == "waveresnet"
+                        else {}
                     ),
                 ),
                 warn=False,
