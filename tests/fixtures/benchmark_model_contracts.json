@@ -1,0 +1,246 @@
+{
+  "examples/lm/configs/base_compare_geosparse_quick.yaml": {
+    "models": [
+      "transformer",
+      "residual",
+      "spectral-residual",
+      "wave",
+      "geometric-sparse"
+    ],
+    "resolved_config_hashes": [
+      "d18802b501982a652b9af746fa7759cb1514cfec7022272420fe6c17c5fe8bc1"
+    ],
+    "sweep_count": 1
+  },
+  "examples/lm/configs/base_compare_quick.yaml": {
+    "models": [
+      "residual",
+      "spectral-residual",
+      "wave"
+    ],
+    "resolved_config_hashes": [
+      "c23c9296a4449171cd10a94f7bb8ada9cf21cd8d1409f74098e9922c6b415494"
+    ],
+    "sweep_count": 1
+  },
+  "examples/lm/configs/base_param_sweep_hypotheses_v1.yaml": {
+    "models": [
+      "wave",
+      "transformer"
+    ],
+    "resolved_config_hashes": [
+      "8684bd4a237a69215f1fadee795aefc9157c945875094b06a61890a67019bdec",
+      "8684bd4a237a69215f1fadee795aefc9157c945875094b06a61890a67019bdec",
+      "8684bd4a237a69215f1fadee795aefc9157c945875094b06a61890a67019bdec",
+      "8684bd4a237a69215f1fadee795aefc9157c945875094b06a61890a67019bdec",
+      "8684bd4a237a69215f1fadee795aefc9157c945875094b06a61890a67019bdec",
+      "8684bd4a237a69215f1fadee795aefc9157c945875094b06a61890a67019bdec"
+    ],
+    "sweep_count": 6
+  },
+  "examples/lm/configs/base_param_sweep_hypotheses_v1_small.yaml": {
+    "models": [
+      "wave"
+    ],
+    "resolved_config_hashes": [
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "0f298997f9a4b2ed14be5e2567b321d04ef0e6609f1534d2d336811450eee93a",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "1c71f4088b8f3d8b46a106cccc97caedf072ebf14035179c8ffc6f4cfdb8bce9",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "7e56ab36d0a4f3ed29dc3a6de59a6bc1d6e78bc85e0800756fb5fcfa35cf74ba",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "87d195e947088f929dfabc27e1b377105be0a9a6aed0680ad5d2fc31cd43472f",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "9f12867d1dc6ed9676c93dc343526c9ef2c1ce9c751ac718051fc0e7255d8f20",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8",
+      "c5881844e73e84179c43b74887744d61adbe3f2591ceef46143e458e82c9a9f8"
+    ],
+    "sweep_count": 54
+  },
+  "examples/lm/configs/base_param_sweep_next_train.yaml": {
+    "models": [
+      "residual",
+      "spectral-residual",
+      "wave",
+      "transformer"
+    ],
+    "resolved_config_hashes": [
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3",
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3",
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3",
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3",
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3",
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3",
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3",
+      "c9664851c95a91a498971b896c9dead1179d990d8cd14639124b7ccdf19f71a3"
+    ],
+    "sweep_count": 8
+  },
+  "examples/lm/configs/base_param_sweep_quick.yaml": {
+    "models": [
+      "residual",
+      "wave"
+    ],
+    "resolved_config_hashes": [
+      "a9df9185a5ab48808824592fedc0da1f08461408a563b3e3387913df7ba7e542",
+      "a9df9185a5ab48808824592fedc0da1f08461408a563b3e3387913df7ba7e542",
+      "a9df9185a5ab48808824592fedc0da1f08461408a563b3e3387913df7ba7e542",
+      "a9df9185a5ab48808824592fedc0da1f08461408a563b3e3387913df7ba7e542",
+      "a9df9185a5ab48808824592fedc0da1f08461408a563b3e3387913df7ba7e542",
+      "a9df9185a5ab48808824592fedc0da1f08461408a563b3e3387913df7ba7e542"
+    ],
+    "sweep_count": 6
+  },
+  "examples/lm/configs/geosparse_mixed50_vs_transformer_relu_quick.yaml": {
+    "models": [
+      "geometric-sparse",
+      "transformer"
+    ],
+    "resolved_config_hashes": [
+      "9fa9e59c7ed97a33649bfd9b0ec0c07dca7fba68ae6b07d920dd138f93343be2"
+    ],
+    "sweep_count": 1
+  },
+  "examples/lm/configs/geosparse_mixed50_vs_transformer_relu_quick_distill.yaml": {
+    "models": [
+      "geometric-sparse",
+      "transformer"
+    ],
+    "resolved_config_hashes": [
+      "9fa9e59c7ed97a33649bfd9b0ec0c07dca7fba68ae6b07d920dd138f93343be2"
+    ],
+    "sweep_count": 1
+  },
+  "examples/lm/configs/transformer_lr0.0022_vs_waveresnet_v1_small.yaml": {
+    "models": [
+      "transformer"
+    ],
+    "resolved_config_hashes": [
+      "04e2c7f5fafb13812cf1c14428cb5cb8e113489092cff222b7df04f54c3bc06d"
+    ],
+    "sweep_count": 1
+  },
+  "examples/lm/configs/transformer_match_waveresnet_v1_small.yaml": {
+    "models": [
+      "transformer"
+    ],
+    "resolved_config_hashes": [
+      "04e2c7f5fafb13812cf1c14428cb5cb8e113489092cff222b7df04f54c3bc06d",
+      "04e2c7f5fafb13812cf1c14428cb5cb8e113489092cff222b7df04f54c3bc06d",
+      "04e2c7f5fafb13812cf1c14428cb5cb8e113489092cff222b7df04f54c3bc06d"
+    ],
+    "sweep_count": 3
+  },
+  "examples/lm/configs/waveresnet_compile_throughput_v1_small.yaml": {
+    "models": [
+      "wave"
+    ],
+    "resolved_config_hashes": [
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3"
+    ],
+    "sweep_count": 1
+  },
+  "examples/lm/configs/waveresnet_freq_gauss_tune_v2_small.yaml": {
+    "models": [
+      "wave"
+    ],
+    "resolved_config_hashes": [
+      "149d02976dddd15e5fbe1449f90925a586b4f460d660bac7f71dfa48586cb190",
+      "149d02976dddd15e5fbe1449f90925a586b4f460d660bac7f71dfa48586cb190",
+      "149d02976dddd15e5fbe1449f90925a586b4f460d660bac7f71dfa48586cb190",
+      "1f77362c10e02c2429b984d63ac4287140316b6034e66e0bcb32d682f40ad8bd",
+      "1f77362c10e02c2429b984d63ac4287140316b6034e66e0bcb32d682f40ad8bd",
+      "1f77362c10e02c2429b984d63ac4287140316b6034e66e0bcb32d682f40ad8bd",
+      "2436c60b6d17c8f203619d4c91c224d87a2e228c075cb079ce8fdb7e5843a6c9",
+      "2436c60b6d17c8f203619d4c91c224d87a2e228c075cb079ce8fdb7e5843a6c9",
+      "2436c60b6d17c8f203619d4c91c224d87a2e228c075cb079ce8fdb7e5843a6c9",
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3",
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3",
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3",
+      "90d4fcd1169060e58b307dbffe7111f27fce54b3082155875413faf8f6cdd19b",
+      "90d4fcd1169060e58b307dbffe7111f27fce54b3082155875413faf8f6cdd19b",
+      "90d4fcd1169060e58b307dbffe7111f27fce54b3082155875413faf8f6cdd19b",
+      "b9c54e7aa1d1958c9d875f8ae462e12ba61d8e687287a2b885c0eca7c03adaa6",
+      "b9c54e7aa1d1958c9d875f8ae462e12ba61d8e687287a2b885c0eca7c03adaa6",
+      "b9c54e7aa1d1958c9d875f8ae462e12ba61d8e687287a2b885c0eca7c03adaa6",
+      "c4ec666aacbdfef612ffa1588a9ce48ead0c7603ca1aad0c1d8e6eba919c010e",
+      "c4ec666aacbdfef612ffa1588a9ce48ead0c7603ca1aad0c1d8e6eba919c010e",
+      "c4ec666aacbdfef612ffa1588a9ce48ead0c7603ca1aad0c1d8e6eba919c010e",
+      "d6d2bb40a0aeed7cde37ca53a65638f151cc351616b9136e313ec39aa7c32fd8",
+      "d6d2bb40a0aeed7cde37ca53a65638f151cc351616b9136e313ec39aa7c32fd8",
+      "d6d2bb40a0aeed7cde37ca53a65638f151cc351616b9136e313ec39aa7c32fd8",
+      "f2cb4c6e033e9339922c6c379d304bad6635b782985940730cde899cb8ff50ea",
+      "f2cb4c6e033e9339922c6c379d304bad6635b782985940730cde899cb8ff50ea",
+      "f2cb4c6e033e9339922c6c379d304bad6635b782985940730cde899cb8ff50ea"
+    ],
+    "sweep_count": 27
+  },
+  "examples/lm/configs/waveresnet_freq_init_up_v1_small.yaml": {
+    "models": [
+      "wave"
+    ],
+    "resolved_config_hashes": [
+      "149d02976dddd15e5fbe1449f90925a586b4f460d660bac7f71dfa48586cb190",
+      "149d02976dddd15e5fbe1449f90925a586b4f460d660bac7f71dfa48586cb190",
+      "18d731f5fd41cb9664b1702e01833ba88dcc462109f4296c03b947694b3a3b9a",
+      "18d731f5fd41cb9664b1702e01833ba88dcc462109f4296c03b947694b3a3b9a"
+    ],
+    "sweep_count": 4
+  },
+  "examples/lm/configs/waveresnet_lr_creep_v1_small.yaml": {
+    "models": [
+      "wave"
+    ],
+    "resolved_config_hashes": [
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3",
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3",
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3",
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3",
+      "8547e5dbdd1eadbdc4c2399b5fe239a43c6d32c9062f241923f2193e3d5ad7a3"
+    ],
+    "sweep_count": 5
+  }
+}
