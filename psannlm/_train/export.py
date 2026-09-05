@@ -4,14 +4,17 @@ import argparse
 import json
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional
+
+from psannlm.architectures import to_mapping
+from psannlm.persistence import load_lm_checkpoint
 
 
 def _export_bundle(
     args: argparse.Namespace,
     *,
     final_ckpt: Path,
-    tokenizer_artifacts: dict,
+    tokenizer_artifacts: Mapping[str, Any],
     shard_paths: list[str],
 ) -> None:
     if not args.export_dir:
@@ -38,15 +41,12 @@ def _export_bundle(
         if copied_path:
             copied.append(str(copied_path))
 
+    loaded = load_lm_checkpoint(final_ckpt)
     meta = {
-        "model": {
-            "base": args.base,
-            "d_model": args.d_model,
-            "n_layers": args.n_layers,
-            "n_heads": args.n_heads,
-            "d_mlp": args.d_mlp if args.d_mlp is not None else 4 * args.d_model,
-            "positional_encoding": args.pos_enc,
-        },
+        "schema": "psannlm.export",
+        "schema_version": 1,
+        "artifact_kind": loaded.artifact_kind,
+        "model": to_mapping(loaded.config),
         "tokenizer": {
             "backend": args.tokenizer_backend,
             "trained": bool(tokenizer_artifacts.get("trained")),

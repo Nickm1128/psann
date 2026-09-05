@@ -31,10 +31,11 @@ except Exception as exc:  # pragma: no cover - import guard
     raise SystemExit("Missing dependency 'pyyaml'. Install via `pip install pyyaml`.") from exc
 
 import torch
-from psannlm.lm.api import psannLM
+from psannlm.lm.api import PSANNLM
 from psannlm.lm.config import TrainConfig
 from psannlm.lm.data.dataset import HFTextStreamingLMDataset, PackingConfig, build_text_filter
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psannlm.lm.models.registry import get_base, list_bases
+from psannlm.architectures import build_lm_model
+from psannlm.architectures.compat import BASE_KINDS, legacy_lm_config
 from psannlm.lm.models.sine import SineConfig
-from psannlm.lm.train.trainer import Trainer
+from psannlm.lm.train.trainer import LMTrainer

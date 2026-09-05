@@ -5,7 +5,9 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -18,9 +20,11 @@ from psannlm.lm.data.dataset import (
     StreamingLMDataset,
     build_text_filter,
 )
-from psannlm.lm.models.registry import get_base
+from psannlm.architectures import LMConfig, build_lm_model, normalize_lm_config
+from psannlm.architectures.config import normalize_architecture
+from psannlm.architectures.compat import legacy_lm_config
 from psannlm.lm.models.sine import SineConfig
-from psannlm.lm.train.trainer import Trainer
+from psannlm.lm.train.trainer import LMTrainer
 
 from .data import _read_manifest, str2bool
 from .export import _export_bundle
@@ -32,6 +36,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Model
     p.add_argument("--base", type=str, default="waveresnet")
+    p.add_argument(
+        "--architecture", choices=["transformer", "residual", "wave", "geometric-sparse"]
+    )
+    p.add_argument("--model-config", help="Canonical LMConfig JSON or YAML file")
+    p.add_argument("--device", choices=["cpu", "cuda"], default=None)
     p.add_argument("--d-model", type=int, default=512)
     p.add_argument("--n-layers", type=int, default=8)
     p.add_argument("--n-heads", type=int, default=8)
@@ -337,7 +346,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
+    tokens = list(argv) if argv is not None else sys.argv[1:]
+    args = build_parser().parse_args(tokens)
 
     seq_len = int(args.seq_len) if args.seq_len is not None else int(args.max_length)
     args.max_length = seq_len
@@ -594,7 +604,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     # Model
     vocab_size = int(args.vocab_size) if args.vocab_size is not None else int(tokenizer.vocab_size)
     d_mlp = int(args.d_mlp) if args.d_mlp is not None else 4 * int(args.d_model)
-    factory = get_base(str(args.base))
+
     sine = SineConfig()
     if args.sine_amp_init is not None:
         sine.amp_init = float(args.sine_amp_init)
@@ -609,7 +619,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.sine_damp_init_std is not None:
         sine.damp_init_std = float(args.sine_damp_init_std)
     sine.trainable = bool(args.sine_trainable)
-    model = factory(
+    flat: dict[str, Any] = dict(
         vocab_size=vocab_size,
         d_model=int(args.d_model),
         n_layers=int(args.n_layers),
@@ -621,6 +631,65 @@ def main(argv: Optional[list[str]] = None) -> int:
         sine=sine,
         attn_impl=str(args.attn_impl),
     )
+    if args.model_config:
+        import yaml
+
+        raw = yaml.safe_load(Path(args.model_config).read_text(encoding="utf-8"))
+        config = normalize_lm_config(raw)
+        explicit = {token.split("=", 1)[0] for token in tokens if token.startswith("--")}
+        aliases = {
+            "--d-model": "d_model",
+            "--n-layers": "n_layers",
+            "--n-heads": "n_heads",
+            "--d-mlp": "d_mlp",
+            "--vocab-size": "vocab_size",
+            "--pos-enc": "positional_encoding",
+            "--attn-impl": "attn_impl",
+        }
+        normalize_lm_config(
+            config, **{name: flat[name] for flag, name in aliases.items() if flag in explicit}
+        )
+        if args.architecture and config.architecture.kind != args.architecture:
+            raise ValueError("--architecture conflicts with --model-config.architecture.kind.")
+        if "--base" in explicit or any(flag.startswith("--sine-") for flag in explicit):
+            raise ValueError(
+                "--base/--sine options cannot accompany --model-config; put policies in the config."
+            )
+    elif args.architecture:
+        if "--base" in tokens or any(token.startswith("--sine-") for token in tokens):
+            raise ValueError(
+                "--architecture requires canonical activation policy via --model-config instead of --base/--sine options."
+            )
+        config = LMConfig(
+            architecture=normalize_architecture(args.architecture),
+            d_model=args.d_model,
+            n_layers=args.n_layers,
+            n_heads=args.n_heads,
+            d_mlp=args.d_mlp,
+            vocab_size=args.vocab_size,
+            positional_encoding=args.pos_enc,
+            attention_implementation=args.attn_impl,
+        )
+    else:
+        config = legacy_lm_config(str(args.base), flat, warn=False)
+    if args.resume_ckpt:
+        import torch
+        from psannlm.persistence import checkpoint_metadata
+
+        payload = torch.load(args.resume_ckpt, map_location="cpu", weights_only=True)
+        saved_config, _, _ = checkpoint_metadata(payload, legacy_config=config)
+        if (
+            args.model_config
+            and normalize_lm_config(
+                replace(config, vocab_size=config.vocab_size or vocab_size), for_build=True
+            )
+            != saved_config
+        ):
+            raise ValueError("--model-config conflicts with checkpoint.config.")
+        config = saved_config
+    if config.vocab_size is None:
+        config = replace(config, vocab_size=vocab_size)
+    model = build_lm_model(config).model
 
     # Trainer
     # Parse betas
@@ -668,7 +737,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             float(args.hf_cache_limit_gb) if args.hf_cache_limit_gb is not None else None
         ),
     )
-    trainer = Trainer(tcfg)
+    trainer = LMTrainer(tcfg)
 
     val_dataset = None
     if args.eval_data_files:
@@ -695,6 +764,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         val_dataset=val_dataset,
         data_loader=stream_loader,
         resume_checkpoint=args.resume_ckpt,
+        device=args.device,
     )
 
     stream_exhausted_early = (

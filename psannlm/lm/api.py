@@ -1,29 +1,19 @@
-"""Public API for PSANN-LM.
-
-This file defines the user-facing classes:
-
-- `psannLM`:      model wrapper with fit() and generate() entry points
-- `psannLMDataPrep`: lightweight data preparation wrapper
-
-These are minimal stubs to enable imports and examples while
-the underlying components (tokenizer, datasets, trainer, inference)
-are implemented.
-"""
+"""Canonical high-level language modeling, data preparation and 0.x adapters."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import torch
 from torch import nn
 
-from .config import TrainConfig, normalize_positional_encoding
+from .config import TrainConfig, normalize_train_config
+from ..architectures import LMConfig, build_lm_model, normalize_lm_config
+from ..architectures.compat import compatibility_warning, legacy_lm_config
 from .data.dataset import LMDataset
 from .data.tokenizer import Tokenizer, TokenizerConfig
-from .models.registry import get_base
-from .models.sine import SineConfig
-from .train.trainer import Trainer
+from .train.trainer import LMTrainer
 
 
 @dataclass
@@ -43,7 +33,7 @@ class SineParams:
     trainable: bool = True
 
 
-class psannLMDataPrep:
+class PSANNLMDataPrep:
     """Lightweight data preparation wrapper for PSANN-LM.
 
     Parameters
@@ -177,160 +167,148 @@ class psannLMDataPrep:
         return len(self._texts)
 
 
-class psannLM:
-    """High-level language model wrapper for PSANN-LM.
+class PSANNLM:
+    """A config-first language model with immutable construction and training policies.
 
-    Parameters map 1:1 with the public spec and are persisted for save/load:
-
-    - base: `"waveresnet"` (default), `"respsann"`, or `"sgrpsann"`
-    - d_model / n_layers / n_heads / d_mlp: transformer dimensions
-    - vocab_size: optional override (defaults to psannLMDataPrep vocab)
-    - positional_encoding: `"rope"`, `"alibi"`, or `"sinusoidal"`
-    - sine_params: dict or :class:`SineParams` controlling the sine MLPs
-
-    Use :meth:`fit` to attach trainer/data state, :meth:`generate` /
-    :meth:`generate_batch` for inference, and :meth:`save` / :meth:`load`
-    for checkpointing.
+    Pass an LMConfig or strict tagged mapping. Vocabulary may be resolved by fit().
+    A supplied device selects execution; omission retains automatic CPU/CUDA selection.
+    Use TrainConfig for fitting, attach_tokenizer() for standalone loaded models, and
+    save()/load() for portable versioned model artifacts.
     """
 
     def __init__(
         self,
         *,
-        base: str = "waveresnet",
-        d_model: int = 512,
-        n_layers: int = 8,
-        n_heads: int = 8,
-        d_mlp: Optional[int] = None,
-        vocab_size: Optional[int] = None,
-        sine_params: Optional[Dict[str, float]] | SineParams = None,
-        rope: bool = True,
-        positional_encoding: Optional[str] = None,
-        **kwargs: Any,
+        config: LMConfig | Mapping[str, Any],
+        device: str | torch.device | None = None,
+        **flat: Any,
     ) -> None:
-        self.base = base
-        self.d_model = d_model
-        self.n_layers = n_layers
-        self.n_heads = n_heads
-        self.d_mlp = d_mlp
-        self.vocab_size = vocab_size
-        enc_value = positional_encoding
-        if enc_value is None:
-            enc_value = "rope" if rope else "sinusoidal"
-        self.positional_encoding = normalize_positional_encoding(enc_value)
-        self.rope = self.positional_encoding == "rope"  # backwards compatibility flag
-        self.config_overrides = dict(kwargs)
+        self.config = normalize_lm_config(config, **flat)
+        self._device = torch.device(device) if device is not None else None
+        self._model: nn.Module | None = None
+        self._trainer: LMTrainer | None = None
+        self._tokenizer: Tokenizer | None = None
 
-        if isinstance(sine_params, dict) or sine_params is None:
-            d = sine_params or {}
-            self.sine = SineParams(
-                amp_init=float(d.get("amp_init", 1.0)),
-                amp_init_std=float(d.get("amp_init_std", 0.0)),
-                freq_init=float(d.get("freq_init", 1.0)),
-                freq_init_std=float(d.get("freq_init_std", 0.0)),
-                damp_init=float(d.get("damp_init", 0.01)),
-                damp_init_std=float(d.get("damp_init_std", 0.0)),
-                trainable=bool(d.get("trainable", True)),
-            )
-        else:
-            self.sine = sine_params
+    @property
+    def base(self) -> str:
+        architecture = self.config.architecture
+        return {
+            "transformer": "transformer",
+            "residual": "sgrpsann" if architecture.spectral is not None else "respsann",
+            "wave": "waveresnet",
+            "geometric-sparse": "geosparse",
+        }[architecture.kind]
 
-        # Internal placeholders; real modules will be attached later.
-        self._model: Optional[nn.Module] = None
-        self._trainer: Optional[Trainer] = None
-        self._tokenizer: Optional[Tokenizer] = None
+    @property
+    def vocab_size(self) -> int | None:
+        return self.config.vocab_size
 
-    # ----------------------- Internal helpers ----------------------
+    @property
+    def d_model(self) -> int:
+        return self.config.d_model
+
+    @property
+    def n_layers(self) -> int:
+        return self.config.n_layers
+
+    @property
+    def n_heads(self) -> int:
+        return self.config.n_heads
+
+    @property
+    def d_mlp(self) -> int | None:
+        return self.config.d_mlp
+
+    @property
+    def positional_encoding(self) -> str:
+        return self.config.positional_encoding
+
+    @property
+    def rope(self) -> bool:
+        return self.positional_encoding == "rope"
+
     def _ensure_model(self, vocab_size: int) -> nn.Module:
-        if self._model is not None:
-            return self._model
-        d_mlp = self.d_mlp if self.d_mlp is not None else 4 * self.d_model
-        factory = get_base(self.base)
-        sine_cfg = SineConfig(
-            amp_init=float(self.sine.amp_init),
-            amp_init_std=float(getattr(self.sine, "amp_init_std", 0.0)),
-            freq_init=float(self.sine.freq_init),
-            freq_init_std=float(getattr(self.sine, "freq_init_std", 0.0)),
-            damp_init=float(self.sine.damp_init),
-            damp_init_std=float(getattr(self.sine, "damp_init_std", 0.0)),
-            trainable=bool(self.sine.trainable),
-        )
-        self._model = factory(
-            vocab_size=vocab_size,
-            d_model=self.d_model,
-            n_layers=self.n_layers,
-            n_heads=self.n_heads,
-            d_mlp=d_mlp,
-            dropout=float(self.config_overrides.get("dropout", 0.0)),
-            positional_encoding=self.positional_encoding,
-            mlp_activation=str(self.config_overrides.get("mlp_activation", "sine")),
-            sine=sine_cfg,
-        )
+        if self.config.vocab_size is not None and self.config.vocab_size != vocab_size:
+            raise ValueError("vocab_size conflicts with config.vocab_size.")
+        if self._model is None:
+            config = replace(self.config, vocab_size=vocab_size)
+            self._model = build_lm_model(config).model
+            self.config = normalize_lm_config(config, for_build=True)
+            if self._device is not None:
+                self._model.to(self._device)
+        elif self.config.vocab_size != vocab_size:
+            raise ValueError("vocab_size conflicts with the constructed model.")
         return self._model
 
-    # ------------------------- Training API -------------------------
+    def attach_tokenizer(self, tokenizer: Tokenizer) -> PSANNLM:
+        """Attach an already fitted tokenizer without fitting or changing model state."""
+        if not isinstance(tokenizer, Tokenizer):
+            raise TypeError("tokenizer must be a fitted Tokenizer.")
+        self._tokenizer = tokenizer
+        return self
+
     def fit(
         self,
-        train_data: psannLMDataPrep,
+        train_data: PSANNLMDataPrep,
         *,
-        val_data: Optional[psannLMDataPrep] = None,
-        epochs: int = 1,
-        batch_tokens: Optional[int] = None,
-        lr: Optional[float] = None,
-        amp: Optional[str] = None,
-        ddp: Optional[str] = None,
-        **kwargs: Any,
-    ) -> "psannLM":
-        """Train the language model on the prepared dataset.
-
-        Parameters
-        ----------
-        train_data:
-            psannLMDataPrep instance providing tokenizer + dataset.
-        val_data:
-            Optional psannLMDataPrep for validation splits (defaults to the
-            built-in val split on ``train_data`` when available).
-        epochs, batch_tokens, lr, amp, ddp:
-            Passed through to :class:`TrainConfig`.
-        **kwargs:
-            Trainer overrides such as ``grad_checkpoint``.
-
-        Returns
-        -------
-        self:
-            Enables chaining (`psannLM(...).fit(...).generate(...)`).
-        """
-
-        if not isinstance(train_data, psannLMDataPrep):
-            raise TypeError("train_data must be psannLMDataPrep")
-        vocab = int(train_data.vocab_size if self.vocab_size is None else self.vocab_size)
-        model = self._ensure_model(vocab)
-        self._trainer = self._trainer or Trainer(
-            TrainConfig(
-                epochs=int(epochs),
-                batch_tokens=int(batch_tokens or 131072),
-                lr=float(lr or 2e-4),
-                amp=str(amp or "bf16"),
-                ddp=str(ddp or "auto"),
-                grad_checkpoint=bool(kwargs.get("grad_checkpoint", False)),
+        train: TrainConfig | Mapping[str, Any] | None = None,
+        val_data: PSANNLMDataPrep | None = None,
+        resume_checkpoint: str | None = None,
+        **flat: Any,
+    ) -> PSANNLM:
+        """Fit using TrainConfig; flat 0.x fit values remain a warning adapter."""
+        if not isinstance(train_data, PSANNLMDataPrep):
+            raise TypeError("train_data must be PSANNLMDataPrep.")
+        if train is not None:
+            training = normalize_train_config(train)
+            for name, value in flat.items():
+                if not hasattr(training, name) or getattr(training, name) != value:
+                    raise ValueError(f"flat.{name} conflicts with train.{name}.")
+            if flat:
+                compatibility_warning(
+                    "Flat fit arguments are deprecated; matching values were normalized once."
+                )
+        elif flat:
+            active = {"epochs", "batch_tokens", "lr", "amp", "ddp", "grad_checkpoint"}
+            ignored = sorted(set(flat) - active)
+            compatibility_warning(
+                "Flat fit arguments are deprecated; use train=TrainConfig. "
+                + ("Inactive legacy arguments ignored: " + ", ".join(ignored) if ignored else "")
             )
+            if self._trainer is not None:
+                training = (
+                    replace(self._trainer.cfg, grad_checkpoint=bool(flat["grad_checkpoint"]))
+                    if "grad_checkpoint" in flat
+                    else self._trainer.cfg
+                )
+            else:
+                values = dict(epochs=1, batch_tokens=131072, lr=2e-4, amp="bf16", ddp="auto")
+                values.update(
+                    {
+                        name: value
+                        for name, value in flat.items()
+                        if name in active and value is not None
+                    }
+                )
+                training = normalize_train_config(values)
+        else:
+            training = TrainConfig()
+        vocab = train_data.vocab_size if self.vocab_size is None else self.vocab_size
+        model = self._ensure_model(vocab)
+        self.attach_tokenizer(train_data.tokenizer)
+        if self._trainer is None:
+            self._trainer = LMTrainer(training)
+        else:
+            self._trainer.cfg = training
+        val_ds = val_data.dataset if val_data is not None else train_data.val_dataset
+        self._trainer.train(
+            model,
+            train_data.dataset,
+            max_length=train_data.max_length,
+            val_dataset=val_ds,
+            resume_checkpoint=resume_checkpoint,
+            device=self._device,
         )
-        # Update existing trainer config if present and overrides provided
-        if self._trainer is not None and ("grad_checkpoint" in kwargs):
-            try:
-                self._trainer.cfg.grad_checkpoint = bool(kwargs.get("grad_checkpoint"))  # type: ignore[attr-defined]
-            except Exception:
-                pass
-        max_length = int(train_data.max_length)
-        self._tokenizer = train_data.tokenizer
-        val_ds = None
-        if val_data is not None:
-            try:
-                val_ds = val_data.dataset  # type: ignore[attr-defined]
-            except Exception:
-                val_ds = None
-        elif hasattr(train_data, "val_dataset"):
-            val_ds = train_data.val_dataset  # type: ignore[attr-defined]
-        self._trainer.train(model, train_data.dataset, max_length=max_length, val_dataset=val_ds)
         return self
 
     # ------------------------ Inference API ------------------------
@@ -356,7 +334,7 @@ class psannLM:
         from .infer.generate import sample_next_token
 
         self._model.eval()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = self._device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._model.to(device)
 
         # Encode prompt
@@ -422,7 +400,7 @@ class psannLM:
         from .infer.generate import sample_next_token
 
         self._model.eval()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = self._device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._model.to(device)
 
         # Encode prompts
@@ -497,12 +475,12 @@ class psannLM:
                 if repetition_penalty and repetition_penalty > 1.0:
                     for b in range(B):
                         if generated[b]:
-                            idxs = torch.tensor(
+                            repetition_ids = torch.tensor(
                                 generated[b], dtype=torch.long, device=next_logits.device
                             )
                             next_logits[b : b + 1].scatter_add_(
                                 -1,
-                                idxs.view(1, -1),
+                                repetition_ids.view(1, -1),
                                 torch.full(
                                     (1, len(generated[b])),
                                     -abs(float(repetition_penalty)),
@@ -528,63 +506,67 @@ class psannLM:
 
         return [self._tokenizer.decode(g, skip_specials=True) for g in generated]
 
-    # ------------------------ Persistence API ----------------------
     def save(self, path: str) -> None:
-        """Serialize model config/state (including sine + positional encoding)."""
-        model = self._model or self._ensure_model(int(self.vocab_size or 32000))
-        # Record the device where the model currently resides, to help
-        # loaders place the model consistently when CUDA is available.
-        try:
-            dev = str(next(model.parameters()).device)
-        except StopIteration:
-            dev = "cpu"
-        payload = {
-            "config": {
-                "base": self.base,
-                "d_model": self.d_model,
-                "n_layers": self.n_layers,
-                "n_heads": self.n_heads,
-                "d_mlp": self.d_mlp,
-                "vocab_size": self.vocab_size,
-                "rope": self.rope,
-                "positional_encoding": self.positional_encoding,
-                "sine": {
-                    "amp_init": self.sine.amp_init,
-                    "amp_init_std": getattr(self.sine, "amp_init_std", 0.0),
-                    "freq_init": self.sine.freq_init,
-                    "freq_init_std": getattr(self.sine, "freq_init_std", 0.0),
-                    "damp_init": self.sine.damp_init,
-                    "damp_init_std": getattr(self.sine, "damp_init_std", 0.0),
-                    "trainable": self.sine.trainable,
-                },
-                "overrides": self.config_overrides,
-            },
-            "state_dict": model.state_dict(),
-            "device": dev,
-        }
-        torch.save(payload, path)
+        """Save strict schema-v1 config, model state, device and fitted tokenizer."""
+        from ..persistence import model_payload
+
+        if self.vocab_size is None:
+            raise ValueError(
+                "vocab_size must be resolved before save; fit or supply LMConfig.vocab_size."
+            )
+        model = self._model or self._ensure_model(self.vocab_size)
+        torch.save(model_payload(model, self._tokenizer), path)
 
     @classmethod
-    def load(cls, path: str) -> "psannLM":
-        """Load a psannLM checkpoint produced by :meth:`save`."""
-        payload = torch.load(path, map_location="cpu")
-        cfg = payload.get("config", {})
-        inst = cls(
-            base=cfg.get("base", "waveresnet"),
-            d_model=cfg.get("d_model", 512),
-            n_layers=cfg.get("n_layers", 8),
-            n_heads=cfg.get("n_heads", 8),
-            d_mlp=cfg.get("d_mlp"),
-            vocab_size=cfg.get("vocab_size"),
-            sine_params=cfg.get("sine"),
-            rope=cfg.get("rope", True),
-            positional_encoding=cfg.get("positional_encoding"),
-            **cfg.get("overrides", {}),
-        )
-        model = inst._ensure_model(int(inst.vocab_size or 32000))
-        model.load_state_dict(payload["state_dict"])  # type: ignore[index]
-        # If original checkpoint reports CUDA and it's available, place model on CUDA
-        saved_dev = str(payload.get("device", "cpu")).lower()
-        if saved_dev.startswith("cuda") and torch.cuda.is_available():
-            model.to(torch.device("cuda"))
+    def load(cls, path: str, *, map_location: str | torch.device | None = None) -> PSANNLM:
+        """Load a model artifact, including 0.x files; trainer files use load_lm_checkpoint."""
+        from ..persistence import load_lm_checkpoint
+
+        loaded = load_lm_checkpoint(path, map_location=map_location, require_model=True)
+        inst = cls(config=loaded.config, device=next(loaded.model.parameters()).device)
+        inst._model = loaded.model
+        inst._tokenizer = loaded.tokenizer
         return inst
+
+
+class psannLM(PSANNLM):
+    """Deprecated 0.x flat constructor; prefer PSANNLM(config=...)."""
+
+    def __init__(
+        self,
+        *,
+        config: LMConfig | Mapping[str, Any] | None = None,
+        device: str | torch.device | None = None,
+        **flat: Any,
+    ) -> None:
+        if config is None:
+            base = flat.pop("base", "waveresnet")
+            # The high-level adapter retains the exact historically forwarded subset.
+            normalized = legacy_lm_config(base, flat, high_level=True, warn=True)
+        else:
+            normalized = normalize_lm_config(config, **flat)
+            if not flat:
+                compatibility_warning("psannLM is deprecated; use PSANNLM(config=...).")
+        super().__init__(config=normalized, device=device)
+
+    def fit(self, train_data: PSANNLMDataPrep, **kwargs: Any) -> psannLM:
+        if "train" not in kwargs and not any(
+            key in kwargs
+            for key in ("epochs", "batch_tokens", "lr", "amp", "ddp", "grad_checkpoint")
+        ):
+            kwargs["epochs"] = 1
+        super().fit(train_data, **kwargs)
+        return self
+
+    def save(self, path: str) -> None:
+        if self.vocab_size is None:
+            self._ensure_model(32000)
+        super().save(path)
+
+
+class psannLMDataPrep(PSANNLMDataPrep):
+    """Deprecated 0.x spelling of PSANNLMDataPrep."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        compatibility_warning("psannLMDataPrep is deprecated; use PSANNLMDataPrep.")
+        super().__init__(*args, **kwargs)

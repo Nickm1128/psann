@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 import inspect
 import warnings
 from dataclasses import fields, is_dataclass
@@ -24,6 +25,12 @@ BASE_KINDS = {
     "waveresnet": "wave",
     "geosparse": "geometric-sparse",
 }
+
+
+def legacy_api_config(**values: Any) -> LMConfig:
+    """Translate stored 0.x benchmark/API options into the canonical model policy."""
+    base = values.pop("base", "waveresnet")
+    return legacy_lm_config(base, values, high_level=True, warn=False)
 
 
 def check_flat_duplicates(config: LMConfig, flat: Mapping[str, Any]) -> None:
@@ -400,10 +407,14 @@ def legacy_lm_config(
         architecture["geometry_execution"] = LMGeometryExecutionConfig(
             depth=raw.pop("geosparse_depth", 1), chunk_size=None if chunk == 0 else chunk
         )
+        drop_path = raw.pop("geosparse_drop_path_max", 0.0)
+        if architecture["geometry_execution"].depth == 1 and drop_path != 0:
+            notes.append("geosparse_drop_path_max ignored by legacy depth=1")
+            drop_path = 0.0
         architecture["residual"] = ResidualConfig(
             norm=raw.pop("geosparse_norm", "rms"),
             alpha_init=raw.pop("geosparse_residual_alpha_init", 1.0),
-            drop_path=raw.pop("geosparse_drop_path_max", 0.0),
+            drop_path=drop_path,
         )
         name = raw.pop("geosparse_activation", "psann")
         if name == "sine":
@@ -427,6 +438,28 @@ def legacy_lm_config(
             raw.clear()
     if raw:
         raise ValueError(f"legacy.{sorted(raw)[0]} is unknown for {key}.")
+    if act.kind == "mixed":
+        from dataclasses import replace
+        from psann.architectures.components import activation_feature_counts
+
+        if (
+            activation_feature_counts(act, features=dims["d_mlp"] or 4 * dims["d_model"]).get(
+                "psann", 0
+            )
+            == 0
+        ):
+            defaults = ActivationConfig()
+            inactive = (
+                "amplitude_init",
+                "frequency_init",
+                "decay_init",
+                "learnable",
+                "bounds",
+                "decay_mode",
+            )
+            act = replace(act, **{name: getattr(defaults, name) for name in inactive})
+            initialization = None
+            notes.append("inactive zero-width PSANN child policy ignored")
     architecture.update(activation=act, activation_initialization=initialization)
     result = LMConfig(architecture=LMArchitectureConfig(**architecture), **dims)
     if warn:

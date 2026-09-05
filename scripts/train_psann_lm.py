@@ -1,14 +1,15 @@
 #!/usr/bin/env python
-"""Backward-compatible shim for the psannlm.train entrypoint.
+"""Training script delegating to the canonical PSANN-LM CLI.
 
 Usage (after installing the LM add-on alongside psann, e.g. ``pip install psann psannlm``):
 
     python scripts/train_psann_lm.py [args...]
 
-This simply forwards to :mod:`psannlm.train`.
+This forwards to ``python -m psannlm train``.
 """
 
-from psannlm.train import main
+import sys
+from psannlm.cli import main
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(["train", *sys.argv[1:]]))

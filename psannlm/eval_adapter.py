@@ -26,6 +26,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
+from .lm.data.tokenizer import Tokenizer
 
 import torch
 import torch.nn.functional as F
@@ -36,7 +37,7 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class _TokShim:
-    impl: object
+    impl: Tokenizer
     pad_id: int
     bos_id: int
     eos_id: int
@@ -129,9 +130,9 @@ class PSANNLM(LM):
         assert ckpt is not None
 
         # Load PSANN-LM model
-        from psannlm.lm.api import psannLM  # type: ignore
+        from psannlm.lm.api import PSANNLM as ModelAPI
 
-        inst = psannLM.load(ckpt)
+        inst = ModelAPI.load(ckpt, map_location=self.device)
         self.model = inst._ensure_model(int(inst.vocab_size or 32000))
         self.model.eval().to(self.device)
 
@@ -141,9 +142,9 @@ class PSANNLM(LM):
         cfg = TokenizerConfig(
             backend=str(tokenizer_backend or "auto"),
             model_path=str(tokenizer_model_path) if tokenizer_model_path else None,
-            special_tokens_map_path=str(tokenizer_special_map_path)
-            if tokenizer_special_map_path
-            else None,
+            special_tokens_map_path=(
+                str(tokenizer_special_map_path) if tokenizer_special_map_path else None
+            ),
             hf_passthrough_ids=(str(tokenizer_backend or "auto").lower() == "tokenizers"),
         )
         tok = Tokenizer(cfg)

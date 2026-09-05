@@ -311,6 +311,12 @@ def validate_capabilities(config: LMArchitectureConfig) -> None:
             raise ValueError(
                 "architecture.activation_initialization is inactive for attention-only."
             )
+        if config.residual is not None and (
+            config.residual.alpha_init != 1.0 or config.residual.drop_path != 0.0
+        ):
+            raise ValueError(
+                "architecture.residual.alpha_init/drop_path are inactive for attention-only."
+            )
     if config.residual is not None:
         if config.residual.first_w0 != 12.0 or config.residual.hidden_w0 != 1.0:
             raise ValueError(
@@ -348,7 +354,7 @@ class LMConfig:
     def __post_init__(self) -> None:
         object.__setattr__(self, "architecture", normalize_architecture(self.architecture))
         for name in ("d_model", "n_layers", "n_heads"):
-            integer(getattr(self, name), name)
+            integer(getattr(self, name), "config." + name)
         for name in ("d_mlp", "vocab_size"):
             if getattr(self, name) is not None:
                 integer(getattr(self, name), name)
@@ -368,6 +374,29 @@ class LMConfig:
             and math.prod(geo.shape) != (self.d_mlp or 4 * self.d_model)
         ):
             raise ValueError("architecture.geometry.shape must multiply to d_mlp.")
+        activation = self.architecture.activation
+        if activation.kind == "mixed":
+            from psann.architectures.components import activation_feature_counts
+
+            counts = activation_feature_counts(activation, features=self.d_mlp or 4 * self.d_model)
+            if counts.get("psann", 0) == 0:
+                if self.architecture.activation_initialization is not None:
+                    raise ValueError(
+                        "architecture.activation_initialization requires an executing PSANN child with positive width."
+                    )
+                defaults = ActivationConfig()
+                for key in (
+                    "amplitude_init",
+                    "frequency_init",
+                    "decay_init",
+                    "learnable",
+                    "bounds",
+                    "decay_mode",
+                ):
+                    if getattr(activation, key) != getattr(defaults, key):
+                        raise ValueError(
+                            f"architecture.activation.{key} is inactive without a positive-width PSANN child."
+                        )
 
 
 def normalize_lm_config(value: object, *, for_build: bool = False, **flat: Any) -> LMConfig:

@@ -7,16 +7,16 @@ import argparse
 import math
 from pathlib import Path
 from typing import Iterable, List, Optional, Tuple
+import sys
 
 import torch
 import torch.nn.functional as F
-from datasets import load_dataset  # type: ignore
 
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
 from psannlm.lm.infer.generate import sample_next_token
-from psannlm.lm.models.registry import get_base
-from psannlm.lm.models.sine import SineConfig
-from psannlm.train import main as train_main
+from psannlm.architectures import normalize_lm_config
+from psannlm.architectures.compat import legacy_lm_config
+from psannlm.persistence import load_lm_checkpoint
 
 
 def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:
@@ -27,13 +27,54 @@ def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:
     return int(vocab_size), int(d_model), int(d_mlp), int(n_layers)
 
 
-def _load_state_dict(ckpt_path: Path) -> dict:
-    payload = torch.load(str(ckpt_path), map_location="cpu")
-    if isinstance(payload, dict) and "model" in payload:
-        return payload["model"]
-    if isinstance(payload, dict):
-        return payload
-    raise TypeError(f"Unsupported checkpoint format at {str(ckpt_path)!r}")
+def _load_model(
+    ckpt: Path,
+    *,
+    base: str,
+    pos_enc: str,
+    n_heads: Optional[int],
+    attn_impl: str,
+    device: torch.device,
+    model_config_path: Optional[str] = None,
+):
+    payload = torch.load(ckpt, map_location="cpu", weights_only=True)
+    legacy = None
+    if model_config_path is not None:
+        import yaml
+
+        legacy = normalize_lm_config(
+            yaml.safe_load(Path(model_config_path).read_text(encoding="utf-8")), for_build=True
+        )
+    if (
+        legacy is None
+        and isinstance(payload, dict)
+        and "schema" not in payload
+        and "config" not in payload
+    ):
+        state = payload.get("model", payload)
+        try:
+            vocab, width, mlp, layers = _infer_dims(state)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise ValueError(
+                "checkpoint.config is absent; provide the original architecture with --model-config."
+            ) from exc
+        legacy = legacy_lm_config(
+            base,
+            dict(
+                vocab_size=vocab,
+                d_model=width,
+                d_mlp=mlp,
+                n_layers=layers,
+                n_heads=n_heads or max(1, width // 64),
+                positional_encoding=pos_enc,
+                attn_impl=attn_impl,
+            ),
+            warn=False,
+        )
+    loaded = load_lm_checkpoint(ckpt, map_location=device, legacy_config=legacy)
+    if model_config_path is not None and loaded.config != legacy:
+        raise ValueError("--model-config conflicts with checkpoint.config.")
+    return loaded.model.eval(), loaded.config, loaded.tokenizer
 
 
 def _load_tokenizer(tokenizer_dir: Path) -> Tokenizer:
@@ -90,7 +131,7 @@ def _pretty_detok(text: str) -> str:
 def _generate(
     *,
     ckpt: Path,
-    tokenizer_dir: Path,
+    tokenizer_dir: Optional[Path],
     prompts: List[str],
     base: str,
     pos_enc: str,
@@ -102,37 +143,20 @@ def _generate(
     add_bos: bool,
     stop_at_eos: bool,
     device: torch.device,
+    model_config_path: Optional[str] = None,
 ) -> None:
-    state_dict = _load_state_dict(ckpt)
-    vocab_size, d_model, d_mlp, n_layers = _infer_dims(state_dict)
-    n_heads = int(n_heads) if n_heads else max(1, d_model // 64)
-    if d_model % n_heads != 0 or (d_model // n_heads) % 2 != 0:
-        raise SystemExit(
-            f"Choose --n-heads that divides d_model evenly with even head_dim "
-            f"(d_model={d_model}, n_heads={n_heads})."
-        )
-
-    tokenizer = _load_tokenizer(tokenizer_dir)
-    if int(tokenizer.vocab_size) != int(vocab_size):
-        raise SystemExit(
-            f"Tokenizer vocab_size={tokenizer.vocab_size} does not match checkpoint vocab_size={vocab_size}."
-        )
-
-    factory = get_base(str(base))
-    model = factory(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        n_layers=n_layers,
+    model, config, saved_tokenizer = _load_model(
+        ckpt,
+        base=base,
+        pos_enc=pos_enc,
         n_heads=n_heads,
-        d_mlp=d_mlp,
-        dropout=0.0,
-        positional_encoding=str(pos_enc),
-        mlp_activation="sine",
-        sine=SineConfig(),
         attn_impl="sdpa",
+        device=device,
+        model_config_path=model_config_path,
     )
-    model.load_state_dict(state_dict)
-    model.to(device).eval()
+    tokenizer = _load_tokenizer(tokenizer_dir) if tokenizer_dir is not None else saved_tokenizer
+    if tokenizer is None:
+        raise ValueError("tokenizer is not stored; provide --tokenizer-dir.")
 
     bos_id = int(getattr(tokenizer, "bos_id", 1))
     eos_id = int(getattr(tokenizer, "eos_id", 2))
@@ -166,7 +190,7 @@ def _generate(
 def _eval(
     *,
     ckpt: Path,
-    tokenizer_dir: Path,
+    tokenizer_dir: Optional[Path],
     dataset: str,
     name: Optional[str],
     data_files: Optional[str],
@@ -180,32 +204,22 @@ def _eval(
     pos_enc: str,
     n_heads: Optional[int],
     device: torch.device,
+    model_config_path: Optional[str] = None,
 ) -> None:
-    state_dict = _load_state_dict(ckpt)
-    vocab_size, d_model, d_mlp, n_layers = _infer_dims(state_dict)
-    n_heads = int(n_heads) if n_heads else max(1, d_model // 64)
-    if d_model % n_heads != 0 or (d_model // n_heads) % 2 != 0:
-        raise SystemExit(
-            f"Choose --n-heads that divides d_model evenly with even head_dim "
-            f"(d_model={d_model}, n_heads={n_heads})."
-        )
-
-    tokenizer = _load_tokenizer(tokenizer_dir)
-    factory = get_base(str(base))
-    model = factory(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        n_layers=n_layers,
+    model, config, saved_tokenizer = _load_model(
+        ckpt,
+        base=base,
+        pos_enc=pos_enc,
         n_heads=n_heads,
-        d_mlp=d_mlp,
-        dropout=0.0,
-        positional_encoding=str(pos_enc),
-        mlp_activation="sine",
-        sine=SineConfig(),
-        attn_impl=str(attn_impl),
+        attn_impl=attn_impl,
+        device=device,
+        model_config_path=model_config_path,
     )
-    model.load_state_dict(state_dict)
-    model.to(device).eval()
+    tokenizer = _load_tokenizer(tokenizer_dir) if tokenizer_dir is not None else saved_tokenizer
+    if tokenizer is None:
+        raise ValueError("tokenizer is not stored; provide --tokenizer-dir.")
+
+    from datasets import load_dataset  # type: ignore[attr-defined]
 
     if data_files:
         files = [s.strip() for s in str(data_files).split(",") if s.strip()]
@@ -232,7 +246,9 @@ def _eval(
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=use_amp):
                 logits = model(input_ids)
                 bsz, tsz, vocab = logits.shape
-                loss = F.cross_entropy(logits.view(bsz * tsz, vocab), labels.view(bsz * tsz), reduction="sum")
+                loss = F.cross_entropy(
+                    logits.view(bsz * tsz, vocab), labels.view(bsz * tsz), reduction="sum"
+                )
             total_loss += float(loss.item())
             total_tokens += int(labels.numel())
 
@@ -255,7 +271,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     eval_p = sub.add_parser("eval", help="Evaluate perplexity on a dataset")
     eval_p.add_argument("--ckpt", required=True)
-    eval_p.add_argument("--tokenizer-dir", required=True)
+    eval_p.add_argument(
+        "--model-config", help="Original canonical config for legacy raw weights or trainer files"
+    )
+    eval_p.add_argument("--tokenizer-dir", default=None)
     eval_p.add_argument("--dataset", default="allenai/c4")
     eval_p.add_argument("--name", default=None)
     eval_p.add_argument("--data-files", default=None)
@@ -272,7 +291,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     gen_p = sub.add_parser("generate", help="Generate text from a checkpoint")
     gen_p.add_argument("--ckpt", required=True)
-    gen_p.add_argument("--tokenizer-dir", required=True)
+    gen_p.add_argument(
+        "--model-config", help="Original canonical config for legacy raw weights or trainer files"
+    )
+    gen_p.add_argument("--tokenizer-dir", default=None)
     gen_p.add_argument("--prompt", action="append", default=None)
     gen_p.add_argument("--prompts-file", type=str, default=None)
     gen_p.add_argument("--max-new-tokens", type=int, default=256)
@@ -304,22 +326,35 @@ def _read_prompts(prompt_list: Optional[List[str]], prompts_file: Optional[str])
     return prompts
 
 
-def main(argv: Optional[Iterable[str]] = None) -> int:
-    args = build_parser().parse_args(argv)
-    if args.command in {"train", "resume"}:
-        if not args.args:
-            raise SystemExit("Provide training flags after the subcommand.")
-        if args.command == "resume" and "--resume-ckpt" not in args.args:
+def main(argv: Optional[Iterable[str]] = None, *, _legacy_entry: bool = False) -> int:
+    tokens = list(argv) if argv is not None else sys.argv[1:]
+    if tokens and tokens[0] in {"train", "resume"}:
+        command, flags = tokens[0], tokens[1:]
+        if command == "resume" and "--resume-ckpt" not in flags:
             raise SystemExit("resume requires --resume-ckpt.")
-        return int(train_main(list(args.args)) or 0)
+        if "--config" in flags:
+            parser = argparse.ArgumentParser(description="Train PSANN-LM from canonical YAML")
+            parser.add_argument("--config", required=True)
+            parser.add_argument("--resume-ckpt")
+            args = parser.parse_args(flags)
+            from .configuration import run_yaml
+
+            run_yaml(args.config, resume_checkpoint=args.resume_ckpt, warn_legacy=not _legacy_entry)
+            return 0
+        from ._train.cli import main as run_streaming
+
+        return int(run_streaming(flags) or 0)
+    args = build_parser().parse_args(tokens)
 
     if args.command == "eval":
         device = torch.device(
-            "cuda" if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())) else "cpu"
+            "cuda"
+            if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available()))
+            else "cpu"
         )
         _eval(
             ckpt=Path(args.ckpt),
-            tokenizer_dir=Path(args.tokenizer_dir),
+            tokenizer_dir=Path(args.tokenizer_dir) if args.tokenizer_dir else None,
             dataset=str(args.dataset),
             name=args.name,
             data_files=args.data_files,
@@ -333,17 +368,20 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             pos_enc=str(args.pos_enc),
             n_heads=args.n_heads,
             device=device,
+            model_config_path=args.model_config,
         )
         return 0
 
     if args.command == "generate":
         device = torch.device(
-            "cuda" if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())) else "cpu"
+            "cuda"
+            if (args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available()))
+            else "cpu"
         )
         prompts = _read_prompts(args.prompt, args.prompts_file)
         _generate(
             ckpt=Path(args.ckpt),
-            tokenizer_dir=Path(args.tokenizer_dir),
+            tokenizer_dir=Path(args.tokenizer_dir) if args.tokenizer_dir else None,
             prompts=prompts,
             base=str(args.base),
             pos_enc=str(args.pos_enc),
@@ -355,6 +393,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             add_bos=bool(args.add_bos),
             stop_at_eos=bool(args.stop_at_eos),
             device=device,
+            model_config_path=args.model_config,
         )
         return 0
 

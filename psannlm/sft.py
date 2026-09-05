@@ -39,9 +39,7 @@ import torch
 from psannlm.lm.config import TrainConfig
 from psannlm.lm.data.dataset import build_text_filter
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psannlm.lm.models.registry import get_base
-from psannlm.lm.models.sine import SineConfig
-from psannlm.lm.train.trainer import Trainer
+from psannlm.lm.train.trainer import LMTrainer
 
 from .data_loader import build_stream_loader
 
@@ -498,36 +496,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     tokenizer_dir = Path(args.tokenizer_dir)
     tokenizer = _load_tokenizer(tokenizer_dir)
 
-    # Load checkpoint state dict to infer model dims
-    init_path = str(args.resume_ckpt or args.init_ckpt)
-    state_dict = _load_state_dict(init_path)
-    vocab_size, d_model, d_mlp, n_layers = _infer_dims(state_dict)
-    if int(tokenizer.vocab_size) != int(vocab_size):
-        raise SystemExit(
-            f"Tokenizer vocab_size={tokenizer.vocab_size} does not match checkpoint vocab_size={vocab_size}. "
-            f"Double-check --tokenizer-dir."
-        )
-    n_heads = int(args.n_heads) if args.n_heads else max(1, d_model // 64)
-    if d_model % n_heads != 0 or (d_model // n_heads) % 2 != 0:
-        raise SystemExit(
-            f"Choose an --n-heads that divides d_model evenly with even head_dim "
-            f"(got d_model={d_model}, n_heads={n_heads})."
-        )
+    from psannlm.cli import _load_model
 
-    # Model
-    factory = get_base(str(args.base))
-    model = factory(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        n_layers=n_layers,
-        n_heads=n_heads,
-        d_mlp=d_mlp,
-        dropout=0.0,
-        positional_encoding=str(args.pos_enc),
-        mlp_activation="sine",
-        sine=SineConfig(),
-        attn_impl=str(args.attn_impl),
+    init_path = str(args.resume_ckpt or args.init_ckpt)
+    model, config, _ = _load_model(
+        Path(init_path),
+        base=args.base,
+        pos_enc=args.pos_enc,
+        n_heads=args.n_heads,
+        attn_impl=args.attn_impl,
+        device=torch.device("cpu"),
     )
+    if tokenizer.vocab_size != config.vocab_size:
+        raise ValueError("tokenizer.vocab_size conflicts with checkpoint.config.vocab_size.")
 
     # Data stream
     world_size = max(1, int(os.environ.get("WORLD_SIZE", "1")))
@@ -662,7 +643,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         dataloader_num_workers=int(args.num_workers),
     )
 
-    trainer = Trainer(tcfg)
+    trainer = LMTrainer(tcfg)
 
     # Initialize weights (and optionally resume optimizer state)
     if args.resume_ckpt:
@@ -676,7 +657,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         return 0
 
-    model.load_state_dict(state_dict)
     trainer.train(
         model,
         dataset,

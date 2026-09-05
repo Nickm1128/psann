@@ -18,7 +18,7 @@ import argparse
 from typing import List
 
 import torch
-from psannlm.lm import psannLM
+from psannlm.lm import PSANNLM
 from transformers import AutoTokenizer
 
 
@@ -56,7 +56,7 @@ class TokAdapter:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Generate text from a PSANN-LM chat checkpoint")
-    p.add_argument("--ckpt", required=True, help="Path to psannLM checkpoint (.pt)")
+    p.add_argument("--ckpt", required=True, help="Path to PSANNLM checkpoint (.pt)")
     p.add_argument("--tok", required=True, help="Path to HF tokenizer directory")
     p.add_argument("--prompt", default=None, help="Single prompt string to generate from")
     p.add_argument("--prompts-file", default=None, help="Optional file with one prompt per line")
@@ -73,7 +73,7 @@ def main() -> None:
     torch.manual_seed(int(args.seed))
 
     _log(f"loading checkpoint: {args.ckpt}")
-    lm = psannLM.load(args.ckpt)
+    lm = PSANNLM.load(args.ckpt)
 
     _log(f"loading tokenizer: {args.tok}")
     hf_tok = AutoTokenizer.from_pretrained(args.tok)

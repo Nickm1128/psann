@@ -1,6 +1,7 @@
 # ruff: noqa: F403,F405
 from __future__ import annotations
 
+
 from .config import (
     _coerce_betas,
     _coerce_ddp,
@@ -241,7 +242,7 @@ def main() -> int:
                                     flush=True,
                                 )
                             vocab_size = int(tokenizer.vocab_size)
-                            factory = get_base(teacher_base)
+
                             sine_cfg = train_cfg.get("sine_params", {}) or {}
                             geosparse_kwargs: Dict[str, Any] = {}
                             if str(teacher_base).lower() == "geosparse":
@@ -268,29 +269,35 @@ def main() -> int:
                                 ):
                                     if key in train_cfg and train_cfg.get(key) is not None:
                                         geosparse_kwargs[key] = train_cfg.get(key)
-                            model = factory(
-                                vocab_size=vocab_size,
-                                d_model=int(train_cfg.get("d_model", 256)),
-                                n_layers=int(train_cfg.get("n_layers", 4)),
-                                n_heads=int(train_cfg.get("n_heads", 4)),
-                                d_mlp=int(train_cfg.get("d_mlp", 1024)),
-                                dropout=float(train_cfg.get("dropout", 0.0)),
-                                positional_encoding=str(
-                                    train_cfg.get("positional_encoding", "rope")
-                                ),
-                                mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
-                                sine=SineConfig(
-                                    amp_init=float(sine_cfg.get("amp_init", 1.0)),
-                                    amp_init_std=float(sine_cfg.get("amp_init_std", 0.0)),
-                                    freq_init=float(sine_cfg.get("freq_init", 1.0)),
-                                    freq_init_std=float(sine_cfg.get("freq_init_std", 0.0)),
-                                    damp_init=float(sine_cfg.get("damp_init", 0.01)),
-                                    damp_init_std=float(sine_cfg.get("damp_init_std", 0.0)),
-                                    trainable=bool(sine_cfg.get("trainable", True)),
-                                ),
-                                attn_impl=str(train_cfg.get("attn_impl", "auto")),
-                                **geosparse_kwargs,
-                            )
+                            model = build_lm_model(
+                                legacy_lm_config(
+                                    teacher_base,
+                                    dict(
+                                        vocab_size=vocab_size,
+                                        d_model=int(train_cfg.get("d_model", 256)),
+                                        n_layers=int(train_cfg.get("n_layers", 4)),
+                                        n_heads=int(train_cfg.get("n_heads", 4)),
+                                        d_mlp=int(train_cfg.get("d_mlp", 1024)),
+                                        dropout=float(train_cfg.get("dropout", 0.0)),
+                                        positional_encoding=str(
+                                            train_cfg.get("positional_encoding", "rope")
+                                        ),
+                                        mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
+                                        sine=SineConfig(
+                                            amp_init=float(sine_cfg.get("amp_init", 1.0)),
+                                            amp_init_std=float(sine_cfg.get("amp_init_std", 0.0)),
+                                            freq_init=float(sine_cfg.get("freq_init", 1.0)),
+                                            freq_init_std=float(sine_cfg.get("freq_init_std", 0.0)),
+                                            damp_init=float(sine_cfg.get("damp_init", 0.01)),
+                                            damp_init_std=float(sine_cfg.get("damp_init_std", 0.0)),
+                                            trainable=bool(sine_cfg.get("trainable", True)),
+                                        ),
+                                        attn_impl=str(train_cfg.get("attn_impl", "auto")),
+                                        **geosparse_kwargs,
+                                    ),
+                                    warn=False,
+                                )
+                            ).model
 
                             train_ds = _build_stream_dataset(
                                 data_cfg,
@@ -352,32 +359,18 @@ def main() -> int:
                                 distill_alpha=0.0,
                                 distill_temperature=1.0,
                             )
-                            trainer = Trainer(tcfg)
+                            trainer = LMTrainer(tcfg)
                             trainer.train(model, train_ds, max_length=int(seq_len))
 
-                            teacher_lm = psannLM(
-                                base=teacher_base,
-                                d_model=int(train_cfg.get("d_model", 256)),
-                                n_layers=int(train_cfg.get("n_layers", 4)),
-                                n_heads=int(train_cfg.get("n_heads", 4)),
-                                d_mlp=int(train_cfg.get("d_mlp", 1024)),
-                                vocab_size=vocab_size,
-                                positional_encoding=str(
-                                    train_cfg.get("positional_encoding", "rope")
-                                ),
-                                sine_params=sine_cfg,
-                                dropout=float(train_cfg.get("dropout", 0.0)),
-                                mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
-                                attn_impl=str(train_cfg.get("attn_impl", "auto")),
-                                **geosparse_kwargs,
-                            )
+                            teacher_lm = PSANNLM(config=model.lm_config)
                             teacher_lm._model = model
+                            teacher_lm.attach_tokenizer(tokenizer)
                             teacher_lm.save(str(teacher_ckpt_path))
 
                             teacher_model = model
 
                 if teacher_model is None and teacher_ckpt_path is not None:
-                    teacher_lm = psannLM.load(str(teacher_ckpt_path))
+                    teacher_lm = PSANNLM.load(str(teacher_ckpt_path))
                     if teacher_lm._model is None:
                         teacher_lm._ensure_model(int(tokenizer.vocab_size))
                     teacher_model = teacher_lm._model
@@ -422,7 +415,7 @@ def main() -> int:
 
                     try:
                         vocab_size = int(tokenizer.vocab_size)
-                        factory = get_base(base)
+
                         sine_cfg = train_cfg.get("sine_params", {}) or {}
                         geosparse_kwargs: Dict[str, Any] = {}
                         if str(base).lower() == "geosparse":
@@ -449,27 +442,35 @@ def main() -> int:
                             ):
                                 if key in train_cfg and train_cfg.get(key) is not None:
                                     geosparse_kwargs[key] = train_cfg.get(key)
-                        model = factory(
-                            vocab_size=vocab_size,
-                            d_model=int(train_cfg.get("d_model", 256)),
-                            n_layers=int(train_cfg.get("n_layers", 4)),
-                            n_heads=int(train_cfg.get("n_heads", 4)),
-                            d_mlp=int(train_cfg.get("d_mlp", 1024)),
-                            dropout=float(train_cfg.get("dropout", 0.0)),
-                            positional_encoding=str(train_cfg.get("positional_encoding", "rope")),
-                            mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
-                            sine=SineConfig(
-                                amp_init=float(sine_cfg.get("amp_init", 1.0)),
-                                amp_init_std=float(sine_cfg.get("amp_init_std", 0.0)),
-                                freq_init=float(sine_cfg.get("freq_init", 1.0)),
-                                freq_init_std=float(sine_cfg.get("freq_init_std", 0.0)),
-                                damp_init=float(sine_cfg.get("damp_init", 0.01)),
-                                damp_init_std=float(sine_cfg.get("damp_init_std", 0.0)),
-                                trainable=bool(sine_cfg.get("trainable", True)),
-                            ),
-                            attn_impl=str(train_cfg.get("attn_impl", "auto")),
-                            **geosparse_kwargs,
-                        )
+                        model = build_lm_model(
+                            legacy_lm_config(
+                                base,
+                                dict(
+                                    vocab_size=vocab_size,
+                                    d_model=int(train_cfg.get("d_model", 256)),
+                                    n_layers=int(train_cfg.get("n_layers", 4)),
+                                    n_heads=int(train_cfg.get("n_heads", 4)),
+                                    d_mlp=int(train_cfg.get("d_mlp", 1024)),
+                                    dropout=float(train_cfg.get("dropout", 0.0)),
+                                    positional_encoding=str(
+                                        train_cfg.get("positional_encoding", "rope")
+                                    ),
+                                    mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
+                                    sine=SineConfig(
+                                        amp_init=float(sine_cfg.get("amp_init", 1.0)),
+                                        amp_init_std=float(sine_cfg.get("amp_init_std", 0.0)),
+                                        freq_init=float(sine_cfg.get("freq_init", 1.0)),
+                                        freq_init_std=float(sine_cfg.get("freq_init_std", 0.0)),
+                                        damp_init=float(sine_cfg.get("damp_init", 0.01)),
+                                        damp_init_std=float(sine_cfg.get("damp_init_std", 0.0)),
+                                        trainable=bool(sine_cfg.get("trainable", True)),
+                                    ),
+                                    attn_impl=str(train_cfg.get("attn_impl", "auto")),
+                                    **geosparse_kwargs,
+                                ),
+                                warn=False,
+                            )
+                        ).model
                         param_count = sum(p.numel() for p in model.parameters())
                         record["param_count"] = int(param_count)
 
@@ -588,7 +589,7 @@ def main() -> int:
                             ),
                         )
 
-                        trainer = Trainer(tcfg)
+                        trainer = LMTrainer(tcfg)
                         if torch.cuda.is_available():
                             torch.cuda.reset_peak_memory_stats()
                             torch.cuda.synchronize()
@@ -645,21 +646,9 @@ def main() -> int:
                         )
                         record.update(eval_metrics)
 
-                        lm = psannLM(
-                            base=base,
-                            d_model=int(train_cfg.get("d_model", 256)),
-                            n_layers=int(train_cfg.get("n_layers", 4)),
-                            n_heads=int(train_cfg.get("n_heads", 4)),
-                            d_mlp=int(train_cfg.get("d_mlp", 1024)),
-                            vocab_size=vocab_size,
-                            positional_encoding=str(train_cfg.get("positional_encoding", "rope")),
-                            sine_params=sine_cfg,
-                            dropout=float(train_cfg.get("dropout", 0.0)),
-                            mlp_activation=str(train_cfg.get("mlp_activation", "sine")),
-                            attn_impl=str(train_cfg.get("attn_impl", "auto")),
-                            **geosparse_kwargs,
-                        )
+                        lm = PSANNLM(config=model.lm_config)
                         lm._model = model  # reuse trained weights
+                        lm.attach_tokenizer(tokenizer)
                         ckpt_path = run_dir / "final_model.pt"
                         lm.save(str(ckpt_path))
                         record["final_model_path"] = str(ckpt_path)

@@ -1,7 +1,7 @@
 """Characterize real consumers before changing LM normalization."""
 
 import ast
-from dataclasses import asdict
+from psannlm.architectures import to_mapping
 from pathlib import Path
 
 import pytest
@@ -26,18 +26,15 @@ def test_streaming_training_cli_checkpoint_and_export(tmp_path, monkeypatch):
     checkpoint = tmp_path / "checkpoint"
     export = tmp_path / "export"
     captured = {}
-    factory = cli.get_base
+    factory = cli.build_lm_model
 
-    def observed_factory(name):
-        def build(**kwargs):
-            model = factory(name)(**kwargs)
-            captured["before"] = {k: v.clone() for k, v in model.state_dict().items()}
-            captured["config"] = asdict(model.cfg)
-            return model
+    def observed_factory(config):
+        result = factory(config)
+        captured["before"] = {k: v.clone() for k, v in result.model.state_dict().items()}
+        captured["config"] = to_mapping(result.model.lm_config)
+        return result
 
-        return build
-
-    monkeypatch.setattr(cli, "get_base", observed_factory)
+    monkeypatch.setattr(cli, "build_lm_model", observed_factory)
     assert (
         main(
             [
@@ -85,22 +82,21 @@ def test_streaming_training_cli_checkpoint_and_export(tmp_path, monkeypatch):
     )
     saved = torch.load(checkpoint / "final.pt", weights_only=True)
     assert saved["state"]["step"] == 2
-    assert captured["config"]["sine"]["freq_init"] == 0.7
-    assert captured["config"]["sine"]["amp_init_std"] == 0.2
+    assert captured["config"]["architecture"]["activation"]["frequency_init"] == 0.7
+    assert captured["config"]["architecture"]["activation_initialization"]["amplitude_std"] == 0.2
     assert not torch.equal(saved["model"]["lm_head.weight"], captured["before"]["lm_head.weight"])
     assert saved["model"].keys() == captured["before"].keys()
     assert (export / "model.pt").read_bytes() == (checkpoint / "final.pt").read_bytes()
     import json
 
     meta = json.loads((export / "psann_artifacts.json").read_text())
-    assert meta["model"] == dict(
-        base="respsann", d_model=24, n_layers=2, n_heads=3, d_mlp=36, positional_encoding="alibi"
-    )
+    assert meta["model"] == saved["config"]
+    assert meta["artifact_kind"] == "psannlm.trainer"
 
 
 def test_yaml_training_cli_model_checkpoint(tmp_path, monkeypatch):
     from psannlm.lm.train.cli import main
-    from psannlm.lm.api import psannLM
+    from psannlm.lm.api import PSANNLM
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.chdir(tmp_path)
@@ -133,7 +129,7 @@ def test_yaml_training_cli_model_checkpoint(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     seen = {}
-    original = psannLM._ensure_model
+    original = PSANNLM._ensure_model
 
     def build(self, vocabulary):
         model = original(self, vocabulary)
@@ -141,27 +137,24 @@ def test_yaml_training_cli_model_checkpoint(tmp_path, monkeypatch):
             seen["before"] = model.lm_head.weight.detach().clone()
         return model
 
-    monkeypatch.setattr(psannLM, "_ensure_model", build)
+    monkeypatch.setattr(PSANNLM, "_ensure_model", build)
     assert main(["--config", str(config)]) == 0
     payload = torch.load(tmp_path / "output/final_model.pt", weights_only=True)
     assert payload["config"]["positional_encoding"] == "sinusoidal"
-    assert payload["config"]["sine"]["freq_init"] == 0.7
-    assert payload["config"]["sine"]["amp_init_std"] == 0.2
+    assert payload["config"]["architecture"]["activation"]["frequency_init"] == 0.7
+    assert payload["config"]["architecture"]["activation_initialization"]["amplitude_std"] == 0.2
     assert not torch.equal(payload["state_dict"]["lm_head.weight"], seen["before"])
-    restored = psannLM.load(str(tmp_path / "output/final_model.pt"))
+    restored = PSANNLM.load(str(tmp_path / "output/final_model.pt"))
     torch.testing.assert_close(
         restored._model.lm_head.weight, payload["state_dict"]["lm_head.weight"]
     )
 
 
-@pytest.mark.parametrize("command", ["train", "resume"])
-def test_unified_training_parser_current_flag_rejection(command, capsys):
+def test_unified_resume_requires_checkpoint():
     from psannlm.cli import main
 
-    with pytest.raises(SystemExit) as error:
-        main([command, "--data-manifest", "not-opened.txt"])
-    assert error.value.code == 2
-    assert "unrecognized arguments: --data-manifest" in capsys.readouterr().err
+    with pytest.raises(SystemExit, match="resume requires --resume-ckpt"):
+        main(["resume", "--data-manifest", "not-opened.txt"])
 
 
 @pytest.mark.parametrize("backend", ["simple", "sentencepiece", "tokenizers"])
@@ -208,14 +201,7 @@ def test_current_core_import_inventory():
                 and node.module.startswith("psann.")
             ):
                 modules.add(node.module)
-    assert modules == {
-        "psann.activations",
-        "psann.layers.geo_sparse",
-        "psann.layers.sine_residual",
-        "psann.layers.spectral",
-        "psann.nn",
-        "psann.utils.hf_cache",
-    }
+    assert modules == {"psann.architectures", "psann.architectures.components", "psann.utils"}
     for path in (ROOT / "src/psann").rglob("*.py"):
         tree = ast.parse(path.read_text(encoding="utf-8-sig"))
         for node in ast.walk(tree):

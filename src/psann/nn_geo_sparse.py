@@ -118,9 +118,7 @@ class GeoSparseNet(nn.Module):
                 block_activation_config = dict(block_activation_config)
                 block_activation_config.setdefault("mix_seed", block_seed)
             drop_path = (
-                float(drop_path_max) * (idx / max(1, self.depth - 1))
-                if self.depth > 1
-                else 0.0
+                float(drop_path_max) * (idx / max(1, self.depth - 1)) if self.depth > 1 else 0.0
             )
             block = GeoSparseResidualBlock(
                 self.features,
@@ -313,9 +311,7 @@ def _normalize_relu_sigmoid_psann_config(
     cfg, _ = _normalize_activation_config(out_features, activation_config)
 
     slope_init = raw.get("slope_init", raw.get("relu_slope_init", 1.0))
-    slope_init = _maybe_sample_init(
-        out_features, slope_init, raw, "slope_init_std", "slope_range"
-    )
+    slope_init = _maybe_sample_init(out_features, slope_init, raw, "slope_init_std", "slope_range")
     if slope_init is None:
         slope_init = 1.0
     cfg["slope_init"] = slope_init

@@ -11,7 +11,7 @@ def _parse_bases(cli_value: Optional[str], cfg: Dict[str, Any]) -> List[str]:
     bench_bases = cfg.get("bench", {}).get("bases") or []
     if bench_bases:
         return [str(b).strip() for b in bench_bases if str(b).strip()]
-    discovered = list_bases()
+    discovered = sorted(BASE_KINDS)
     return discovered if discovered else ["respsann", "waveresnet"]
 
 

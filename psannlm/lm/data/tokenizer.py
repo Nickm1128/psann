@@ -11,7 +11,7 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +197,85 @@ class Tokenizer:
             )
         save_fn(path, special_tokens_map_path=special_tokens_map_path)
 
+    def to_state(self) -> dict[str, Any]:
+        """Return portable fitted tokenizer state for model checkpoints."""
+        if self.backend_name == "simple":
+            if not self._impl._fitted:
+                raise ValueError("tokenizer.vocabulary is not fitted.")
+            return {"backend": "simple", "vocabulary": list(self._impl.itos)}
+        if self.backend_name == "sentencepiece":
+            if self._impl.sp is None:
+                raise ValueError("tokenizer.model is not fitted.")
+            return {"backend": "sentencepiece", "model": self._impl.sp.serialized_model_proto()}
+        return {
+            "backend": "tokenizers",
+            "model": self._impl._ensure().to_str(),
+            "passthrough_ids": self.cfg.hf_passthrough_ids,
+            "special_ids": dict(self._impl._src_special_ids),
+        }
+
+    @classmethod
+    def from_state(cls, state: Mapping[str, Any]) -> Tokenizer:
+        """Restore fitted state without corpus access or external artifact paths."""
+        if not isinstance(state, Mapping):
+            raise TypeError("tokenizer must be a mapping.")
+        backend = state.get("backend")
+        required = {
+            "simple": {"backend", "vocabulary"},
+            "sentencepiece": {"backend", "model"},
+            "tokenizers": {"backend", "model", "passthrough_ids", "special_ids"},
+        }
+        if not isinstance(backend, str) or backend not in required:
+            raise ValueError("tokenizer.backend is invalid.")
+        if set(state) != required[backend]:
+            raise ValueError(f"tokenizer keys must be exactly {sorted(required[backend])}.")
+        if backend == "simple":
+            vocabulary = state["vocabulary"]
+            if (
+                not isinstance(vocabulary, list)
+                or any(not isinstance(x, str) or len(x) != 1 for x in vocabulary)
+                or len(set(vocabulary)) != len(vocabulary)
+            ):
+                raise ValueError("tokenizer.vocabulary must contain unique characters.")
+            result = cls(TokenizerConfig(backend="simple"))
+            result._impl.fit(["".join(vocabulary)])
+        elif backend == "sentencepiece":
+            if not isinstance(state["model"], bytes) or not state["model"]:
+                raise TypeError("tokenizer.model must be SentencePiece bytes.")
+            import sentencepiece as spm
+
+            result = cls(TokenizerConfig(backend="sentencepiece"))
+            try:
+                result._impl.sp = spm.SentencePieceProcessor(model_proto=state["model"])
+            except (ValueError, RuntimeError) as exc:
+                raise ValueError(f"tokenizer.model: {exc}") from exc
+        else:
+            if not isinstance(state["model"], str) or not isinstance(
+                state["passthrough_ids"], bool
+            ):
+                raise TypeError("tokenizer.model/passthrough_ids have invalid types.")
+            special = state["special_ids"]
+            if not isinstance(special, Mapping) or set(special) != {"pad", "bos", "eos", "unk"}:
+                raise ValueError("tokenizer.special_ids must contain pad, bos, eos, unk.")
+            if any(
+                isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in special.values()
+            ):
+                raise ValueError("tokenizer.special_ids must be nonnegative integers.")
+            from tokenizers import Tokenizer as HFTokenizer
+
+            result = cls(
+                TokenizerConfig(backend="tokenizers", hf_passthrough_ids=state["passthrough_ids"])
+            )
+            try:
+                result._impl.tk = HFTokenizer.from_str(state["model"])
+            except Exception as exc:
+                raise ValueError(f"tokenizer.model: {exc}") from exc
+            if any(v >= result._impl.tk.get_vocab_size() for v in special.values()):
+                raise ValueError("tokenizer.special_ids must index the saved vocabulary.")
+            result._impl._src_special_ids = dict(special)
+            result._impl._ids = {"[" + k.upper() + "]": v for k, v in special.items()}
+        return result
+
 
 # ----------------------- SentencePiece backend -----------------------
 
@@ -263,7 +342,7 @@ def _make_sentencepiece_tokenizer(cfg: TokenizerConfig):
             mp.close()
 
             try:
-                sp_args = dict(
+                sp_args: dict[str, Any] = dict(
                     input=corpus_path,
                     model_prefix=model_prefix,
                     vocab_size=int(self.cfg.vocab_size),
@@ -527,7 +606,7 @@ def _make_hf_tokenizers(cfg: TokenizerConfig):
                 return tk.decode(out_ids)
 
             # Remapped path: remove fixed specials and unshift by 4
-            out_ids: List[int] = []
+            out_ids = []
             for i in ids:
                 if skip_specials and i in (self.PAD, self.BOS, self.EOS):
                     continue

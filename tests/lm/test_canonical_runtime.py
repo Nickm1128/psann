@@ -314,3 +314,66 @@ def test_registry_duplicate_and_visible_builder_failure(monkeypatch):
     registry.register_lm_builder("residual", broken, replace=True)
     with pytest.raises(ImportError, match="visible built-in failure"):
         build(LMArchitectureConfig.residual())
+
+
+@pytest.mark.parametrize("ratio", [0.0, 0.01, 0.04])
+def test_legacy_zero_width_mixed_child_preserves_state_logits_gradients_and_rng(ratio):
+    raw = dict(
+        d_model=24,
+        n_heads=3,
+        n_layers=2,
+        d_mlp=36,
+        vocab_size=29,
+        geosparse_activation="mixed",
+        geosparse_activation_types=("psann", "gelu"),
+        geosparse_activation_ratios=(ratio, 1 - ratio),
+        sine=SineConfig(freq_init=0.73, amp_init_std=0.23),
+    )
+    seed()
+    reference = GeoSparseTransformer(GeoSparseTransformerConfig(**raw))
+    torch_rng, python_rng = torch.get_rng_state(), random.getstate()
+    seed()
+    with pytest.warns(DeprecationWarning) as warnings:
+        normalized = legacy_lm_config("geosparse", raw)
+    actual = build_lm_model(normalized).model
+    assert len(warnings) == 1
+    assert torch.equal(torch.get_rng_state(), torch_rng) and random.getstate() == python_rng
+    compare(actual, reference)
+    assert (normalized.architecture.activation_initialization is None) == (ratio < 0.04)
+
+
+@pytest.mark.parametrize("drop_path", [0.0, 0.37])
+def test_single_depth_geometric_drop_path_legacy_identity_and_canonical_runtime(drop_path):
+    raw = dict(
+        d_model=24,
+        n_heads=3,
+        n_layers=2,
+        d_mlp=36,
+        vocab_size=29,
+        geosparse_depth=1,
+        geosparse_drop_path_max=drop_path,
+    )
+    seed()
+    reference = GeoSparseTransformer(GeoSparseTransformerConfig(**raw))
+    seed()
+    normalized = legacy_lm_config("geosparse", raw, warn=False)
+    actual = build_lm_model(normalized).model
+    compare(actual, reference)
+    assert normalized.architecture.residual.drop_path == 0.0
+    architecture = replace(
+        normalized.architecture,
+        residual=replace(normalized.architecture.residual, drop_path=drop_path),
+    )
+    seed()
+    active = build_lm_model(replace(normalized, architecture=architecture)).model.train()
+    actual.train()
+    seed()
+    a = active(TOKENS)
+    seed()
+    b = actual(TOKENS)
+    if drop_path:
+        assert not torch.equal(a, b)
+    else:
+        torch.testing.assert_close(a, b, rtol=0, atol=0)
+    a.square().mean().backward()
+    assert torch.count_nonzero(active.lm_head.weight.grad) > 10

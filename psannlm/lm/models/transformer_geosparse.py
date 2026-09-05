@@ -300,6 +300,8 @@ class GeoSparseMLP(nn.Module):
                 )
             ).as_tensors()[0]
             dp = float(drop_path_max) * (idx / max(1, int(depth) - 1)) if int(depth) > 1 else 0.0
+            if architecture is not None and int(depth) == 1:
+                dp = float(drop_path_max)
 
             if architecture is not None:
                 activation = build_lm_activation(architecture, int(d_mlp), block_index=idx)

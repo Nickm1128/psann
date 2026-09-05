@@ -21,10 +21,8 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from psannlm.lm import psannLM  # type: ignore  # noqa: E402
+from psannlm.lm import PSANNLM  # type: ignore  # noqa: E402
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig  # type: ignore  # noqa: E402
-from psannlm.lm.models.registry import get_base  # type: ignore  # noqa: E402
-from psannlm.lm.models.sine import SineConfig  # type: ignore  # noqa: E402
 
 
 def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:
@@ -79,50 +77,34 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ckpt_path = Path(args.ckpt)
-    state = torch.load(str(ckpt_path), map_location="cpu")
-    state_dict = state["model"] if isinstance(state, dict) and "model" in state else state
+    from psannlm.cli import _load_model
 
-    vocab_size, d_model, d_mlp, n_layers = _infer_dims(state_dict)
-    n_heads = int(args.n_heads) if args.n_heads else max(1, d_model // 64)
-    if d_model % n_heads != 0 or (d_model // n_heads) % 2 != 0:
-        raise SystemExit(
-            f"Choose an --n-heads that divides d_model evenly with an even head_dim "
-            f"(got d_model={d_model}, n_heads={n_heads})."
-        )
-
+    model, config, _ = _load_model(
+        ckpt_path,
+        base="waveresnet",
+        pos_enc="rope",
+        n_heads=args.n_heads,
+        attn_impl=args.attn_impl,
+        device=device,
+    )
+    vocab_size, d_model, d_mlp, n_layers, n_heads = (
+        config.vocab_size,
+        config.d_model,
+        config.d_mlp,
+        config.n_layers,
+        config.n_heads,
+    )
     tokenizer = _load_tokenizer(Path(args.tokenizer_dir))
 
-    factory = get_base("waveresnet")
-    model = factory(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        n_layers=n_layers,
-        n_heads=n_heads,
-        d_mlp=d_mlp,
-        dropout=0.0,
-        positional_encoding="rope",
-        mlp_activation="sine",
-        sine=SineConfig(),
-        attn_impl=args.attn_impl,
-    )
-    model.load_state_dict(state_dict)
-    model.to(device).eval()
-
-    lm = psannLM(
-        base="waveresnet",
-        d_model=d_model,
-        n_layers=n_layers,
-        n_heads=n_heads,
-        d_mlp=d_mlp,
-        vocab_size=vocab_size,
-        positional_encoding="rope",
-    )
+    lm = PSANNLM(config=config, device=device)
     lm._model = model  # reuse loaded model with the desired attn_impl
     lm._tokenizer = tokenizer
 
     prompts: Iterable[str] = args.prompt if args.prompt else _default_prompts()
-    print(f"[info] device={device} vocab_size={vocab_size} d_model={d_model} "
-          f"n_layers={n_layers} n_heads={n_heads} d_mlp={d_mlp}")
+    print(
+        f"[info] device={device} vocab_size={vocab_size} d_model={d_model} "
+        f"n_layers={n_layers} n_heads={n_heads} d_mlp={d_mlp}"
+    )
     for p in prompts:
         out = lm.generate(
             p,

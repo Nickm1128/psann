@@ -5,11 +5,19 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
 
 from .data import _tokenizer_sample_iterator
+
+
+class TokenizerArtifacts(TypedDict):
+    model: str | None
+    special_map: str | None
+    config: str | None
+    dir: str | None
+    trained: bool
 
 
 def _ensure_tokenizer_config(special_map_path: Optional[str], max_length: int) -> Optional[str]:
@@ -37,7 +45,7 @@ def _ensure_tokenizer_config(special_map_path: Optional[str], max_length: int) -
 def _prepare_tokenizer(
     args: argparse.Namespace,
     shard_paths: list[str],
-) -> tuple[Tokenizer, dict]:
+) -> tuple[Tokenizer, TokenizerArtifacts]:
     backend = str(args.tokenizer_backend or "auto").lower()
     if args.train_tokenizer and backend != "tokenizers":
         raise SystemExit("--train-tokenizer currently supports --tokenizer-backend tokenizers.")
@@ -48,7 +56,7 @@ def _prepare_tokenizer(
         tok_model = None
         tok_special = None
 
-    artifacts: dict[str, Optional[str] | bool] = {
+    artifacts: TokenizerArtifacts = {
         "model": tok_model,
         "special_map": tok_special,
         "config": None,

@@ -121,7 +121,7 @@ When adding or updating scripts under `scripts/`:
 
 ### Language modeling and PSANN-LM tooling
 
-- `train_psann_lm.py` - shim around `psannlm.train` for one-command LM training (see `docs/lm.md`).
+- `train_psann_lm.py` - shim around `python -m psannlm train` for one-command LM training (see `docs/lm.md`).
 - `train_psannlm_chat.py` / `gen_psannlm_chat.py` - helpers for chat-style PSANN-LM runs and interactive generation.
 - `run_lm_eval_psann.py` - ties PSANN-LM checkpoints into `lm-eval-harness` via a small adapter.
 - `bench_lm_bases.py` - quick WikiText-103 base-estimator shootout with loss/perplexity/throughput summaries.

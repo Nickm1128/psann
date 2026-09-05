@@ -80,7 +80,39 @@ def register_lm_builder(name: str, builder: Builder, *, replace: bool = False) -
 
 
 def available_lm_architectures() -> tuple[str, ...]:
-    return tuple(_BUILDERS)
+    return tuple(name for name in _BUILDERS if not name.startswith("legacy:"))
+
+
+@dataclass(frozen=True)
+class LegacyFactoryRegistration:
+    """Opaque 0.x extension stored in the same registry, outside typed dispatch.
+
+    External 0.x factories retain their own keyword contract. Maintained model
+    construction uses typed builders; registering this adapter does not replace
+    a canonical architecture or claim canonical persistence for arbitrary modules.
+    """
+
+    factory: Callable[..., nn.Module]
+
+    def __call__(self, request: LMBuildRequest) -> LMBuildResult:
+        raise ValueError(
+            "registry legacy extension requires get_base; register_lm_builder accepts typed requests."
+        )
+
+
+def register_legacy_factory(name: str, factory: Callable[..., nn.Module], *, replace: bool) -> None:
+    if not callable(factory):
+        raise TypeError("registry.factory must be callable.")
+    register_lm_builder("legacy:" + name, LegacyFactoryRegistration(factory), replace=replace)
+
+
+def legacy_factory(name: str) -> Callable[..., nn.Module] | None:
+    entry = _BUILDERS.get("legacy:" + name)
+    return entry.factory if isinstance(entry, LegacyFactoryRegistration) else None
+
+
+def legacy_factory_names() -> tuple[str, ...]:
+    return tuple(name.removeprefix("legacy:") for name in _BUILDERS if name.startswith("legacy:"))
 
 
 def build_lm_model(config: object) -> LMBuildResult:

@@ -298,7 +298,25 @@ def test_trainer_checkpoint_real_optimizer_step_and_resume(tmp_path, monkeypatch
     trainer = Trainer(cfg)
     trainer.train(model, data.dataset, max_length=8)
     payload = torch.load(tmp_path / "final.pt", weights_only=True)
-    assert set(payload) == {"state", "model", "optim", "cfg", "data_state"}
+    assert set(payload) == {
+        "state",
+        "model",
+        "optim",
+        "cfg",
+        "data_state",
+        "schema",
+        "schema_version",
+        "package_version",
+        "config",
+        "scaler",
+        "scheduler",
+        "rng",
+    }
+    assert payload["schema"] == "psannlm.trainer"
+    assert payload["schema_version"] == 1
+    from psannlm.architectures import normalize_lm_config
+
+    assert normalize_lm_config(payload["config"]) == model.lm_config
     assert payload["state"]["step"] == 2
     assert payload["cfg"] == asdict(cfg)
     assert payload["optim"]["state"]

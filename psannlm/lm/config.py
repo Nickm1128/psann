@@ -8,8 +8,8 @@ hold options that also maps cleanly to CLI/YAML.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, fields
+from typing import Any, Mapping, Optional
 
 POS_ENCODING_CHOICES = ("rope", "alibi", "sinusoidal")
 _DEFAULT_NUM_WORKERS = 0 if os.name == "nt" else 8
@@ -26,6 +26,8 @@ def normalize_positional_encoding(value: Optional[str]) -> str:
 
 @dataclass
 class ModelConfig:
+    """0.x flat configuration shell; use LMConfig for maintained construction."""
+
     base: str = "waveresnet"  # or "respsann"
     d_model: int = 512
     n_layers: int = 8
@@ -40,8 +42,10 @@ class ModelConfig:
     sine_trainable: bool = True
 
     def __post_init__(self) -> None:
-        if self.base.lower() not in {"waveresnet", "respsann", "sgrpsann"}:
-            raise ValueError("base must be 'waveresnet', 'respsann', or 'sgrpsann'")
+        from ..architectures.compat import BASE_KINDS, compatibility_warning
+
+        if self.base.lower() not in BASE_KINDS:
+            raise ValueError(f"base must be one of {tuple(BASE_KINDS)}")
         if self.d_model <= 0 or self.n_layers <= 0 or self.n_heads <= 0:
             raise ValueError("d_model, n_layers, n_heads must be positive")
         if self.d_mlp is not None and self.d_mlp <= 0:
@@ -49,6 +53,29 @@ class ModelConfig:
         if self.vocab_size is not None and self.vocab_size <= 0:
             raise ValueError("vocab_size must be positive when provided")
         self.positional_encoding = normalize_positional_encoding(self.positional_encoding)
+        compatibility_warning("ModelConfig is deprecated; use LMConfig or to_lm_config().")
+
+    def to_lm_config(self):
+        from ..architectures.compat import legacy_lm_config
+
+        return legacy_lm_config(
+            self.base,
+            {
+                "d_model": self.d_model,
+                "n_layers": self.n_layers,
+                "n_heads": self.n_heads,
+                "d_mlp": self.d_mlp,
+                "vocab_size": self.vocab_size,
+                "positional_encoding": self.positional_encoding,
+                "sine": {
+                    "amp_init": self.sine_amp_init,
+                    "freq_init": self.sine_freq_init,
+                    "damp_init": self.sine_damp_init,
+                    "trainable": self.sine_trainable,
+                },
+            },
+            warn=False,
+        )
 
 
 @dataclass
@@ -66,7 +93,7 @@ class DataConfig:
             raise ValueError("val_split should be in [0.0, 0.5]")
 
 
-@dataclass
+@dataclass(frozen=True)
 class TrainConfig:
     epochs: int = 1
     batch_tokens: int = 32768
@@ -114,6 +141,47 @@ class TrainConfig:
     cuda_empty_cache_interval_steps: int = 0
 
     def __post_init__(self) -> None:
+        from ..architectures.config import integer, real
+
+        positive_ints = {
+            "epochs",
+            "batch_tokens",
+            "grad_accum_steps",
+            "fsdp_min_params",
+            "log_interval_steps",
+            "save_interval_steps",
+            "dataloader_prefetch_factor",
+        }
+        nonnegative_ints = {
+            "warmup_steps",
+            "dataloader_num_workers",
+            "eval_interval_steps",
+            "eval_max_batches",
+            "cuda_empty_cache_interval_steps",
+        }
+        for field in fields(self):
+            name, value = field.name, getattr(self, field.name)
+            if name in positive_ints | nonnegative_ints:
+                integer(value, "train." + name, 1 if name in positive_ints else 0)
+            elif name == "steps_per_epoch":
+                if value is not None:
+                    integer(value, "train." + name)
+            elif field.type == "bool":
+                if not isinstance(value, bool):
+                    raise TypeError(f"train.{name} must be a boolean.")
+            elif field.type in {"float", "float | None"}:
+                if value is not None:
+                    real(value, "train." + name)
+            elif field.type == "str" and not isinstance(value, str):
+                raise TypeError(f"train.{name} must be a string.")
+        if not isinstance(self.betas, (list, tuple)) or len(self.betas) != 2:
+            raise TypeError("train.betas must be a pair.")
+        betas = tuple(real(v, "train.betas") for v in self.betas)
+        if any(not 0 <= v < 1 for v in betas):
+            raise ValueError("train.betas must be in [0, 1).")
+        object.__setattr__(self, "betas", betas)
+        if self.eps <= 0 or self.weight_decay < 0:
+            raise ValueError("train.eps must be positive and train.weight_decay non-negative.")
         if self.epochs <= 0:
             raise ValueError("epochs must be positive")
         if self.batch_tokens <= 0:
@@ -154,4 +222,30 @@ class TrainConfig:
             raise ValueError("eval_max_batches must be >= 0")
         if self.cuda_empty_cache_interval_steps < 0:
             raise ValueError("cuda_empty_cache_interval_steps must be >= 0")
-        self.torch_compile_mode = str(getattr(self, "torch_compile_mode", "default") or "default").strip()
+        if self.torch_compile_mode.strip() not in {
+            "default",
+            "reduce-overhead",
+            "max-autotune",
+            "max-autotune-no-cudagraphs",
+        }:
+            raise ValueError("train.torch_compile_mode is invalid.")
+        object.__setattr__(self, "torch_compile_mode", self.torch_compile_mode.strip())
+
+
+def normalize_train_config(value: TrainConfig | Mapping[str, Any]) -> TrainConfig:
+    """Normalize one immutable train policy, accepting the optional kind='train' tag."""
+    if isinstance(value, TrainConfig):
+        return value
+    if not isinstance(value, Mapping):
+        raise TypeError("train must be TrainConfig or a mapping.")
+    raw = dict(value)
+    if "kind" in raw and raw.pop("kind") != "train":
+        raise ValueError("train.kind must be 'train'.")
+    known = {f.name for f in fields(TrainConfig)}
+    for key in raw:
+        if key not in known:
+            raise ValueError(f"train.{key} is unknown.")
+    try:
+        return TrainConfig(**raw)
+    except (ValueError, TypeError) as exc:
+        raise type(exc)("train: " + str(exc)) from exc

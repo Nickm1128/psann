@@ -1,4 +1,4 @@
-"""Benchmark the PyTorch-only KV-cache fast path used by psannLM.generate_batch.
+"""Benchmark the PyTorch-only KV-cache fast path used by PSANNLM.generate_batch.
 
 This script compares the batched KV-cache path against a naive per-sample
 generation loop (which reprocesses the entire prompt every token) to quantify
@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
 import torch
-from psannlm.lm import psannLM, psannLMDataPrep
+from psannlm.architectures.compat import legacy_api_config
+from psannlm.lm import PSANNLM, PSANNLMDataPrep
 
 
 @contextmanager
@@ -82,7 +83,7 @@ class BenchmarkConfig:
 
 
 def _run_generate_batch(
-    model: psannLM, prompts: Sequence[str], cfg: BenchmarkConfig
+    model: PSANNLM, prompts: Sequence[str], cfg: BenchmarkConfig
 ) -> Tuple[float, List[str]]:
     start = time.perf_counter()
     outputs = model.generate_batch(
@@ -97,7 +98,7 @@ def _run_generate_batch(
     return elapsed, outputs
 
 
-def _run_generate_naive(model: psannLM, prompts: Sequence[str], cfg: BenchmarkConfig) -> float:
+def _run_generate_naive(model: PSANNLM, prompts: Sequence[str], cfg: BenchmarkConfig) -> float:
     start = time.perf_counter()
     for prompt in prompts:
         model.generate(
@@ -113,20 +114,22 @@ def _run_generate_naive(model: psannLM, prompts: Sequence[str], cfg: BenchmarkCo
 
 def run_benchmark(cfg: BenchmarkConfig) -> Dict[str, Any]:
     texts = _build_training_texts()
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         texts,
         tokenizer=cfg.tokenizer,
         max_length=max(cfg.prompt_length + cfg.max_new_tokens + 8, 32),
         pack_sequences=True,
         val_split=0.0,
     )
-    model = psannLM(
-        base=cfg.base,
-        d_model=cfg.d_model,
-        n_layers=cfg.n_layers,
-        n_heads=cfg.n_heads,
-        vocab_size=dp.vocab_size,
-        positional_encoding=cfg.positional_encoding,
+    model = PSANNLM(
+        config=legacy_api_config(
+            base=cfg.base,
+            d_model=cfg.d_model,
+            n_layers=cfg.n_layers,
+            n_heads=cfg.n_heads,
+            vocab_size=dp.vocab_size,
+            positional_encoding=cfg.positional_encoding,
+        )
     )
     model._tokenizer = dp.tokenizer  # type: ignore[attr-defined]
     _ = model._ensure_model(dp.vocab_size)  # type: ignore[attr-defined]
@@ -165,7 +168,7 @@ def run_benchmark(cfg: BenchmarkConfig) -> Dict[str, Any]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark psannLM KV-cache fast path.")
+    parser = argparse.ArgumentParser(description="Benchmark PSANNLM KV-cache fast path.")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--prompt-length", type=int, default=96)
     parser.add_argument("--max-new-tokens", type=int, default=64)

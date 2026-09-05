@@ -131,9 +131,9 @@ fi
 OPT_FLAGS="--optimizer adamw"
 
 if [ "$NUM_GPUS" -gt 1 ]; then
-  LAUNCHER="torchrun --nproc_per_node=${NUM_GPUS} -m psannlm.train"
+  LAUNCHER="torchrun --nproc_per_node=${NUM_GPUS} -m psannlm train"
 else
-  LAUNCHER="$PYTHON_BIN -u -m psannlm.train"
+  LAUNCHER="$PYTHON_BIN -u -m psannlm train"
 fi
 
 HF_DATASET=${HF_DATASET:-HuggingFaceFW/fineweb-edu}

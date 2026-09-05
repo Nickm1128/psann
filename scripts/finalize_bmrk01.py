@@ -44,7 +44,7 @@ def _parse_last_metrics(csv_path: Path) -> Dict[str, float]:
 
 
 def _build_dataprep(cfg: Dict[str, Any]):
-    from psannlm.lm import psannLMDataPrep
+    from psannlm.lm import PSANNLMDataPrep
 
     data_cfg = cfg.get("data", {})
     sources = []
@@ -54,7 +54,7 @@ def _build_dataprep(cfg: Dict[str, Any]):
                 sources.append(str(ent["path"]))
             elif isinstance(ent, str):
                 sources.append(ent)
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         sources,
         tokenizer=str(data_cfg.get("tokenizer", "auto")),
         tokenizer_model_path=(
@@ -73,7 +73,7 @@ def _build_dataprep(cfg: Dict[str, Any]):
 
 
 def _evaluate_validation(cfg: Dict[str, Any], bench_dir: Path, dp) -> Dict[str, float]:
-    from psannlm.lm import psannLM
+    from psannlm.lm import PSANNLM
     from psannlm.lm.data.dataset import collate_batch
 
     train_cfg = cfg.get("train", {})
@@ -86,7 +86,7 @@ def _evaluate_validation(cfg: Dict[str, Any], bench_dir: Path, dp) -> Dict[str, 
         alt = bench_dir / "final_model.pt"
         ckpt_path = alt if alt.exists() else ckpt_path
 
-    lm = psannLM.load(str(ckpt_path))
+    lm = PSANNLM.load(str(ckpt_path))
     vocab = int((model_cfg.get("vocab_size") or dp.vocab_size))
     model = lm._ensure_model(vocab)
 

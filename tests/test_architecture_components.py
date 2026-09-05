@@ -253,3 +253,30 @@ def test_core_source_contains_no_lm_import_or_optional_probe():
                     for arg in node.args:
                         if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                             assert not arg.value.startswith("psannlm"), str(file)
+
+
+@pytest.mark.parametrize("representation", ["typed", "literal", "mapping", "full-mapping"])
+def test_gelu_complete_typed_mapping_has_exact_values_and_gradients(representation):
+    from dataclasses import asdict
+    from psann.architectures import ActivationConfig
+    from psann.architectures.components import build_activation
+
+    policy = ActivationConfig(kind="gelu")
+    value = {
+        "typed": policy,
+        "literal": "gelu",
+        "mapping": {"kind": "gelu"},
+        "full-mapping": asdict(policy),
+    }[representation]
+    module = build_activation(value, features=7)
+    x = torch.linspace(-2, 3, 21).reshape(3, 7).requires_grad_()
+    expected = torch.nn.functional.gelu(x)
+    torch.testing.assert_close(module(x), expected, rtol=0, atol=0)
+    torch.testing.assert_close(
+        torch.autograd.grad(module(x).sum(), x)[0],
+        torch.autograd.grad(expected.sum(), x)[0],
+        rtol=0,
+        atol=0,
+    )
+    with pytest.raises(ValueError, match="activation.frequency_init"):
+        build_activation(dict(asdict(policy), frequency_init=0.73), features=7)

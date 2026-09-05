@@ -14,7 +14,7 @@ from typing import Literal, Mapping
 import torch
 from torch import nn
 
-from ..activations import MixedActivation
+from ..activations import MixedActivation, _apportion_counts, _normalize_ratios
 from ..layers.geo_sparse import build_geo_connectivity, expand_in_indices_to_edges
 from ..layers.sine_residual import RMSNorm
 from ..layers.spectral import SpectralGate1D
@@ -29,7 +29,22 @@ __all__ = [
     "SpectralGate1D",
     "GeometryConnectivity",
     "build_geometry_connectivity",
+    "activation_feature_counts",
 ]
+
+
+def activation_feature_counts(config: ActivationConfig, *, features: int) -> dict[str, int]:
+    """Resolve child widths with the same allocation used by MixedActivation."""
+    if isinstance(features, bool) or not isinstance(features, int) or features <= 0:
+        raise ValueError("features must be a positive integer.")
+    policy = normalize_activation_config(config)
+    if policy.kind != "mixed":
+        return {policy.kind: features}
+    names = policy.activation_types or ()
+    ratios = _normalize_ratios(
+        policy.activation_ratios, len(names), ratio_sum_tol=policy.ratio_sum_tol
+    )
+    return dict(zip(names, _apportion_counts(features, ratios)))
 
 
 def build_activation(
@@ -76,12 +91,12 @@ def build_activation(
         if config != "gelu":
             raise ValueError("activation literal must be 'gelu'.")
         config = ActivationConfig(kind="gelu")
-    if isinstance(config, Mapping) and config.get("kind") == "gelu":
-        unknown = set(config) - {"kind"}
-        if unknown:
-            raise ValueError(f"activation.{sorted(unknown)[0]} is not a GELU field.")
-        config = ActivationConfig(kind="gelu")
     policy = normalize_activation_config(config)
+    if policy.kind == "gelu":
+        default = ActivationConfig(kind="gelu")
+        for field in fields(policy):
+            if getattr(policy, field.name) != getattr(default, field.name):
+                raise ValueError(f"activation.{field.name} is not a GELU field.")
     raw = {field.name: getattr(policy, field.name) for field in fields(policy)}
     if resolved and policy.kind not in {"psann", "phase-psann", "relu-sigmoid-psann", "mixed"}:
         raise ValueError("initial_values requires a parameterized activation.")

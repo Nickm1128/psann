@@ -23,16 +23,19 @@ from collections import deque
 from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional, cast
 
 import torch
 from torch import nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader, IterableDataset
 
-from psann.utils.hf_cache import cleanup_hf_cache
+from psann.utils import cleanup_hf_cache
 
-from ..config import TrainConfig
+from ..config import TrainConfig, normalize_train_config
+from ...architectures import LMConfig, build_lm_model, to_mapping
+from ...architectures.compat import compatibility_warning
+from .rng import capture_rng, restore_rng
 from ..data.dataset import collate_batch
 
 
@@ -42,12 +45,17 @@ class TrainState:
     epoch: int = 0
 
 
-class Trainer:
+def _single_rank_gradient(state: Any, gradient: torch.Tensor) -> None:
+    """Identity reduction used only by the single-rank Gloo CUDA path."""
+    return None
+
+
+class LMTrainer:
     """Trainer supporting AMP and optional DDP."""
 
-    def __init__(self, cfg: Optional[TrainConfig] = None) -> None:
+    def __init__(self, cfg: TrainConfig | Mapping[str, Any] | None = None) -> None:
         self.state = TrainState()
-        self.cfg = cfg or TrainConfig()
+        self.cfg = normalize_train_config(cfg if cfg is not None else TrainConfig())
         self.best_val_loss: float = float("inf")
         self._last_cache_cleanup: float = 0.0
         self._last_cache_warn: float = 0.0
@@ -59,34 +67,53 @@ class Trainer:
         tag: str,
         *,
         data_state: Optional[Dict[str, Any]] = None,
+        scaler: Any = None,
+        scheduler: Any = None,
     ) -> None:
         ckpt_dir = self.cfg.checkpoint_dir
         try:
             os.makedirs(ckpt_dir, exist_ok=True)
         except Exception:
             pass
-        # Handle FSDP full-state extraction if applicable
-        state_dict: Dict[str, Any]
-        try:
-            from torch.distributed.fsdp import FullyShardedDataParallel as FSDP  # type: ignore
-            from torch.distributed.fsdp.api import (  # type: ignore
-                FullStateDictConfig,
-                StateDictType,
-            )
+        from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+        from torch.distributed.fsdp.api import (
+            FullStateDictConfig,
+            FullOptimStateDictConfig,
+            StateDictType,
+        )
+        from torch.nn.parallel import DistributedDataParallel
+        from ...persistence import model_config, package_version
 
-            if isinstance(model, FSDP):  # type: ignore[arg-type]
-                cfg = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
-                with FSDP.state_dict_type(model, StateDictType.FULL_STATE_DICT, cfg):
-                    state_dict = model.state_dict()
-            else:
+        if isinstance(model, FSDP):
+            state_config = FullStateDictConfig(rank0_only=True, offload_to_cpu=True)
+            with FSDP.state_dict_type(
+                model,
+                StateDictType.FULL_STATE_DICT,
+                state_config,
+                FullOptimStateDictConfig(rank0_only=True, offload_to_cpu=True),
+            ):
                 state_dict = model.state_dict()
-        except Exception:
-            # Fallback: best-effort local state
-            state_dict = model.state_dict()
+                optimizer_state = FSDP.optim_state_dict(model, optim)
+        else:
+            unwrapped = model.module if isinstance(model, DistributedDataParallel) else model
+            compiled_source = getattr(unwrapped, "_orig_mod", None)
+            if isinstance(compiled_source, nn.Module):
+                unwrapped = compiled_source
+            state_dict = unwrapped.state_dict()
+            optimizer_state = optim.state_dict()
+        if torch.distributed.is_initialized() and torch.distributed.get_rank() != 0:
+            return
         payload = {
+            "schema": "psannlm.trainer",
+            "schema_version": 1,
+            "package_version": package_version(),
+            "config": to_mapping(model_config(model)),
+            "scaler": scaler.state_dict() if scaler is not None else {},
+            "scheduler": scheduler.state_dict() if scheduler is not None else {},
+            "rng": capture_rng(),
             "state": {"step": self.state.step, "epoch": self.state.epoch},
             "model": state_dict,
-            "optim": optim.state_dict(),
+            "optim": optimizer_state,
             "cfg": self.cfg.__dict__,
         }
         if data_state:
@@ -145,7 +172,7 @@ class Trainer:
                 )
             except Exception:
                 print("[trainer] transformers.Adagactor not available; falling back to AdamW.")
-        adamw_kwargs = dict(lr=lr, weight_decay=wd, betas=betas, eps=eps)
+        adamw_kwargs: dict[str, Any] = dict(lr=lr, weight_decay=wd, betas=betas, eps=eps)
         if torch.cuda.is_available():
             adamw_kwargs["fused"] = True  # type: ignore[assignment]
         return torch.optim.AdamW(model.parameters(), **adamw_kwargs)
@@ -185,7 +212,7 @@ class Trainer:
 
     def train(
         self,
-        model: nn.Module,
+        model: nn.Module | LMConfig | Mapping[str, Any],
         dataset,
         *,
         max_length: int,
@@ -193,15 +220,40 @@ class Trainer:
         data_loader: Optional[DataLoader] = None,
         resume_checkpoint: Optional[str] = None,
         teacher_model: Optional[nn.Module] = None,
+        device: str | torch.device | None = None,
     ) -> None:
         import math as _math
 
         from torch.nn import functional as F
 
+        if not isinstance(model, nn.Module):
+            model = build_lm_model(model).model
+        from ...persistence import model_config
+
+        config = model_config(model)
+        setattr(model, "lm_config", config)
+        self.model = model
         model.train()
+        resume_payload = None
+        if resume_checkpoint:
+            from ...persistence import checkpoint_metadata, load_model_state
+
+            resume_payload = torch.load(resume_checkpoint, map_location="cpu", weights_only=True)
+            saved_config, state_dict, artifact_kind = checkpoint_metadata(
+                resume_payload, legacy_config=config
+            )
+            if artifact_kind != "psannlm.trainer":
+                raise ValueError("checkpoint.schema must be psannlm.trainer for resume.")
+            if saved_config != config:
+                raise ValueError("checkpoint.config conflicts with the model supplied for resume.")
+            load_model_state(model, state_dict, path="checkpoint.model")
 
         # ---- Device selection ----
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = (
+            torch.device(device)
+            if device is not None
+            else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        )
 
         # ---- Distributed bring-up (DDP/FSDP) ----
         ddp_mode = str(getattr(self.cfg, "ddp", "auto")).lower()
@@ -210,6 +262,10 @@ class Trainer:
         world_env = int(os.environ.get("WORLD_SIZE", "1"))
         is_dist_env = world_env > 1
         use_fsdp = fsdp_mode != "off"
+        unused_parameters = (
+            config.architecture.temporal is not None
+            and config.architecture.temporal.mode == "attention-only"
+        )
         ddp_enabled = (want_ddp or (ddp_mode == "auto" and is_dist_env)) and not use_fsdp
 
         rank = 0
@@ -228,7 +284,7 @@ class Trainer:
                     pass
                 device = torch.device("cuda", local_rank)
             if not dist.is_initialized():
-                backend = "nccl" if device.type == "cuda" else "gloo"
+                backend = "nccl" if device.type == "cuda" and dist.is_nccl_available() else "gloo"
                 dist.init_process_group(backend=backend)
             rank = dist.get_rank()
             world_size = dist.get_world_size()
@@ -262,6 +318,10 @@ class Trainer:
                         use_orig_params=bool(getattr(self.cfg, "fsdp_use_orig_params", True)),
                         cpu_offload=None if not bool(getattr(self.cfg, "fsdp_cpu_offload", False)) else torch.distributed.fsdp.CPUOffload(offload_params=True),  # type: ignore
                     )
+                    if device.type == "cuda" and dist.get_backend() == "gloo" and world_size == 1:
+                        # Gloo builds without CUDA collectives cannot reduce CUDA
+                        # gradients. At world size one the reduction is identity.
+                        wrapped.register_comm_hook(None, _single_rank_gradient)
                 except Exception as e:
                     print(
                         f"[trainer] FSDP requested but not available ({e!s}); falling back to DDP/model-only."
@@ -272,7 +332,7 @@ class Trainer:
                         model,
                         device_ids=[local_rank] if device.type == "cuda" else None,
                         output_device=local_rank if device.type == "cuda" else None,
-                        find_unused_parameters=False,
+                        find_unused_parameters=unused_parameters,
                     )
             elif ddp_enabled:
                 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -281,7 +341,7 @@ class Trainer:
                     model,
                     device_ids=[local_rank] if device.type == "cuda" else None,
                     output_device=local_rank if device.type == "cuda" else None,
-                    find_unused_parameters=False,
+                    find_unused_parameters=unused_parameters,
                 )
             is_main = rank == 0
         else:
@@ -293,7 +353,7 @@ class Trainer:
         try:
             if bool(getattr(self.cfg, "grad_checkpoint", False)):
                 if hasattr(model, "enable_gradient_checkpointing"):
-                    model.enable_gradient_checkpointing(True)  # type: ignore[attr-defined]
+                    getattr(model, "enable_gradient_checkpointing")(True)
                     print(
                         "[trainer] Gradient checkpointing: enabled via model.enable_gradient_checkpointing()"
                     )
@@ -333,7 +393,7 @@ class Trainer:
 
         # ---- DataLoader (DistributedSampler if DDP) ----
         batch_size = self._compute_batch_size(max_length)
-        sampler = None
+        sampler: Any = None
         if data_loader is not None:
             dl = data_loader
         else:
@@ -421,31 +481,56 @@ class Trainer:
         # Optional resume: load model/optimizer state and position counters
         start_epoch = 0
         start_step = 0
-        if resume_checkpoint:
+        if resume_payload is not None:
+            payload = resume_payload
+            optimizer_state = payload["optim"]
+            if use_fsdp and payload.get("schema") == "psannlm.trainer":
+                from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+                optimizer_state = FSDP.optim_state_dict_to_load(wrapped, optim, optimizer_state)
             try:
-                payload = torch.load(resume_checkpoint, map_location="cpu")
-                state_dict = payload.get("model", payload)
-                wrapped.load_state_dict(state_dict)
-                if isinstance(payload, dict) and "optim" in payload:
-                    try:
-                        optim.load_state_dict(payload["optim"])
-                    except Exception as exc:  # pragma: no cover - best effort
-                        print(f"[trainer] Warning: could not load optimizer state: {exc}")
-                ckpt_state = payload.get("state", {}) if isinstance(payload, dict) else {}
-                start_step = int(ckpt_state.get("step", 0) or 0)
-                start_epoch = max(0, int(ckpt_state.get("epoch", 1) or 1) - 1)
-                self.state.step = start_step
-                self.state.epoch = start_epoch
+                optim.load_state_dict(optimizer_state)
+            except (ValueError, KeyError, TypeError, RuntimeError) as exc:
+                raise ValueError(f"checkpoint.optim: {exc}") from exc
+            if payload.get("scaler"):
                 try:
-                    scheduler.last_epoch = max(start_step - 1, -1)
-                except Exception:
-                    pass
-                print(
-                    f"[trainer] Resumed from {resume_checkpoint} "
-                    f"(step={start_step}, epoch={start_epoch + 1})"
+                    scaler.load_state_dict(payload["scaler"])
+                except (ValueError, KeyError, TypeError, RuntimeError) as exc:
+                    raise ValueError(f"checkpoint.scaler: {exc}") from exc
+            ckpt_state = payload["state"]
+            start_step = int(ckpt_state.get("step", 0) or 0)
+            start_epoch = max(0, int(ckpt_state.get("epoch", 1) or 1) - 1)
+            self.state.step = start_step
+            self.state.epoch = start_epoch
+            if payload.get("scheduler"):
+                scheduler.load_state_dict(payload["scheduler"])
+                # Re-evaluate the saved position against the requested horizon.
+                # An extended run must not retain a terminal zero learning rate.
+                resumed_lrs = [
+                    base * fn(scheduler.last_epoch)
+                    for base, fn in zip(scheduler.base_lrs, scheduler.lr_lambdas)
+                ]
+                for group, resumed_lr in zip(optim.param_groups, resumed_lrs):
+                    group["lr"] = resumed_lr
+                scheduler._last_lr = resumed_lrs
+            else:
+                scheduler.last_epoch = max(start_step - 1, -1)
+            if payload.get("rng"):
+                restore_rng(payload["rng"])
+            print(
+                f"[trainer] Resumed from {resume_checkpoint} (step={start_step}, epoch={start_epoch + 1})"
+            )
+            if steps_per_epoch_cfg is not None and start_step >= steps_per_epoch_optimizer:
+                self.state.epoch = int(ckpt_state["epoch"])
+                self._save_checkpoint(
+                    wrapped,
+                    optim,
+                    "final",
+                    data_state=payload.get("data_state"),
+                    scaler=scaler,
+                    scheduler=scheduler,
                 )
-            except Exception as exc:
-                print(f"[trainer] Warning: failed to resume from {resume_checkpoint}: {exc}")
+                return
 
         # Optional torch.compile. Keep it opt-in and avoid DDP/FSDP for now.
         # Note: compile happens after resume loading so we don't have to deal with
@@ -466,8 +551,9 @@ class Trainer:
                 dynamic = bool(getattr(self.cfg, "torch_compile_dynamic", False))
                 try:
                     t0_compile = time.time()
-                    wrapped = torch.compile(
-                        wrapped, mode=mode, fullgraph=fullgraph, dynamic=dynamic
+                    wrapped = cast(
+                        nn.Module,
+                        torch.compile(wrapped, mode=mode, fullgraph=fullgraph, dynamic=dynamic),
                     )
                     if is_main:
                         dt = time.time() - t0_compile
@@ -500,7 +586,7 @@ class Trainer:
         micro = 0
         global_step = start_step  # optimizer steps
         log_interval = max(1, int(self.cfg.log_interval_steps))
-        ppl_window = deque(maxlen=log_interval)
+        ppl_window: deque[float] = deque(maxlen=log_interval)
         eval_interval = max(0, int(getattr(self.cfg, "eval_interval_steps", 0) or 0))
         eval_max_batches = max(0, int(getattr(self.cfg, "eval_max_batches", 0) or 0))
         empty_cache_interval = max(
@@ -514,11 +600,14 @@ class Trainer:
             "tokens_per_step": int(batch_size * max_length * accum),
         }
         last_eval_step = -1
+        last_eval_loss = float("nan")
 
         def _eval_once(step: int) -> float:
-            nonlocal last_eval_step
-            if val_dataset is None or step == last_eval_step:
+            nonlocal last_eval_step, last_eval_loss
+            if val_dataset is None:
                 return float("nan")
+            if step == last_eval_step:
+                return last_eval_loss
             last_eval_step = step
             limit_batches = eval_max_batches if eval_max_batches > 0 else 128
             vdl = DataLoader(
@@ -541,7 +630,9 @@ class Trainer:
                     vinput = vbatch["input_ids"].to(device)
                     vlabels = vbatch["labels"].to(device)
                     with autocast_ctx:
-                        vlogits = wrapped(vinput)  # type: ignore[operator]
+                        # Rank-zero-only DDP evaluation must not enter buffer broadcasts.
+                        evaluation_model = model if ddp_enabled else wrapped
+                        vlogits = evaluation_model(vinput)
                         bsz, seqlen, vocab = vlogits.shape
                         vloss = criterion_eval(
                             vlogits.view(bsz * seqlen, vocab), vlabels.view(bsz * seqlen)
@@ -558,7 +649,8 @@ class Trainer:
             print(
                 f"[eval] step={step} tokens={vtoks} loss={avg_loss:.4f} ppl={vppl:.3f} dt={dt:.1f}s"
             )
-            return float(avg_loss)
+            last_eval_loss = float(avg_loss)
+            return last_eval_loss
 
         micro_total_loss_sum = 0.0
         micro_hard_loss_sum = 0.0
@@ -754,25 +846,32 @@ class Trainer:
                             except Exception:
                                 pass
 
-                    if eval_interval and is_main and val_dataset is not None:
+                    if eval_interval and (is_main or use_fsdp) and val_dataset is not None:
                         if global_step % max(1, eval_interval) == 0:
                             _eval_once(global_step)
 
                     # Periodic checkpointing and optional validation
-                    if is_main and global_step % max(1, self.cfg.save_interval_steps) == 0:
+                    if global_step % max(1, self.cfg.save_interval_steps) == 0:
                         # Save via wrapper to support FSDP full state dict
                         self._save_checkpoint(
                             wrapped,
                             optim,
                             tag=f"ckpt_step{global_step:06d}",
                             data_state=data_state,
+                            scaler=scaler,
+                            scheduler=scheduler,
                         )
-                        if val_dataset is not None:
+                        if val_dataset is not None and (is_main or use_fsdp):
                             vloss = _eval_once(global_step)
                             if vloss < self.best_val_loss:
                                 self.best_val_loss = float(vloss)
                                 self._save_checkpoint(
-                                    wrapped, optim, tag="best", data_state=data_state
+                                    wrapped,
+                                    optim,
+                                    tag="best",
+                                    data_state=data_state,
+                                    scaler=scaler,
+                                    scheduler=scheduler,
                                 )
 
                     if steps_per_epoch_cfg is not None:
@@ -798,9 +897,10 @@ class Trainer:
                     "Relax filters or use a larger dataset/config to reach the intended token budget."
                 )
 
-        # Final save (main rank only)
-        if is_main:
-            self._save_checkpoint(wrapped, optim, tag="final", data_state=data_state)
+        # All FSDP ranks participate in gathering; only rank zero writes the file.
+        self._save_checkpoint(
+            wrapped, optim, tag="final", data_state=data_state, scaler=scaler, scheduler=scheduler
+        )
 
     def validate(self, model: nn.Module, dataset) -> float:
         model.eval()
@@ -820,3 +920,11 @@ class Trainer:
                 total_tokens += int(B * T)
         model.train()
         return total_loss / max(1, total_tokens)
+
+
+class Trainer(LMTrainer):
+    """Deprecated 0.x spelling of LMTrainer."""
+
+    def __init__(self, cfg: TrainConfig | Mapping[str, Any] | None = None) -> None:
+        compatibility_warning("Trainer is deprecated; use LMTrainer.")
+        super().__init__(cfg)

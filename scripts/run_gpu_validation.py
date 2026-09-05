@@ -33,7 +33,8 @@ from typing import Any, Dict, List, Sequence
 import torch
 
 try:
-    from psannlm.lm import psannLM, psannLMDataPrep
+    from psannlm.architectures.compat import legacy_api_config
+    from psannlm.lm import PSANNLM, PSANNLMDataPrep, TrainConfig
 except Exception:  # pragma: no cover - runner convenience
     print(
         "Failed to import psannlm.lm — ensure PYTHONPATH=.<repo root> or install -e .",
@@ -132,7 +133,7 @@ def _ddp_loss_worker(
             _torch.cuda.manual_seed_all(123)
 
         # Build model consistent with single-GPU baseline
-        lm = psannLM(**model_cfg)
+        lm = PSANNLM(config=legacy_api_config(**model_cfg))
         model = lm._ensure_model(int(vocab_size)).to(device).eval()
         model = _DDP(
             model, device_ids=[int(rank)], output_device=int(rank), find_unused_parameters=False
@@ -200,7 +201,7 @@ def _fsdp_loss_worker(
         if _torch.cuda.is_available():
             _torch.cuda.manual_seed_all(123)
 
-        lm = psannLM(**model_cfg)
+        lm = PSANNLM(config=legacy_api_config(**model_cfg))
         base_model = lm._ensure_model(int(vocab_size)).to(device)
         # Match evaluation mode with single-GPU baseline to avoid dropout-induced deltas
         base_model.eval()
@@ -244,14 +245,21 @@ def _fsdp_loss_worker(
 def gpu_01_forward_backward() -> Dict[str, Any]:
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
     # Use a small max_length to ensure at least one chunk from tiny texts
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0
     )
-    lm = psannLM(
-        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    lm = PSANNLM(
+        config=legacy_api_config(
+            base="waveresnet",
+            d_model=128,
+            n_layers=2,
+            n_heads=4,
+            vocab_size=dp.vocab_size,
+            rope=True,
+        )
     )
     t0 = time.time()
-    lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
+    lm.fit(dp, train=TrainConfig(epochs=1, batch_tokens=4096, lr=3e-4))
     dt = time.time() - t0
     return {
         "status": "ok",
@@ -273,11 +281,13 @@ def gpu_02_amp_parity() -> Dict[str, Any]:
         return {"status": "skipped", "reason": "cuda not available"}
 
     texts = ["a b c d e f g", "h i j k l m", "n o p q r s"]
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
     )
-    lm = psannLM(
-        base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    lm = PSANNLM(
+        config=legacy_api_config(
+            base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+        )
     )
 
     # Build a single batch tensor
@@ -357,7 +367,11 @@ def gpu_03_throughput() -> Dict[str, Any]:
             T = max(1, int(os.environ.get("PSANN_GPU03_T", "256")))
             B = max(1, int(os.environ.get("PSANN_GPU03_B", "4")))
             target_tokens = B * T
-        lm = psannLM(base=base, d_model=256, n_layers=4, n_heads=4, vocab_size=vocab, rope=True)
+        lm = PSANNLM(
+            config=legacy_api_config(
+                base=base, d_model=256, n_layers=4, n_heads=4, vocab_size=vocab, rope=True
+            )
+        )
         model = lm._ensure_model(vocab).to(device).eval()
         torch.cuda.synchronize()
         x = torch.randint(0, vocab, (B, T), device=device, dtype=torch.long)
@@ -407,11 +421,18 @@ def gpu_04_checkpointing() -> Dict[str, Any]:
         "lorem ipsum",
         "pack my box with five dozen liquor jugs",
     ]
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
     )
-    lm = psannLM(
-        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    lm = PSANNLM(
+        config=legacy_api_config(
+            base="waveresnet",
+            d_model=128,
+            n_layers=2,
+            n_heads=4,
+            vocab_size=dp.vocab_size,
+            rope=True,
+        )
     )
     # Reset and record CUDA memory stats for a clean measurement window
     try:
@@ -421,7 +442,7 @@ def gpu_04_checkpointing() -> Dict[str, Any]:
     torch.cuda.synchronize()
     t0 = time.time()
     # Enable gradient checkpointing via Trainer config
-    lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4, grad_checkpoint=True)
+    lm.fit(dp, train=TrainConfig(epochs=1, batch_tokens=4096, lr=3e-4, grad_checkpoint=True))
     torch.cuda.synchronize()
     dt = time.time() - t0
     # Memory snapshot
@@ -456,7 +477,7 @@ def gpu_05_ddp() -> Dict[str, Any]:
     # Single-GPU baseline (rank 0) forward loss
     torch.manual_seed(123)
     texts = ["the quick brown fox", "jumps over the lazy dog"]
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0
     )
     vocab = int(dp.vocab_size)
@@ -473,7 +494,7 @@ def gpu_05_ddp() -> Dict[str, Any]:
     )
 
     device0 = torch.device("cuda", 0)
-    lm = psannLM(**model_cfg)
+    lm = PSANNLM(config=legacy_api_config(**model_cfg))
     model = lm._ensure_model(vocab).to(device0).eval()
     with torch.no_grad():
         import torch.nn.functional as F
@@ -531,7 +552,7 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
     # Build a tiny batch/model config similar to GPU-05
     try:
         texts = ["the quick brown fox", "jumps over the lazy dog"]
-        dp = psannLMDataPrep(
+        dp = PSANNLMDataPrep(
             texts, tokenizer="simple", max_length=32, pack_sequences=True, val_split=0.0
         )
         vocab = int(dp.vocab_size)
@@ -549,7 +570,7 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
         torch.manual_seed(123)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(123)
-        lm = psannLM(**model_cfg)
+        lm = PSANNLM(config=legacy_api_config(**model_cfg))
         model = lm._ensure_model(vocab).to(device0).eval()
         with torch.no_grad():
             import torch.nn.functional as F
@@ -609,13 +630,20 @@ def gpu_06_zerofsdp() -> Dict[str, Any]:
 
 def gpu_07_generation_smoke() -> Dict[str, Any]:
     texts = ["pack my box with five dozen liquor jugs", "sphinx of black quartz judge my vow"]
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         texts, tokenizer="simple", max_length=64, pack_sequences=True, val_split=0.0
     )
-    lm = psannLM(
-        base="waveresnet", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    lm = PSANNLM(
+        config=legacy_api_config(
+            base="waveresnet",
+            d_model=128,
+            n_layers=2,
+            n_heads=4,
+            vocab_size=dp.vocab_size,
+            rope=True,
+        )
     )
-    lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
+    lm.fit(dp, train=TrainConfig(epochs=1, batch_tokens=4096, lr=3e-4))
     out = lm.generate("Once upon a time", max_new_tokens=24, top_p=0.9, temperature=0.9)
     return {
         "status": "ok",
@@ -627,19 +655,21 @@ def gpu_07_generation_smoke() -> Dict[str, Any]:
 def gpu_08_save_load(outdir: Path) -> Dict[str, Any]:
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
     # Use a small max_length to ensure dataset has samples for tiny texts
-    dp = psannLMDataPrep(
+    dp = PSANNLMDataPrep(
         texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0
     )
-    lm = psannLM(
-        base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+    lm = PSANNLM(
+        config=legacy_api_config(
+            base="respsann", d_model=128, n_layers=2, n_heads=4, vocab_size=dp.vocab_size, rope=True
+        )
     )
-    lm.fit(dp, epochs=1, batch_tokens=4096, lr=3e-4)
+    lm.fit(dp, train=TrainConfig(epochs=1, batch_tokens=4096, lr=3e-4))
 
     ckpt_dir = outdir / "checkpoints"
     _ensure_dir(ckpt_dir)
     ckpt_path = ckpt_dir / "lm.pt"
     lm.save(str(ckpt_path))
-    loaded = psannLM.load(str(ckpt_path))
+    loaded = PSANNLM.load(str(ckpt_path))
 
     # Attach tokenizer for convenience
     loaded._tokenizer = dp.tokenizer  # type: ignore[attr-defined]

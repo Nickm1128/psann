@@ -13,7 +13,7 @@ import os
 from typing import Any, Callable, Dict, Iterator, List, Optional
 
 import torch
-from datasets import load_dataset
+from datasets import load_dataset  # type: ignore[attr-defined]
 
 
 def _build_encode_fn(tokenizer):

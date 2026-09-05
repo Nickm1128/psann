@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import argparse
 
-from psannlm.lm.models.registry import get_base
+from psannlm.architectures import build_lm_model
+from psannlm.architectures.compat import legacy_lm_config
 from psannlm.lm.models.sine import SineConfig
 
 
@@ -28,21 +29,27 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     d_mlp = args.d_mlp if args.d_mlp is not None else 4 * int(args.d_model)
-    factory = get_base(args.base)
+
     sine = SineConfig()
-    model = factory(
-        vocab_size=int(args.vocab_size),
-        d_model=int(args.d_model),
-        n_layers=int(args.n_layers),
-        n_heads=int(args.n_heads),
-        d_mlp=int(d_mlp),
-        positional_encoding=str(args.pos_enc),
-        sine=sine,
-        wave_interleave=bool(args.wave_interleave),
-        wave_kernel_size=int(args.wave_kernel_size),
-        wave_dilation_growth=int(args.wave_dilation_growth),
-        wave_dropout=float(args.wave_dropout),
-    )
+    model = build_lm_model(
+        legacy_lm_config(
+            args.base,
+            dict(
+                vocab_size=int(args.vocab_size),
+                d_model=int(args.d_model),
+                n_layers=int(args.n_layers),
+                n_heads=int(args.n_heads),
+                d_mlp=int(d_mlp),
+                positional_encoding=str(args.pos_enc),
+                sine=sine,
+                wave_interleave=bool(args.wave_interleave),
+                wave_kernel_size=int(args.wave_kernel_size),
+                wave_dilation_growth=int(args.wave_dilation_growth),
+                wave_dropout=float(args.wave_dropout),
+            ),
+            warn=False,
+        )
+    ).model
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total parameters: {total:,}")

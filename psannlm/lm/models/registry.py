@@ -8,20 +8,25 @@ from torch import nn
 
 from ...architectures.compat import BASE_KINDS, compatibility_warning, legacy_lm_config
 from ...architectures.registry import (
-    LMBuildRequest,
-    LMBuildResult,
-    LMCapabilities,
     build_lm_model,
-    register_lm_builder,
+    legacy_factory,
+    legacy_factory_names,
+    register_legacy_factory,
 )
 
 
 def get_base(name: str) -> Callable[..., nn.Module]:
     key = name.strip().lower()
-    if key not in BASE_KINDS:
+    registered = legacy_factory(key)
+    if key not in BASE_KINDS and registered is None:
         raise KeyError(f"Unknown base {name!r}. Available: {tuple(BASE_KINDS)}")
 
     def factory(**kwargs: Any) -> nn.Module:
+        if registered is not None:
+            compatibility_warning(
+                "get_base is deprecated; this external 0.x factory retains its original keyword contract."
+            )
+            return registered(**kwargs)
         return build_lm_model(legacy_lm_config(key, kwargs)).model
 
     return factory
@@ -29,20 +34,17 @@ def get_base(name: str) -> Callable[..., nn.Module]:
 
 def list_bases() -> list[str]:
     compatibility_warning("list_bases is deprecated; use available_lm_architectures.")
-    return sorted(BASE_KINDS)
+    return sorted(set(BASE_KINDS) | set(legacy_factory_names()))
 
 
 def register_base(name: str, factory: Callable[..., nn.Module], *, replace: bool = False) -> None:
-    """Adapt a 0.x factory replacement to the one canonical request registry."""
+    """Keep external 0.x factory signatures in the canonical registry's legacy namespace."""
     key = name.strip().lower()
-    kind = BASE_KINDS.get(key, key)
-
-    def builder(request: LMBuildRequest) -> LMBuildResult:
-        config = request.config
-        model = factory(config=config)
-        return LMBuildResult(model, LMCapabilities(config.architecture.kind))
-
-    register_lm_builder(kind, builder, replace=replace)
+    if not key:
+        raise ValueError("registry.name must be nonempty.")
+    if key in BASE_KINDS and not replace:
+        raise ValueError(f"registry.{key} is already registered; replacement must be explicit.")
+    register_legacy_factory(key, factory, replace=replace)
     compatibility_warning(
-        "register_base is deprecated; factories now receive config=LMConfig. Use register_lm_builder."
+        "register_base is deprecated; use register_lm_builder for typed construction."
     )

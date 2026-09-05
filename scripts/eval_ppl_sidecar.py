@@ -23,8 +23,6 @@ from datasets import load_dataset  # type: ignore
 
 # Package imports (install `psannlm` from this checkout for local use)
 from psannlm.lm.data.tokenizer import Tokenizer, TokenizerConfig
-from psannlm.lm.models.registry import get_base
-from psannlm.lm.models.sine import SineConfig
 
 
 def _infer_dims(state_dict: dict) -> Tuple[int, int, int, int]:
@@ -118,34 +116,18 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ckpt = torch.load(args.ckpt, map_location="cpu")
-    state_dict = ckpt["model"] if isinstance(ckpt, dict) and "model" in ckpt else ckpt
+    from psannlm.cli import _load_model
 
-    vocab_size, d_model, d_mlp, n_layers = _infer_dims(state_dict)
-    n_heads = max(1, d_model // 64)
-    if d_model % n_heads != 0 or (d_model // n_heads) % 2 != 0:
-        raise SystemExit(
-            f"Choose an n_heads that divides d_model evenly with even head_dim "
-            f"(inferred d_model={d_model}, n_heads={n_heads})."
-        )
+    model, config, _ = _load_model(
+        Path(args.ckpt),
+        base="waveresnet",
+        pos_enc="rope",
+        n_heads=None,
+        attn_impl=args.attn_impl,
+        device=device,
+    )
 
     tokenizer = _load_tokenizer(Path(args.tokenizer_dir))
-
-    factory = get_base("waveresnet")
-    model = factory(
-        vocab_size=vocab_size,
-        d_model=d_model,
-        n_layers=n_layers,
-        n_heads=n_heads,
-        d_mlp=d_mlp,
-        dropout=0.0,
-        positional_encoding="rope",
-        mlp_activation="sine",
-        sine=SineConfig(),
-        attn_impl=args.attn_impl,
-    )
-    model.load_state_dict(state_dict)
-    model.to(device).eval()
 
     if args.data_files:
         data_files = [s.strip() for s in str(args.data_files).split(",") if s.strip()]

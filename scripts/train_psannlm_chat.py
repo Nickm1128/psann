@@ -5,7 +5,7 @@ Phase 1: Pre-train on WikiText-103-raw-v1.
 Phase 2: Instruction-tune on OpenAssistant/oasst1 (200k-400k prompt/response pairs).
 
 The script prints frequent progress updates, periodically saves checkpoints,
-and writes the final psannLM checkpoint + tokenizer for downstream evaluation.
+and writes the final PSANNLM checkpoint + tokenizer for downstream evaluation.
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ from typing import Callable, Dict, Iterable, Iterator, List, Optional, Sequence,
 
 import torch
 from datasets import load_dataset
-from psannlm.lm import psannLM
-from psannlm.lm.models.registry import get_base
-from psannlm.lm.models.sine import SineConfig
+from psannlm.lm import PSANNLM
+from psannlm.architectures import LMConfig, build_lm_model
+from psannlm.architectures.compat import legacy_lm_config
 from torch import nn
 from torch.optim import AdamW
 from transformers import AutoTokenizer
@@ -194,8 +194,10 @@ def build_oasst_pair_stream(max_pairs: int) -> TextStream:
 
 
 def count_model_params(base: str, vocab_size: int, **cfg: int) -> int:
-    factory = get_base(base)
-    model = factory(vocab_size=vocab_size, **cfg)
+
+    model = build_lm_model(
+        legacy_lm_config(base, dict(vocab_size=vocab_size, **cfg), warn=False)
+    ).model
     total = sum(p.numel() for p in model.parameters())
     del model
     return int(total)
@@ -497,22 +499,16 @@ def main() -> None:
         max_heads=32,
     )
 
-    # Model instantiation via psannLM wrapper (for easy saving)
-    sine_cfg = SineConfig()
-    lm = psannLM(
-        base="waveresnet",
-        d_model=landing.d_model,
-        n_layers=landing.n_layers,
-        n_heads=landing.n_heads,
-        d_mlp=landing.d_mlp,
-        vocab_size=vocab_size,
-        sine_params={
-            "amp_init": sine_cfg.amp_init,
-            "freq_init": sine_cfg.freq_init,
-            "damp_init": sine_cfg.damp_init,
-            "trainable": sine_cfg.trainable,
-        },
-        positional_encoding="rope",
+    # Model instantiation via PSANNLM wrapper (for easy saving)
+    lm = PSANNLM(
+        config=LMConfig(
+            architecture="wave",
+            d_model=landing.d_model,
+            n_layers=landing.n_layers,
+            n_heads=landing.n_heads,
+            d_mlp=landing.d_mlp,
+            vocab_size=vocab_size,
+        )
     )
     model = lm._ensure_model(vocab_size)
 
