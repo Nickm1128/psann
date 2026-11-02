@@ -6,6 +6,8 @@ EpisodicTrainer boundary, and data leakage is avoided by using strictly
 chronological train/val/test splits and never sampling windows from val/test.
 """
 
+from __future__ import annotations
+
 import sys as _sys
 from pathlib import Path
 

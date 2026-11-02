@@ -29,7 +29,8 @@ The [archived training driver](train_selected.py) is an exact copy of the locall
 
 ## Provenance and limits
 
-- [Snapshot manifest](snapshot_manifest.json) hashes every archived artifact. The recipe and driver are byte-for-byte copies of the files used to launch training.
+- [Snapshot manifest](snapshot_manifest.json) hashes the archived measurements, configurations, source manifest, and driver. The recipe and driver are byte-for-byte copies of the files used to launch training.
 - [Runtime source manifest](source_manifest_20261102.json) records the pre-feature base commit and the hashes of the actual core/LM Python sources used. The package metadata still read 2.0.1 at launch; that version alone does not identify this uncommitted runtime.
 - Paths inside archived JSON/YAML are historical local paths. Dataset files, token caches, document exclusion lists, checkpoints, logs, and environments are excluded from Git. This snapshot identifies those inputs but is not a standalone reproduction bundle.
 - The running job continues to use its original local files. A later package release does not retroactively change its provenance. Native weights require held-out evaluation and instruction tuning before distribution.
+- Feature commit `29f4381` captures the recorded runtime sources. Subsequent Python compatibility and CI repairs were prepared in a separate checkout; the active training checkout remains pinned to that feature commit until the job ends.

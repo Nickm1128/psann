@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from numbers import Real
-from typing import Any, TypeAlias, cast
+from typing import Any, Union, cast
 
 import torch.nn as nn
 
@@ -298,7 +298,8 @@ class PreprocessorConfig:
             raise TypeError("preprocessor.training must be a PreprocessorTrainingConfig.")
 
 
-PreprocessorLike: TypeAlias = PreprocessorConfig | Mapping[str, object] | None
+# This assignment executes at import time, including on Python 3.9.
+PreprocessorLike = Union[PreprocessorConfig, Mapping[str, object], None]
 
 
 def _normalize_pretraining(value: object) -> LSMPretrainingConfig:

@@ -206,7 +206,12 @@ def evaluate_expression(expression, namespace, tree, line):
         try:
             return eval(compiled, namespace)
         except NameError as error:
-            name = error.name
+            name = getattr(error, "name", None)
+            if name is None:  # NameError.name was added in Python 3.10.
+                match = re.fullmatch(r"name '([^']+)' is not defined", str(error))
+                if match is None:
+                    raise
+                name = match.group(1)
             choices = [
                 node
                 for node in ast.walk(tree)

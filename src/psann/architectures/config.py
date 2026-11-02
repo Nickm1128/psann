@@ -12,7 +12,7 @@ import math
 import warnings
 from dataclasses import asdict, dataclass, fields, replace
 from collections.abc import Iterator, Sequence
-from typing import Any, Callable, Mapping, TypeAlias, cast
+from typing import Any, Callable, Mapping, Union, cast
 from numbers import Real
 
 
@@ -673,7 +673,8 @@ class ArchitectureConfig:
         return cls(kind="geometric-sparse", **cast(Any, kwargs))
 
 
-ArchitectureLike: TypeAlias = ArchitectureConfig | Mapping[str, object] | str
+# This assignment executes at import time, including on Python 3.9.
+ArchitectureLike = Union[ArchitectureConfig, Mapping[str, object], str]
 
 _POLICIES: dict[str, type[Any]] = {
     "activation": ActivationConfig,

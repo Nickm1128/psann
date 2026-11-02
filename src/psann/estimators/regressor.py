@@ -747,7 +747,7 @@ class PSANNRegressor(_Phase2Regressor):
                 legacy_lsm,
                 trainable=legacy_lsm_train,
                 pretrain_epochs=legacy_lsm_epochs,
-                training_lr=cast(float | None, legacy_lsm_lr),
+                training_lr=cast(Optional[float], legacy_lsm_lr),
             )
             if adapted is not None:
                 canonical_preprocessor = adapted
@@ -2342,7 +2342,7 @@ class PSANNRegressor(_Phase2Regressor):
                 preprocessor = getattr(estimator.lsm, "model", estimator.lsm)
             if not isinstance(estimator.model_, WithPreprocessor):
                 estimator.model_ = WithPreprocessor(
-                    cast(nn.Module | None, preprocessor), estimator.model_
+                    cast(Optional[nn.Module], preprocessor), estimator.model_
                 )
         estimator.model_.load_state_dict(state_dict, strict=True)
         if map_location is not None:

@@ -40,8 +40,10 @@ jobs:
       - name: Run HISSO benchmark (CPU baseline)
         run: |
           mkdir -p benchmark_artifacts
+          # The historical activation-only reward ignores transition costs.
           python -m scripts.benchmark_hisso_variants \
             --dataset portfolio \
+            --transition-penalty 0 \
             --epochs 4 \
             --devices cpu \
             --variants dense,conv \

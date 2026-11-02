@@ -21,6 +21,10 @@ class ResultKey:
 
 def _load_results(path: Path) -> Tuple[Mapping[str, object], Dict[ResultKey, Mapping[str, object]]]:
     data = json.loads(path.read_text(encoding="utf-8"))
+    # Historical snapshots may use Windows separators for the same dataset.
+    dataset = data.get("dataset")
+    if isinstance(dataset, dict) and isinstance(dataset.get("source"), str):
+        dataset["source"] = dataset["source"].replace("\\", "/")
     results = {}
     for entry in data.get("results", []):
         key = ResultKey(

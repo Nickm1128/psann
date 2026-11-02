@@ -213,7 +213,7 @@ class EpisodicTrainer:
                 device=estimator._device(),
                 lr=0.0,
                 reward_fn=resolve_reward(strategy.reward),
-                context_extractor=cast(Callable | None, strategy.context_extractor),
+                context_extractor=cast("Callable | None", strategy.context_extractor),
                 input_noise_std=None,
                 stateful=bool(estimator.stateful),
                 state_reset=str(estimator.state_reset),

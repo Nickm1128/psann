@@ -269,6 +269,12 @@ def _reward_fn(primary: torch.Tensor, _context: torch.Tensor) -> torch.Tensor:
     return -penalties
 
 
+def _reward_context(inputs: torch.Tensor) -> torch.Tensor:
+    # The activation-only reward ignores context. Use one feature so canonical
+    # shape validation broadcasts it to either dense or convolutional outputs.
+    return inputs.flatten(start_dim=2).mean(dim=-1, keepdim=True)
+
+
 def _summarise_runs(runs: List[Dict[str, List[float] | float | int]]) -> Dict[str, object]:
     if not runs:
         return {
@@ -395,6 +401,7 @@ def _benchmark_variant(
                 random_state=seed,
             ),
             reward=_reward_fn,
+            context_extractor=_reward_context,
             primary_transform="tanh",
             transition_penalty=transition_penalty,
             warm_start=SupervisedWarmStartConfig(
@@ -429,7 +436,7 @@ def _benchmark_variant(
         resolved_updates_per_epoch = int(
             trainer.profile_.get("updates_per_epoch", strategy.schedule.updates_per_epoch)
         )
-        resolved_episodes_per_epoch = int(sum(episodes))
+        resolved_episodes_per_epoch = resolved_episode_batch_size * resolved_updates_per_epoch
 
         run_stats.append(
             {
@@ -535,8 +542,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--transition-penalty",
         type=float,
-        default=0.02,
-        help="Transition penalty applied during HISSO optimisation.",
+        default=0.0,
+        help="Transition penalty (0 for this activation-only benchmark reward).",
     )
     parser.add_argument(
         "--repeats",

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.compare_hisso_benchmarks import compare_benchmarks
 
 
@@ -84,6 +86,28 @@ def test_compare_benchmarks_flags_large_drift(tmp_path: Path) -> None:
 
     assert failures, "Expected drift detection"
     assert any("final_reward_mean" in msg for msg in failures)
+
+
+@pytest.mark.parametrize("filename,matches", [("prices.csv", True), ("other.csv", False)])
+def test_dataset_paths_are_portable_but_different_sources_are_rejected(tmp_path, filename, matches):
+    baseline, candidate = _base_payload(), _base_payload()
+    baseline["dataset"] = {"name": "portfolio", "source": "benchmarks\\prices.csv"}
+    candidate["dataset"] = {"name": "portfolio", "source": f"benchmarks/{filename}"}
+    paths = [tmp_path / "baseline.json", tmp_path / "candidate.json"]
+    for path, payload in zip(paths, [baseline, candidate]):
+        _write_payload(path, payload)
+    failures = compare_benchmarks(
+        *paths,
+        modes=None,
+        reward_rtol=0,
+        reward_atol=0,
+        wall_rtol=0,
+        wall_atol=0,
+        allow_missing=False,
+    )
+    assert (not failures) == matches
+    if not matches:
+        assert any("Dataset mismatch" in failure for failure in failures)
 
 
 def test_compare_benchmarks_detects_missing_variant(tmp_path: Path) -> None:
