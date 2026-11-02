@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.1.0 — 2026-11-02
 
 - Restore Python 3.9 imports for runtime type aliases and repair the HISSO benchmark's activation-only reward configuration under canonical validation.
 - Add optional, self-contained Hugging Face exports through `psannlm.huggingface.export_huggingface` and `python -m psannlm export-hf`, including bundled inference code, tokenizer state, SafeTensors weights, and provenance. Generation recomputes full context and does not support caching.

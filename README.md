@@ -2,7 +2,7 @@
 
 PSANN is a PyTorch library for regression with trainable sinusoidal activations, composed preprocessing, and episodic optimization. The separate `psannlm` distribution provides language modeling.
 
-Version **2.0.1** is on the authoritative 2.x API track for both packages. New code should use the typed configuration interfaces shown here. Older constructors and flat configuration inputs are migration-only compatibility routes and are not part of the canonical public surface.
+Version **2.1.0** is on the authoritative 2.x API track for both packages. New code should use the typed configuration interfaces shown here. Older constructors and flat configuration inputs are migration-only compatibility routes and are not part of the canonical public surface.
 
 ## Install from this checkout
 
