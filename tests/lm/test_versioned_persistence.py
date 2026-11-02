@@ -20,6 +20,60 @@ TEXTS = ["abc def ghij", "klmn opq rst uvw xyz"]
 TOKENS = torch.tensor([[1, 4, 7, 10, 13, 16, 19], [2, 5, 8, 11, 14, 17, 20]])
 
 
+@pytest.mark.parametrize(
+    "prefix", ["_orig_mod.", "module.", "module._orig_mod.", "_orig_mod.module."]
+)
+@pytest.mark.parametrize("artifact", ["weights", "trainer", "model"])
+def test_legacy_compiled_and_distributed_wrappers_preserve_exact_logits(tmp_path, prefix, artifact):
+    config = LMConfig("wave", d_model=24, n_heads=3, n_layers=2, d_mlp=36, vocab_size=29)
+    native = build_lm_model(config).model.eval()
+    weights = {prefix + key: value for key, value in native.state_dict().items()}
+    if artifact == "weights":
+        payload = weights
+    elif artifact == "trainer":
+        payload = {
+            "model": weights,
+            "optim": {},
+            "state": {"step": 7, "epoch": 1},
+            "cfg": {},
+            "config": to_mapping(config),
+        }
+    else:
+        payload = {
+            "state_dict": weights,
+            "config": {
+                "base": "waveresnet",
+                "d_model": 24,
+                "n_heads": 3,
+                "n_layers": 2,
+                "d_mlp": 36,
+                "vocab_size": 29,
+            },
+        }
+    path = tmp_path / "legacy.pt"
+    torch.save(payload, path)
+    original = path.read_bytes()
+    restored = load_lm_checkpoint(path, legacy_config=config).model.eval()
+    torch.testing.assert_close(restored(TOKENS), native(TOKENS), rtol=0, atol=0)
+    assert path.read_bytes() == original
+
+
+def test_mixed_wrapper_prefixes_reject_and_versioned_weights_stay_strict(tmp_path):
+    config = LMConfig("wave", d_model=24, n_heads=3, n_layers=1, d_mlp=36, vocab_size=29)
+    native = build_lm_model(config).model
+    weights = {"_orig_mod." + key: value for key, value in native.state_dict().items()}
+    mixed = dict(weights, **native.state_dict())
+    path = tmp_path / "mixed.pt"
+    torch.save(mixed, path)
+    with pytest.raises(ValueError, match="mixed wrapper prefixes"):
+        load_lm_checkpoint(path, legacy_config=config)
+    payload = model_payload(native, None)
+    payload["state_dict"] = weights
+    torch.save(payload, path)
+    with pytest.raises(ValueError, match="unknown"):
+        load_lm_checkpoint(path)
+
+
 def assert_state(actual, expected):
     assert actual.keys() == expected.keys()
     for name in expected:

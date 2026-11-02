@@ -96,6 +96,7 @@ dev = [
   "pre-commit>=3.6",
   "coverage[toml]>=7.5",
   "build>=1.2",
+  "tomli>=2; python_version < '3.11'",
 ]
 viz = [
   "matplotlib>=3.7",

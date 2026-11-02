@@ -4,7 +4,8 @@ import torch
 from psannlm.lm import psannLM, psannLMDataPrep
 
 
-def test_save_load_roundtrip_and_seeded_generation(tmp_path):
+def test_save_load_roundtrip_and_seeded_generation(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
     dp = psannLMDataPrep(
         texts, tokenizer="simple", max_length=16, pack_sequences=True, val_split=0.0

@@ -8,6 +8,8 @@ Start with the [regression quickstart](../README.md). Choose a task, then consul
 | Preprocessing and LSM composition | [Preprocessing](preprocessing.md) | [Supervised comparison](../examples/14_psann_with_vs_without_lsm.py) |
 | Episodic training and rewards | [Episodic training](episodic.md) | [Allocation example](../examples/26_hisso_unsupervised_allocation.py) |
 | Language modeling | [LM guide](lm.md) | [LM examples](../examples/lm/README.md) |
+| LM exploration | [Bounded experiments](benchmarks/lm_base_sweeps.md#bounded-exploration) | [Exploration CLI](../scripts/explore_lm.py) |
+| Model distribution | [Hugging Face exports](huggingface.md) | `python -m psannlm export-hf --help` |
 | Architecture selection | [Capability contract](architecture_contract.md) | [Example index](examples/README.md) |
 | Wave context | [Wave guide](wave_resnet.md) | [Context notebook](../notebooks/PSANN_WaveResNet_Context_Demo.ipynb) |
 | Sparse connectivity | [Geometry guide](geo_sparse.md) | [Geometry example](../examples/28_geosparse_regression.py) |

@@ -38,6 +38,7 @@ dependencies = [
 evaluation = ["lm-eval>=0.4"]
 language-filter = ["langdetect>=1.0.9"]
 training-extras = ["transformers>=4.30", "bitsandbytes>=0.41"]
+huggingface = ["torch>=2.4", "transformers>=4.57,<6", "safetensors>=0.4.5"]
 
 [project.urls]
 Homepage = "https://github.com/Nickm1128/psann"
@@ -46,11 +47,11 @@ Issues = "https://github.com/Nickm1128/psann/issues"
 Documentation = "https://github.com/Nickm1128/psann/tree/main/docs"
 
 [tool.hatch.build.targets.wheel]
-only-include = ["__init__.py", "__main__.py", "cli.py", "train.py", "sft.py", "eval_adapter.py", "data_loader.py", "data_stream.py", "persistence.py", "configuration.py", "lm", "_train", "architectures"]
+only-include = ["__init__.py", "__main__.py", "cli.py", "train.py", "sft.py", "eval_adapter.py", "data_loader.py", "data_stream.py", "persistence.py", "configuration.py", "lm", "_train", "architectures", "huggingface", "LICENSE"]
 sources = {"" = "psannlm"}
 
 [tool.hatch.build.targets.sdist]
-only-include = ["__init__.py", "__main__.py", "cli.py", "train.py", "sft.py", "eval_adapter.py", "data_loader.py", "data_stream.py", "persistence.py", "configuration.py", "lm", "_train", "architectures", "pyproject.toml", "README.md", "LICENSE"]
+only-include = ["__init__.py", "__main__.py", "cli.py", "train.py", "sft.py", "eval_adapter.py", "data_loader.py", "data_stream.py", "persistence.py", "configuration.py", "lm", "_train", "architectures", "huggingface", "pyproject.toml", "README.md", "LICENSE"]
 
 [tool.hatch.build]
 exclude = [

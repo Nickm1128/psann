@@ -1,5 +1,7 @@
 # HISSO Benchmark Data
 
+The [PSANN-LM exploration snapshot](lm_exploration_20261102/README.md) records the separate 2026-11-02 language-model study and selected training recipe.
+
 The HISSO examples and docs rely on a compact daily price slice to avoid heavy
 dataset downloads at runtime.
 

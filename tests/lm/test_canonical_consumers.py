@@ -690,9 +690,10 @@ def test_yaml_legacy_inactive_training_fields_preserve_updates_and_canonical_nei
         torch.manual_seed(137)
         with pytest.warns(DeprecationWarning) as warnings:
             model = run_yaml(path)
-        assert len(warnings) == 1 and warnings[0].filename == __file__
+        contract_warnings = [warning for warning in warnings if warning.filename == __file__]
+        assert len(contract_warnings) == 1
         if extra:
-            assert "train." + field in str(warnings[0].message)
+            assert "train." + field in str(contract_warnings[0].message)
         results.append(model)
     assert results[0]._trainer.cfg == results[1]._trainer.cfg
     for key, state in results[0]._model.state_dict().items():

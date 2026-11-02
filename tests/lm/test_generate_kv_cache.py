@@ -1,7 +1,8 @@
 from psannlm.lm import psannLM, psannLMDataPrep
 
 
-def test_generate_batch_kv_cache_cpu():
+def test_generate_batch_kv_cache_cpu(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     # Tiny char-level model; CPU
     texts = ["hello world", "goodnight moon", "abc def ghi", "lorem ipsum"]
     dp = psannLMDataPrep(

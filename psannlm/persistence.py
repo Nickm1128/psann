@@ -69,6 +69,24 @@ def _state(value: object, path: str) -> Mapping[str, torch.Tensor]:
     return value
 
 
+def _legacy_state(value: object, path: str) -> Mapping[str, torch.Tensor]:
+    """Remove uniform DDP/compile wrapper prefixes from unversioned weights.
+
+    Native schema-v1 state dictionaries remain strict. Partial/mixed wrapper
+    prefixes are ambiguous and must not overwrite an unprefixed tensor name.
+    """
+    state = _state(value, path)
+    prefixes = ("module.", "_orig_mod.")
+    while True:
+        prefix = next((p for p in prefixes if all(key.startswith(p) for key in state)), None)
+        if prefix is None:
+            break
+        state = {key[len(prefix) :]: tensor for key, tensor in state.items()}
+    if any(key.startswith(prefixes) for key in state):
+        raise ValueError(f"{path} contains mixed wrapper prefixes.")
+    return state
+
+
 def load_model_state(
     model: nn.Module, state: Mapping[str, torch.Tensor], *, path: str = "checkpoint.state_dict"
 ) -> None:
@@ -180,7 +198,7 @@ def checkpoint_metadata(
             raise TypeError("checkpoint.config.overrides must be a mapping.")
         raw.update(overrides)
         # Historical high-level save could omit the resolved vocabulary.
-        state = _state(payload["state_dict"], "checkpoint.state_dict")
+        state = _legacy_state(payload["state_dict"], "checkpoint.state_dict")
         if raw.get("vocab_size") is None:
             if "embed.weight" not in state:
                 raise ValueError("checkpoint.state_dict.embed.weight is required.")
@@ -196,9 +214,7 @@ def checkpoint_metadata(
         if payload.get("config", legacy_config) is None:
             raise ValueError("checkpoint.config is required for legacy trainer reconstruction.")
         config = normalize_lm_config(payload.get("config", legacy_config), for_build=True)
-        state = _state(payload["model"], "checkpoint.model")
-        if state and all(key.startswith("module.") for key in state):
-            state = {key.removeprefix("module."): item for key, item in state.items()}
+        state = _legacy_state(payload["model"], "checkpoint.model")
         return config, state, "psannlm.trainer"
     if payload and all(
         isinstance(k, str) and isinstance(v, torch.Tensor) for k, v in payload.items()
@@ -207,7 +223,7 @@ def checkpoint_metadata(
             raise ValueError("checkpoint.config is required for legacy raw weights.")
         return (
             normalize_lm_config(legacy_config, for_build=True),
-            _state(payload, "checkpoint.weights"),
+            _legacy_state(payload, "checkpoint.weights"),
             "psannlm.weights",
         )
     raise ValueError(

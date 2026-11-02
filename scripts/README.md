@@ -6,6 +6,7 @@ Install core with `python -m pip install -e .`; add language modeling with `pyth
 
 - `python -m psannlm` owns LM train/resume/eval/generate/sft. [LM guide](../docs/lm.md) describes canonical configuration.
 - `bench_lm_bases.py` compares named canonical model mappings; see [sweep semantics](../docs/benchmarks/lm_base_sweeps.md).
+- [explore_lm.py](explore_lm.py) prepares reproducible token caches, probes PSANN activations and gradients, and runs bounded training sweeps; see the [exploration workflow](../docs/benchmarks/lm_base_sweeps.md#bounded-exploration).
 - `benchmark_hisso_variants.py` compares dense/convolutional episodic schedules and records measured reward and throughput.
 - `benchmark_regressor_ablations.py`, `run_geosparse_vs_relu_benchmarks.py`, and `benchmark_geo_sparse_vs_dense.py` build core architecture policies for source-checkout experiments.
 - `train_psannlm_chat.py` runs explicit pretraining/SFT stages; `gen_psannlm_chat.py` generates from their artifacts. Their dataset and tokenizer dependencies are optional source-tool prerequisites.

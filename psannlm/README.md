@@ -13,3 +13,8 @@ python -m psannlm generate --help
 ```
 
 The [LM guide](https://github.com/Nickm1128/psann/blob/main/docs/lm.md) covers a complete small training example, YAML, tokenizer identity, and schema-v1 model/trainer checkpoints. The repository [migration guide](https://github.com/Nickm1128/psann/blob/main/docs/migration.md) documents compatibility routes for older applications and artifacts. Core-only installations do not contain this package; LM artifacts contain no core package files.
+
+For self-contained Hugging Face models, install `psannlm[huggingface]` and run
+`python -m psannlm export-hf --ckpt model.pt --output-dir exports/my-model --max-length 2048`.
+The [export guide](https://github.com/Nickm1128/psann/blob/main/docs/huggingface.md)
+covers standard Transformers loading, tokenizer preservation, and uploading.

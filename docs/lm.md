@@ -59,3 +59,7 @@ Supervised fine-tuning uses `python -m psannlm sft` with a saved checkpoint and 
 Model and trainer artifacts use schema version 1. Trainer checkpoints include optimizer, step, scaler/scheduler, and resume state where applicable; a model export is intended for inference. `map_location="cpu"` reconstructs CUDA artifacts on CPU, and CUDA map location requires a working CUDA runtime. State/configuration and greedy generation are preserved through repeated new-format saves. See [migration](migration.md) for historical artifacts and explicit configuration requirements for raw weights.
 
 Use [executable quickstarts](../examples/quickstarts.py) for small local workflows, [LM examples](../examples/lm/README.md) for training examples, and [benchmarks](benchmarks/lm_base_sweeps.md) for reproducible experiments. A single GPU cannot establish physical multi-GPU behavior; distributed examples require the hardware they declare.
+
+For standard Transformers model distribution, see [Hugging Face exports](huggingface.md).
+The optional adapter exports SafeTensors and a self-contained inference runtime;
+generation uses full-context recomputation without KV caching.

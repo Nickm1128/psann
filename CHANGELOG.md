@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Add optional, self-contained Hugging Face exports through `psannlm.huggingface.export_huggingface` and `python -m psannlm export-hf`, including bundled inference code, tokenizer state, SafeTensors weights, and provenance. Generation recomputes full context and does not support caching.
+- Add source-checkout LM exploration tools for token caching with document holdouts, activation and gradient probes, causality checks, bounded configuration sweeps, and seed-aware comparison reports.
+- Add an optional native trainer step observer and support uniformly wrapped legacy DDP/compiled checkpoint keys while retaining strict versioned checkpoint loading.
+- Test exports against Transformers 4.57 and 5.x, and make legacy numerical fixtures and API warning assertions portable across CPU and dependency versions.
+
 ## 2.0.1 — 2026-09-05
 
 This patch release replaces repository-relative links in the PyPI package description with absolute GitHub links. The 2.x typed configuration API remains authoritative, and there are no runtime behavior changes.

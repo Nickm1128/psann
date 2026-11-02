@@ -1,0 +1,21 @@
+{
+  "schema": "psannlm.research-snapshot.v1",
+  "date": "2026-11-02",
+  "base_commit": "582aa22a056ed562262c4134ae27c98b36d5cc2c",
+  "note": "Frozen artifacts from a run launched before the feature commit. source_manifest_20261102.json identifies its runtime; paths inside archived artifacts refer to the original local workspace. Dataset/token caches, document exclusion lists, logs, weights, and environments remain local.",
+  "files": {
+    "compile_benchmark.json": "59f0397d35cba55c06258ab2c4f37783a526d894822499931914f3611a38c29f",
+    "confirmation_base.yaml": "95314b0983a988ec346155c902d1db9700a79acba0198dcc28c7acff29f12961",
+    "confirmation_transformer.yaml": "b72bba2635a7cb22729938822875190b0f3584b6cbb4090f037a7da846bc917e",
+    "confirmation_wave_spread.yaml": "4d129458000d324205b7650f5826fc18266b01a83ed6fd46187d03fb334afdab",
+    "confirmation_wave_tuned.yaml": "48c6c1eae3d3040698df07caba35296fad5fdf4377e742d02d1e41f77ff89c36",
+    "cuda_environment.json": "35d2c3e22d6f59f5ee0dd870fc702a8094990c7eb7da9435d6573f1deab22603",
+    "fineweb_cuda_scout_v2.yaml": "87f9a801fddccd5411d464aa42d2633465f87e2f41af17585b069506142d7858",
+    "fullsize_confirmed_shortlist.json": "4fc5ed75e2dd8b26196a50d9142f4c29c660c8c8ae9aa58ab67c519ce99133c0",
+    "fullsize_pilots.yaml": "01571a733d233ff1e6f637ee26484185a8d78f47624dbff6491830397ab0dbba",
+    "replacement_training_recipe.json": "0458debde46341ed5c810fad46f3d8dc16d6fefce57375773c2701b9147e12ed",
+    "selected_training_driver_validation.json": "4df60022017affacf5ab3b1336d9fdff9e2beb0d0a1913ba3a7043066f25d8a1",
+    "source_manifest_20261102.json": "8cc66ff2d800fea0b20137428c56a1ed2cd5db718c2fe01572543797f3809b48",
+    "train_selected.py": "a46de0da1786a57119143d4918188c358834da00816a0dabb75471d9c582a0c2"
+  }
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "name": "wave_tuned_wider",
+    "seeds": [
+      1337,
+      2027,
+      3407
+    ],
+    "val_loss_mean": 6.640079319477081,
+    "val_loss_std": 0.005313760545967885,
+    "source_trial": "reports/exploration/fullsize_pilots/sweep001_wave_tuned_wider_seed1337/trial.json",
+    "parameters": 304518920
+  },
+  {
+    "name": "wave_tuned_reference",
+    "seeds": [
+      1337,
+      2027,
+      3407
+    ],
+    "val_loss_mean": 6.747058808803558,
+    "val_loss_std": 0.04196884012890494,
+    "source_trial": "reports/exploration/fullsize_pilots/sweep001_wave_tuned_reference_seed1337/trial.json",
+    "parameters": 304565264
+  }
+]

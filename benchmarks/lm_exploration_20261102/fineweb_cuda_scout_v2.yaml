@@ -1,0 +1,236 @@
+bench:
+  seeds:
+  - 1337
+models:
+  transformer:
+    kind: lm
+    architecture:
+      kind: transformer
+      activation:
+        kind: gelu
+        amplitude_init: 1.0
+        frequency_init: 1.0
+        decay_init: 0.1
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        bounds: null
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        activation_types: null
+        activation_ratios: null
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        mix_seed: null
+        feature_dim: -1
+      activation_initialization: null
+      residual: null
+      spectral: null
+      temporal: null
+      geometry: null
+      geometry_execution: null
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    vocab_size: null
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: sdpa
+  wave_default:
+    kind: lm
+    architecture:
+      kind: wave
+      activation:
+        kind: psann
+        amplitude_init: 1.0
+        frequency_init: 1.0
+        decay_init: 0.01
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        bounds: null
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        activation_types: null
+        activation_ratios: null
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        mix_seed: null
+        feature_dim: -1
+      activation_initialization: null
+      residual:
+        norm: rms
+        alpha_init: 1.0
+        drop_path: 0.0
+        first_w0: 12.0
+        hidden_w0: 1.0
+      spectral: null
+      temporal:
+        mode: disabled
+        kernel_size: 3
+        dilation_growth: 1
+        dropout: 0.0
+      geometry: null
+      geometry_execution: null
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    vocab_size: null
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: sdpa
+  wave_tuned:
+    kind: lm
+    architecture:
+      kind: wave
+      activation:
+        kind: psann
+        amplitude_init: 1.0
+        frequency_init: 2.25
+        decay_init: 0.001
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        bounds: null
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        activation_types: null
+        activation_ratios: null
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        mix_seed: null
+        feature_dim: -1
+      activation_initialization: null
+      residual:
+        norm: rms
+        alpha_init: 1.0
+        drop_path: 0.0
+        first_w0: 12.0
+        hidden_w0: 1.0
+      spectral: null
+      temporal:
+        mode: disabled
+        kernel_size: 3
+        dilation_growth: 1
+        dropout: 0.0
+      geometry: null
+      geometry_execution: null
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    vocab_size: null
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: sdpa
+  wave_spread:
+    kind: lm
+    architecture:
+      kind: wave
+      activation:
+        kind: psann
+        amplitude_init: 1.0
+        frequency_init: 2.25
+        decay_init: 0.001
+        learnable:
+        - amplitude
+        - frequency
+        - decay
+        decay_mode: abs
+        bounds: null
+        slope_init: 1.0
+        slope_trainable: true
+        clip_max: 1.0
+        activation_types: null
+        activation_ratios: null
+        phase_init: 0.0
+        phase_trainable: true
+        ratio_sum_tol: 0.001
+        mix_layout: random
+        mix_seed: null
+        feature_dim: -1
+      activation_initialization:
+        amplitude_std: 0.0
+        frequency_std: 0.25
+        decay_std: 0.0
+        amplitude_range: null
+        frequency_range: null
+        decay_range: null
+      residual:
+        norm: rms
+        alpha_init: 1.0
+        drop_path: 0.0
+        first_w0: 12.0
+        hidden_w0: 1.0
+      spectral: null
+      temporal:
+        mode: disabled
+        kernel_size: 3
+        dilation_growth: 1
+        dropout: 0.0
+      geometry: null
+      geometry_execution: null
+    d_model: 256
+    n_layers: 4
+    n_heads: 4
+    d_mlp: 1024
+    vocab_size: null
+    dropout: 0.0
+    positional_encoding: rope
+    attention_implementation: sdpa
+train:
+  max_steps: 256
+  warmup_steps: 16
+  lr: 0.0008
+  batch_tokens: 2048
+  grad_accum_steps: 1
+  amp: bf16
+  weight_decay: 0.01
+exploration:
+  eval_interval: 32
+  eval_tokens: 32768
+  max_seconds: 7200
+  target_parameters: 304565264
+  target_dimensions:
+    d_model: 1024
+    n_layers: 16
+    n_heads: 16
+    d_mlp: 4096
+  purpose: Proxy search on a newly hash-partitioned local FineWeb-Edu sample; larger-scale
+    confirmation required.
+data:
+  sequence_length: 256
+  validation_fraction: 0.05
+  split_seed: 731
+  max_documents: 10000
+  train_tokens: 2097152
+  validation_tokens: 131072
+  files:
+  - eval_data/fineweb_edu_sample10BT_eval.jsonl
+tokenizer:
+  backend: tokenizers
+  model_path: runs/tokenizer_300m_fineweb_edu_sample10BT/tokenizer.json
+  special_tokens_map_path: runs/tokenizer_300m_fineweb_edu_sample10BT/special_tokens_map.json
+  hf_passthrough_ids: true
+sweep:
+  train.lr:
+  - 0.0002
+  - 0.0008
+  - 0.0012

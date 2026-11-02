@@ -10,6 +10,7 @@ Use explicit imports in applications. The canonical wildcard surfaces exclude de
 | `psann.episodic` | `EpisodicTrainer`, `HISSOConfig`, `EpisodeScheduleConfig`, `SupervisedWarmStartConfig` |
 | `psannlm` | `PSANNLM`, `PSANNLMDataPrep`, `LMConfig`, `LMArchitectureConfig`, `TrainConfig`, `DataConfig`, `LMTrainer` |
 | `psannlm.architectures` | `LMActivationInitializationConfig`, `LMTemporalConfig`, `LMGeometryExecutionConfig`, `build_lm_model`, `replace_lm_builder`, `available_lm_architectures` |
+| `psannlm.huggingface` | `export_huggingface` |
 
 The regression estimator is also exported by `psann.estimators` and `psann.sklearn`. Import all nested architecture policies from `psann.architectures` so their immutable policy semantics are explicit.
 

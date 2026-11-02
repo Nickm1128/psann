@@ -1,7 +1,8 @@
 from psannlm.lm import psannLM, psannLMDataPrep
 
 
-def test_public_api_fit_generate_and_checkpoint_roundtrip(tmp_path):
+def test_public_api_fit_generate_and_checkpoint_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     texts = ["hello world", "goodnight moon"]
     dp = psannLMDataPrep(
         texts, tokenizer="simple", max_length=8, pack_sequences=True, val_split=0.0

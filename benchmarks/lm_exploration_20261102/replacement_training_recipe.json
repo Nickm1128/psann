@@ -1,0 +1,137 @@
+{
+  "schema": "psannlm.selected-training.v1",
+  "selection": {
+    "name": "wave_tuned_wider",
+    "seeds": [
+      1337,
+      2027,
+      3407
+    ],
+    "val_loss_mean": 6.640079319477081,
+    "val_loss_std": 0.005313760545967885,
+    "source_trial": "reports/exploration/fullsize_pilots/sweep001_wave_tuned_wider_seed1337/trial.json",
+    "parameters": 304518920
+  },
+  "selection_scope": "Best mean validation loss among the short full-size candidates tested; not an established optimum or proof of release quality.",
+  "model": {
+    "kind": "lm",
+    "architecture": {
+      "kind": "wave",
+      "activation": {
+        "kind": "psann",
+        "amplitude_init": 1.0,
+        "frequency_init": 2.25,
+        "decay_init": 0.001,
+        "learnable": [
+          "amplitude",
+          "frequency",
+          "decay"
+        ],
+        "decay_mode": "abs",
+        "bounds": null,
+        "slope_init": 1.0,
+        "slope_trainable": true,
+        "clip_max": 1.0,
+        "activation_types": null,
+        "activation_ratios": null,
+        "phase_init": 0.0,
+        "phase_trainable": true,
+        "ratio_sum_tol": 0.001,
+        "mix_layout": "random",
+        "mix_seed": null,
+        "feature_dim": -1
+      },
+      "activation_initialization": null,
+      "residual": {
+        "norm": "rms",
+        "alpha_init": 1.0,
+        "drop_path": 0.0,
+        "first_w0": 12.0,
+        "hidden_w0": 1.0
+      },
+      "spectral": null,
+      "temporal": {
+        "mode": "disabled",
+        "kernel_size": 3,
+        "dilation_growth": 1,
+        "dropout": 0.0
+      },
+      "geometry": null,
+      "geometry_execution": null
+    },
+    "d_model": 1280,
+    "n_layers": 8,
+    "n_heads": 20,
+    "d_mlp": 6016,
+    "vocab_size": 50257,
+    "dropout": 0.0,
+    "positional_encoding": "rope",
+    "attention_implementation": "sdpa"
+  },
+  "parameters": 304518920,
+  "seed": 1337,
+  "sequence_length": 2048,
+  "token_cache": "reports/exploration/confirmation_tokens_2048.pt",
+  "tokenizer_sha256": "3ddfca11342caabc49722ca39796b6065020bc90594f29c1bf71155cbab76598",
+  "document_boundary_policy": "BOS and EOS around each document; generation prompts must not append EOS.",
+  "data": {
+    "kind": "local-parquet",
+    "dataset": "HuggingFaceFW/fineweb-edu",
+    "revision": "87f09149ef4734204d70ed1d046ddc9ca3f2b8f9",
+    "files": [
+      "sample/10BT/000_00000.parquet",
+      "sample/10BT/001_00000.parquet",
+      "sample/10BT/002_00000.parquet",
+      "sample/10BT/003_00000.parquet",
+      "sample/10BT/004_00000.parquet",
+      "sample/10BT/005_00000.parquet",
+      "sample/10BT/006_00000.parquet",
+      "sample/10BT/007_00000.parquet",
+      "sample/10BT/008_00000.parquet",
+      "sample/10BT/009_00000.parquet",
+      "sample/10BT/010_00000.parquet",
+      "sample/10BT/011_00000.parquet",
+      "sample/10BT/012_00000.parquet",
+      "sample/10BT/013_00000.parquet"
+    ],
+    "bootstrap_shard": "sample/10BT/013_00000.parquet",
+    "order": "Start with the already cached bootstrap shard; shuffle remaining shard order and a bounded document buffer using Python Random(seed).",
+    "shuffle_buffer": 10000,
+    "excluded_hashes": "reports/exploration/replacement_excluded_hashes.json",
+    "excluded_hashes_sha256": "aa372bb4f66fc2a4b5b0bdad45727f79fe00df049ee119ae8ba2b474b05a60e2",
+    "excluded_documents": 61999,
+    "note": "Shards are downloaded to the pinned local Hub cache before direct Arrow reading. Every scout, confirmation, and reserved final-test document hash is excluded from production training."
+  },
+  "train": {
+    "epochs": 1,
+    "steps_per_epoch": 45776,
+    "batch_tokens": 16384,
+    "grad_accum_steps": 8,
+    "lr": 0.0006,
+    "warmup_steps": 500,
+    "weight_decay": 0.01,
+    "amp": "bf16",
+    "optimizer": "adamw",
+    "grad_clip": 1.0,
+    "grad_checkpoint": false,
+    "ddp": "off",
+    "fsdp": "off",
+    "dataloader_num_workers": 0,
+    "torch_compile": true,
+    "torch_compile_mode": "default",
+    "log_interval_steps": 25,
+    "save_interval_steps": 100
+  },
+  "validation_interval": 100,
+  "validation_tokens": 65536,
+  "planned_tokens": 5999951872,
+  "runtime_environment": {
+    "TRITON_PTXAS_PATH": "/usr/local/cuda/bin/ptxas",
+    "TORCHINDUCTOR_EMULATE_PRECISION_CASTS": "1",
+    "TORCHINDUCTOR_COMPILE_THREADS": "4",
+    "CPATH": "/home/nickm1128/psann/.venv_explore_cuda/python-dev/usr/include/python3.12:/home/nickm1128/psann/.venv_explore_cuda/python-dev/usr/include",
+    "python_headers": "libpython3.12-dev_3.12.3-1ubuntu0.17_arm64.deb extracted inside .venv_explore_cuda",
+    "note": "System CUDA 13 assembler overrides bundled Triton CUDA 12.8 assembler; precision emulation preserves eager BF16 rounding."
+  },
+  "status": "Finalized recipe for bounded training; execution status is recorded separately in training_job.json and the run completion.json."
+}

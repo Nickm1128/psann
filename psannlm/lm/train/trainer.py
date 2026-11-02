@@ -23,7 +23,7 @@ from collections import deque
 from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Dict, Mapping, Optional, cast
+from typing import Any, Callable, Dict, Mapping, Optional, cast
 
 import torch
 from torch import nn
@@ -221,6 +221,7 @@ class LMTrainer:
         resume_checkpoint: Optional[str] = None,
         teacher_model: Optional[nn.Module] = None,
         device: str | torch.device | None = None,
+        on_step: Optional[Callable[[Mapping[str, int | float]], None]] = None,
     ) -> None:
         import math as _math
 
@@ -656,6 +657,7 @@ class LMTrainer:
         micro_hard_loss_sum = 0.0
         micro_kd_loss_sum = 0.0
         micro_loss_count = 0
+        micro_tokens = 0
         for epoch in range(start_epoch, self.cfg.epochs):
             self.state.epoch = epoch + 1
             steps_this_epoch = 0
@@ -719,6 +721,7 @@ class LMTrainer:
                             if kd_loss is not None:
                                 micro_kd_loss_sum += float(kd_loss.detach().float().item())
                             micro_loss_count += 1
+                            micro_tokens += int(input_ids.numel())
                         except Exception:
                             pass
                         break
@@ -764,6 +767,7 @@ class LMTrainer:
                             micro_hard_loss_sum = 0.0
                             micro_kd_loss_sum = 0.0
                             micro_loss_count = 0
+                            micro_tokens = 0
                             continue
 
                         raise
@@ -824,6 +828,7 @@ class LMTrainer:
                                 pass
 
                     # Optional grad clipping
+                    step_lr = float(optim.param_groups[0]["lr"])
                     if self.cfg.grad_clip > 0:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), self.cfg.grad_clip)
                     if scaler.is_enabled():
@@ -832,6 +837,16 @@ class LMTrainer:
                     else:
                         optim.step()
                     scheduler.step()
+                    if on_step is not None and is_main:
+                        on_step(
+                            {
+                                "step": global_step + 1,
+                                "loss": step_loss,
+                                "learning_rate": step_lr,
+                                "tokens": micro_tokens,
+                            }
+                        )
+                    micro_tokens = 0
                     optim.zero_grad(set_to_none=True)
                     micro = 0
                     global_step += 1

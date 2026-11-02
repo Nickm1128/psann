@@ -342,7 +342,10 @@ def test_flat_fit_repeated_calls_preserve_legacy_training_policy_and_exact_updat
                     ddp="off",
                     steps_per_epoch=1,
                 )
-            assert len(warnings) == 1 and "steps_per_epoch" in str(warnings[0].message)
+            contract_warnings = [warning for warning in warnings if warning.filename == __file__]
+            assert len(contract_warnings) == 1 and "steps_per_epoch" in str(
+                contract_warnings[0].message
+            )
             with pytest.warns(DeprecationWarning):
                 lm.fit(data, epochs=4, batch_tokens=700, lr=0.9, grad_checkpoint=True)
         else:
@@ -421,7 +424,8 @@ def test_canonical_fit_duplicates_validate_types_before_construction_and_matchin
         if matching:
             with pytest.warns(DeprecationWarning) as warnings:
                 model.fit(data, train=train, epochs=1, lr=0.003, grad_checkpoint=False)
-            assert len(warnings) == 1 and warnings[0].filename == __file__
+            contract_warnings = [warning for warning in warnings if warning.filename == __file__]
+            assert len(contract_warnings) == 1
         else:
             model.fit(data, train=train)
         assert model._trainer.cfg is train and not torch.equal(before, model._model.lm_head.weight)

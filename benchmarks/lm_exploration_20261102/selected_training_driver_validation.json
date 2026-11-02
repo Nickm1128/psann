@@ -1,0 +1,8 @@
+{
+  "device": "cpu",
+  "complete_training": true,
+  "graceful_SIGTERM_checkpoint": true,
+  "resume_identical_to_uninterrupted_weights": true,
+  "periodic_checkpoint_retention": 3,
+  "native_model_includes_tokenizer": true
+}

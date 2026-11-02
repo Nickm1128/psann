@@ -16,7 +16,8 @@ def _load_texts() -> list[str]:
     ]
 
 
-def test_minimal_end_to_end_flow(tmp_path) -> None:
+def test_minimal_end_to_end_flow(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
     texts = _load_texts() * 16  # keep runtime tiny but ensure enough tokens
     data = psannLMDataPrep(
         texts,

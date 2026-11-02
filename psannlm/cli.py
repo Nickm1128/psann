@@ -272,6 +272,22 @@ def build_parser() -> argparse.ArgumentParser:
     sft_p = sub.add_parser("sft", help="Fine-tune a checkpoint on prompt/response pairs")
     sft_p.add_argument("args", nargs=argparse.REMAINDER)
 
+    export_p = sub.add_parser("export-hf", help="Export a self-contained Hugging Face model")
+    export_p.add_argument("--ckpt", required=True)
+    export_p.add_argument("--output-dir", required=True)
+    export_p.add_argument("--max-length", type=int, required=True)
+    export_p.add_argument("--max-shard-size", default="5GB")
+    export_p.add_argument(
+        "--model-config", help="Original canonical YAML config for legacy weights"
+    )
+    export_p.add_argument("--tokenizer-backend", choices=["simple", "sentencepiece", "tokenizers"])
+    export_p.add_argument("--tokenizer-model-path")
+    export_p.add_argument("--tokenizer-special-map-path")
+    export_p.add_argument(
+        "--tokenizer-state", help="Fitted state from an earlier Hugging Face export"
+    )
+    export_p.add_argument("--tokenizer-remap-ids", action="store_true")
+
     eval_p = sub.add_parser("eval", help="Evaluate perplexity on a dataset")
     eval_p.add_argument("--ckpt", required=True)
     eval_p.add_argument(
@@ -357,6 +373,62 @@ def main(argv: Optional[Iterable[str]] = None, *, _legacy_entry: bool = False) -
 
         return int(run_streaming(flags) or 0)
     args = build_parser().parse_args(tokens)
+
+    if args.command == "export-hf":
+        from .huggingface import export_huggingface
+
+        tokenizer = None
+        asset_flags = (
+            args.tokenizer_backend,
+            args.tokenizer_model_path,
+            args.tokenizer_special_map_path,
+            args.tokenizer_remap_ids,
+        )
+        if args.tokenizer_state:
+            if any(asset_flags):
+                raise ValueError(
+                    "--tokenizer-state cannot be combined with tokenizer asset options."
+                )
+            from .huggingface.export import _require_dependencies
+
+            _require_dependencies()
+            from .huggingface.tokenization_psann import PSANNTokenizer
+
+            tokenizer = PSANNTokenizer(state_file=args.tokenizer_state).native
+        elif any(asset_flags):
+            if (
+                args.tokenizer_backend not in {"sentencepiece", "tokenizers"}
+                or not args.tokenizer_model_path
+            ):
+                raise ValueError(
+                    "Explicit tokenizer assets require --tokenizer-backend and --tokenizer-model-path; use --tokenizer-state for a simple tokenizer."
+                )
+            tokenizer = Tokenizer(
+                TokenizerConfig(
+                    backend=args.tokenizer_backend,
+                    model_path=args.tokenizer_model_path,
+                    special_tokens_map_path=args.tokenizer_special_map_path,
+                    hf_passthrough_ids=not args.tokenizer_remap_ids,
+                )
+            )
+            tokenizer.fit([])  # Load the supplied fitted model; never train a tokenizer.
+        legacy = None
+        if args.model_config:
+            import yaml
+
+            legacy = normalize_lm_config(
+                yaml.safe_load(Path(args.model_config).read_text(encoding="utf-8")), for_build=True
+            )
+        result = export_huggingface(
+            args.ckpt,
+            args.output_dir,
+            model_max_length=args.max_length,
+            tokenizer=tokenizer,
+            legacy_config=legacy,
+            max_shard_size=args.max_shard_size,
+        )
+        print(f"[export-hf] Saved {result}")
+        return 0
 
     if args.command == "eval":
         device = torch.device(

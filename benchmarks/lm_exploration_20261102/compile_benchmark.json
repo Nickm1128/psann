@@ -1,0 +1,50 @@
+{
+  "eager": {
+    "status": "ok",
+    "warmup_s": 5.275052646999939,
+    "steady_steps": 8,
+    "steady_s": 17.09918717599976,
+    "tokens_per_step": 16384,
+    "steady_tokens_per_s": 7665.39360326854,
+    "peak_cuda_allocated_bytes": 37330309632,
+    "losses": [
+      6.625707626342773,
+      6.6098833084106445,
+      6.595542907714844,
+      6.581552505493164,
+      6.568287372589111,
+      6.554659843444824,
+      6.5413713455200195,
+      6.527904987335205,
+      6.514988899230957,
+      6.501908302307129
+    ]
+  },
+  "compiled": {
+    "status": "ok",
+    "warmup_s": 16.057118284000353,
+    "steady_steps": 8,
+    "steady_s": 7.973812312000518,
+    "tokens_per_step": 16384,
+    "steady_tokens_per_s": 16437.80852513142,
+    "peak_cuda_allocated_bytes": 20996235776,
+    "losses": [
+      6.620118618011475,
+      6.604289531707764,
+      6.591032028198242,
+      6.577879905700684,
+      6.564634323120117,
+      6.551479339599609,
+      6.538604259490967,
+      6.52556848526001,
+      6.512654781341553,
+      6.499987602233887
+    ]
+  },
+  "loss_sequences_close": true,
+  "steady_speedup": 2.1444180659062706,
+  "checkpoint": "reports/exploration/fullsize_pilots/sweep001_wave_tuned_wider_seed1337/model.pt",
+  "cache": "reports/exploration/confirmation_tokens_2048.pt",
+  "torch": "2.9.1+cu130",
+  "batch_tokens_requested": 16384
+}

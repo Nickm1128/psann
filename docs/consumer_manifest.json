@@ -18,6 +18,10 @@
       "classification": "canonical"
     },
     {
+      "path": "benchmarks/lm_exploration_20261102/README.md",
+      "classification": "canonical"
+    },
+    {
       "path": "benchmarks/psann_results_assessment.md",
       "classification": "historical result"
     },
@@ -103,6 +107,10 @@
     },
     {
       "path": "docs/how_to_add_model_benchmark_dataset.md",
+      "classification": "canonical"
+    },
+    {
+      "path": "docs/huggingface.md",
       "classification": "canonical"
     },
     {
@@ -471,6 +479,36 @@
       "path": "examples/lm/configs/waveresnet_small.yaml",
       "runner": "lm-task",
       "classification": "canonical"
+    },
+    {
+      "path": "benchmarks/lm_exploration_20261102/confirmation_base.yaml",
+      "classification": "canonical",
+      "runner": "lm-benchmark"
+    },
+    {
+      "path": "benchmarks/lm_exploration_20261102/confirmation_transformer.yaml",
+      "classification": "canonical",
+      "runner": "lm-benchmark"
+    },
+    {
+      "path": "benchmarks/lm_exploration_20261102/confirmation_wave_spread.yaml",
+      "classification": "canonical",
+      "runner": "lm-benchmark"
+    },
+    {
+      "path": "benchmarks/lm_exploration_20261102/confirmation_wave_tuned.yaml",
+      "classification": "canonical",
+      "runner": "lm-benchmark"
+    },
+    {
+      "path": "benchmarks/lm_exploration_20261102/fineweb_cuda_scout_v2.yaml",
+      "classification": "canonical",
+      "runner": "lm-benchmark"
+    },
+    {
+      "path": "benchmarks/lm_exploration_20261102/fullsize_pilots.yaml",
+      "classification": "canonical",
+      "runner": "lm-benchmark"
     }
   ],
   "cli": [
@@ -527,6 +565,11 @@
     {
       "path": "scripts/bench_lm_bases.py",
       "module": "scripts.bench_lm_bases",
+      "classification": "canonical"
+    },
+    {
+      "path": "scripts/explore_lm.py",
+      "module": "scripts.explore_lm",
       "classification": "canonical"
     },
     {

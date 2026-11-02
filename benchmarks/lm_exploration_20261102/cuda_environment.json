@@ -1,0 +1,31 @@
+{
+  "python": "3.12.3",
+  "platform": "Linux-7.0.0-1024-nvidia-aarch64-with-glibc2.39",
+  "torch": "2.9.1+cu130",
+  "cuda": "13.0",
+  "gpu": "NVIDIA GB10",
+  "capability": [
+    12,
+    1
+  ],
+  "bf16_supported": true,
+  "memory_bytes": 130593771520,
+  "dependencies": {
+    "numpy": "2.3.5",
+    "datasets": "4.4.2",
+    "tokenizers": "0.22.1",
+    "psann": "2.0.1",
+    "psannlm": "2.0.1",
+    "fsspec": "2025.9.0"
+  },
+  "official_install_source": "https://pytorch.org/get-started/previous-versions/",
+  "install_command": ".venv_explore_cuda/bin/python -m pip install torch==2.9.1+cu130 --index-url https://download.pytorch.org/whl/cu130",
+  "compile_environment": {
+    "TRITON_PTXAS_PATH": "/usr/local/cuda/bin/ptxas",
+    "TORCHINDUCTOR_EMULATE_PRECISION_CASTS": "1",
+    "TORCHINDUCTOR_COMPILE_THREADS": "4",
+    "CPATH": "/home/nickm1128/psann/.venv_explore_cuda/python-dev/usr/include/python3.12:/home/nickm1128/psann/.venv_explore_cuda/python-dev/usr/include",
+    "python_headers": "libpython3.12-dev_3.12.3-1ubuntu0.17_arm64.deb extracted inside .venv_explore_cuda",
+    "note": "System CUDA 13 assembler overrides bundled Triton CUDA 12.8 assembler; precision emulation preserves eager BF16 rounding."
+  }
+}
