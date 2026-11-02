@@ -713,6 +713,24 @@ def _geometry_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         )
     if shape[0] * shape[1] != input_dim:
         raise ValueError("geometry.shape product must equal input dimension.")
+    activation: dict[str, object] = {
+        **_activation_kwargs(cfg),
+        "slope_init": cfg.activation.slope_init,
+        "slope_trainable": cfg.activation.slope_trainable,
+        "clip_max": cfg.activation.clip_max,
+        "activation_types": (
+            tuple(item.replace("-", "_") for item in cfg.activation.activation_types)
+            if cfg.activation.activation_types is not None
+            else None
+        ),
+        "activation_ratios": cfg.activation.activation_ratios,
+        "phase_init": cfg.activation.phase_init,
+        "phase_trainable": cfg.activation.phase_trainable,
+        "ratio_sum_tol": cfg.activation.ratio_sum_tol,
+        "mix_layout": cfg.activation.mix_layout,
+        "mix_seed": cfg.activation.mix_seed,
+        "feature_dim": cfg.activation.feature_dim,
+    }
     core = GeoSparseNet(
         input_dim,
         request.output_dim,
@@ -724,24 +742,7 @@ def _geometry_builder(request: ArchitectureBuildRequest) -> ArchitectureBuildRes
         offsets=geometry.offsets,
         wrap_mode=geometry.wrap_mode,
         activation_type=_backbone_activation_type(cfg),
-        activation_config={
-            **_activation_kwargs(cfg),
-            "slope_init": cfg.activation.slope_init,
-            "slope_trainable": cfg.activation.slope_trainable,
-            "clip_max": cfg.activation.clip_max,
-            "activation_types": (
-                tuple(item.replace("-", "_") for item in cfg.activation.activation_types)
-                if cfg.activation.activation_types is not None
-                else None
-            ),
-            "activation_ratios": cfg.activation.activation_ratios,
-            "phase_init": cfg.activation.phase_init,
-            "phase_trainable": cfg.activation.phase_trainable,
-            "ratio_sum_tol": cfg.activation.ratio_sum_tol,
-            "mix_layout": cfg.activation.mix_layout,
-            "mix_seed": cfg.activation.mix_seed,
-            "feature_dim": cfg.activation.feature_dim,
-        },
+        activation_config=activation,
         norm=residual.norm,
         drop_path_max=residual.drop_path,
         residual_alpha_init=residual.alpha_init,

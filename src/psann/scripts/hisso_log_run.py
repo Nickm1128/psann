@@ -751,17 +751,17 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             latest_path = checkpoints_dir / "latest.pt"
             estimator.save(str(latest_path))
 
+        episodic: dict[str, object] = {"enabled": trainer is not None}
+        if trainer is not None:
+            episodic.update(
+                {
+                    "strategy": strategy_to_mapping(normalize_strategy(trainer.strategy)),
+                    "effective": dict(getattr(trainer, "profile_", {})),
+                }
+            )
         resolved.update(
             {
-                "episodic": (
-                    {"enabled": False}
-                    if trainer is None
-                    else {
-                        "enabled": True,
-                        "strategy": strategy_to_mapping(normalize_strategy(trainer.strategy)),
-                        "effective": dict(getattr(trainer, "profile_", {})),
-                    }
-                ),
+                "episodic": episodic,
                 "data": {
                     "train_shape": _shape_or_none(dataset.X_train),
                     "val_shape": _shape_or_none(dataset.X_val),
@@ -779,7 +779,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         return 0
     except Exception as exc:  # pragma: no cover - exercised via tests expecting success
         metrics["status"] = "error"
-        metrics["error"] = "".join(traceback.format_exception(exc))
+        metrics["error"] = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         metrics_path.write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
         logger.error("run.failed %s", exc)
         return 1

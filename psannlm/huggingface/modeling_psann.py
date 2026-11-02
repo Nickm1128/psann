@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 from torch.nn import functional as F
-from transformers import GenerationMixin, PreTrainedModel
+from transformers import GenerationConfig, GenerationMixin, PreTrainedModel
 from transformers.modeling_outputs import CausalLMOutput
 
 from psannlm.architectures.registry import build_lm_model
@@ -13,7 +13,9 @@ from .configuration_psann import PSANNConfig
 
 
 class PSANNForCausalLM(PreTrainedModel, GenerationMixin):
-    config_class = PSANNConfig
+    # Transformers 4.x infers its overridable config_class default as None.
+    config_class = PSANNConfig  # type: ignore[assignment]
+    generation_config: GenerationConfig
     base_model_prefix = "model"
     main_input_name = "input_ids"
     _supports_cache_class = False

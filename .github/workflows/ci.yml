@@ -8,7 +8,7 @@ on:
 
 jobs:
   huggingface-exports:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +35,7 @@ jobs:
         run: python -m pytest -q tests/lm/test_huggingface_export.py tests/lm/test_versioned_persistence.py
 
   lint-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       OMP_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
@@ -72,7 +72,9 @@ jobs:
 
       - name: Mypy type check
         if: matrix.python-version == '3.11'
-        run: python -m mypy src psannlm
+        # Follow dependency types using this job's interpreter syntax; the 3.9
+        # test job separately verifies the package's minimum runtime.
+        run: python -m mypy --python-version 3.11 src psannlm
 
       - name: Pytest (not slow)
         if: matrix.python-version != '3.11'
@@ -104,7 +106,7 @@ jobs:
           path: dist
 
   package-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint-and-test
     steps:
       - uses: actions/checkout@v4

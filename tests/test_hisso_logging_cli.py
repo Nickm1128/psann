@@ -133,6 +133,24 @@ def test_hisso_logging_cli_emits_metrics(tmp_path):
     assert "output_dir" in resolved_yaml
 
 
+def test_hisso_logging_cli_records_original_configuration_error(tmp_path):
+    config_path = tmp_path / "invalid.json"
+    _write_config(config_path)
+    config = json.loads(config_path.read_text())
+    config["episodic"] = {"enabled": True}
+    config_path.write_text(json.dumps(config))
+    output = tmp_path / "artifacts"
+    assert (
+        hisso_log_run.main(
+            ["--config", str(config_path), "--output-dir", str(output), "--run-name", "invalid"]
+        )
+        == 1
+    )
+    metrics = json.loads((output / "invalid" / "metrics.json").read_text())
+    assert metrics["status"] == "error"
+    assert "ValueError: episodic.strategy is required" in metrics["error"]
+
+
 def test_hisso_logging_cli_preserves_tagged_strategy_fields_without_flat_round_trip(tmp_path):
     config_path = tmp_path / "canonical.json"
     _write_config(config_path)
